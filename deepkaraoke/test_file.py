@@ -1,4 +1,4 @@
 import pyglet
-song = pyglet.media.load('temp.wav')
+song = pyglet.resource.media('temp.wav')
 song.play()
 pyglet.app.run()
