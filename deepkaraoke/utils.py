@@ -38,12 +38,17 @@ def MelSpectrogram(waveform,
     hop_length = int(hop_length_ms / 1000 * sr)
     n_fft = hop_length * 4
 
+    stft = librosa.core.stft(
+        waveform, n_fft=n_fft, hop_length=hop_length, center=False)
     mel = librosa.feature.melspectrogram(
-        waveform,
+        S=np.abs(stft),
         sr=sr,
         hop_length=hop_length,
         n_fft=n_fft,
         power=1,
         n_mels=n_mels,
         fmin=fmin)
+    num_frames = (len(waveform) - n_fft) // hop_length + 1
+    assert mel.shape[1] == num_frames, mel.shape
+
     return np.log(np.maximum(mel, mel_magnitude_lower_bound))
