@@ -9,6 +9,10 @@ def Convert16BitToFloat(*data):
     return [d / 2**15 for d in data]
 
 
+def ConvertFloatTo16Bit(*data):
+    return [d * 2**15 for d in data]
+
+
 # Not fully exact but good enough for debugging uses.
 def FramesToSamples(num_frames, sr=44100, hop_length_ms=10):
     hop_length = int(hop_length_ms / 1000 * sr)
@@ -34,6 +38,13 @@ def STFT(waveform, sr=44100, hop_length_ms=10):
     n_fft = hop_length * 4
     return librosa.core.stft(
         waveform, hop_length=hop_length, n_fft=n_fft, center=False)
+
+
+def InverseSTFT(stft, sr=44100, hop_length_ms=10):
+    hop_length = int(hop_length_ms / 1000 * sr)
+    n_fft = hop_length * 4
+    return librosa.core.istft(
+        stft, hop_length=hop_length, win_length=n_fft, center=False)
 
 
 def MelSpectrogram(waveform,
