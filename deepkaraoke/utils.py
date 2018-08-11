@@ -29,6 +29,13 @@ def PlotMel(title, mel, sr=44100, hop_length_ms=10, fmin=25):
     plt.tight_layout()
 
 
+def STFT(waveform, sr=44100, hop_length_ms=10):
+    hop_length = int(hop_length_ms / 1000 * sr)
+    n_fft = hop_length * 4
+    return librosa.core.stft(
+        waveform, hop_length=hop_length, n_fft=n_fft, center=False)
+
+
 def MelSpectrogram(waveform,
                    sr=44100,
                    hop_length_ms=10,
@@ -38,8 +45,7 @@ def MelSpectrogram(waveform,
     hop_length = int(hop_length_ms / 1000 * sr)
     n_fft = hop_length * 4
 
-    stft = librosa.core.stft(
-        waveform, n_fft=n_fft, hop_length=hop_length, center=False)
+    stft = STFT(waveform, sr, hop_length_ms)
     mel = librosa.feature.melspectrogram(
         S=np.abs(stft),
         sr=sr,
