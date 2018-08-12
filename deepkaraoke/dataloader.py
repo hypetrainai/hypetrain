@@ -26,16 +26,23 @@ class KaraokeDataLoader(object):
         sample_length = sample_length or self.sample_length
         names = np.random.choice(list(self.data.keys()), self.batch_size)
         lengths = np.array([self.song_lengths[name] for name in names])
-        max_start_offsets = (
-            (1 - 2 * self.ignore_percentage) * lengths - sample_length)
-        start_offsets = np.random.rand(self.batch_size) * max_start_offsets
-        starts = (self.ignore_percentage * lengths + start_offsets).astype(int)
+        if sample_length == -1:
+            starts = [0] * self.batch_size
+            sample_lengths = lengths
+        else:
+            max_start_offsets = (
+                (1 - 2 * self.ignore_percentage) * lengths - sample_length)
+            start_offsets = np.random.rand(self.batch_size) * max_start_offsets
+            starts = (
+                self.ignore_percentage * lengths + start_offsets).astype(int)
+            sample_lengths = [sample_length] * self.batch_size
         return [
             DataItem(
                 name=name,
                 start_offset=start,
-                length=sample_length,
-                data=(self.data[name][0][start:start + sample_length],
-                      self.data[name][1][start:start + sample_length]))
-            for name, start in list(zip(names, starts))
+                length=length,
+                data=(self.data[name][0][start:start + length],
+                      self.data[name][1][start:start + length]))
+            for name, start, length in list(
+                zip(names, starts, sample_lengths))
         ]
