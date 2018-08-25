@@ -14,11 +14,12 @@ import matplotlib
 import matplotlib.pyplot as plt
 import gzip
 import pickle as pkl
-from model import naive_generator as NNModel
+import model
 from collections import OrderedDict
 import utils
-
 import dataloader
+
+NNModel = getattr(model, sys.argv[1])
 
 batch_size = 24
 
@@ -52,16 +53,16 @@ try:
 
         if step%100 == 0:
             print('Oh no! Your training loss is %.3f at step %d'%(loss, step))
-            
+
         if step%2500 == 0:
             print('Saving model!')
             torch.save(model.state_dict(),'models/checkpoint.pt')
             print('Done!')
-        
+
         if step%25000 == 0 and step>0:
             for param_group in optimizer.param_groups:
                 param_group['lr'] *= 0.2
-            
+
 except KeyboardInterrupt:
     pass
 torch.cuda.empty_cache()
