@@ -18,6 +18,7 @@ from collections import OrderedDict
 import importlib
 import utils
 import dataloader
+from CONSOLE_ARGS import ARGS as FLAGS
 
 
 batch_size = 24
@@ -26,8 +27,7 @@ train_dataset = dataloader.KaraokeDataLoader('data/train.pkl.gz', batch_size = b
 
 test_dataset = dataloader.KaraokeDataLoader('data/test.pkl.gz', batch_size = batch_size)
 
-module_name, model_name = sys.argv[1].rsplit('.', 1)
-NNModel = getattr(importlib.import_module(module_name), model_name)
+NNModel = getattr(importlib.import_module(FLAGS.module_name), FLAGS.model_name)
 model = NNModel()
 optimizer = optim.Adam(model.parameters(), lr = 0.04)
 max_step = 100000
