@@ -19,7 +19,10 @@ import importlib
 import utils
 import dataloader
 from CONSOLE_ARGS import ARGS as FLAGS
+from tensorboardX import SummaryWriter
 
+os.makedirs(FLAGS.log_dir,exist_ok=True)
+writer = SummaryWriter(FLAGS.log_dir)
 
 batch_size = 24
 
@@ -47,10 +50,15 @@ try:
 
         if step%100 == 0:
             print('Oh no! Your training loss is %.3f at step %d'%(loss, step))
+            writer.add_scalar('training_loss', loss, step)
 
         if step%2500 == 0:
             print('Saving model!')
-            torch.save(model.state_dict(),'models/checkpoint.pt')
+            model_state = {
+                'state_dict': model.state_dict(),
+                'optimizer': optimizer.state_dict()
+            }
+            torch.save(model_state,FLAGS.log_dir+'/model_%d.pt'%step)
             print('Done!')
 
         if step%25000 == 0 and step>0:
