@@ -68,7 +68,7 @@ model.eval()
 with torch.no_grad():
 
     data = train_dataset.get_random_batch(-1)[0]
-    prediction = model.forward(torch.Tensor(data.data[0]).unsqueeze(0).unsqueeze(1).cuda())
+    prediction = model.predict(torch.Tensor(data.data[0]).unsqueeze(0).unsqueeze(1).cuda())
     try:
         os.mkdir('out')
     except OSError:

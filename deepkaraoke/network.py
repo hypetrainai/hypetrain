@@ -16,6 +16,9 @@ class Network(nn.Module):
     def forward(self, data):
         raise NotImplementedError()
 
+    def predict(self, data):
+        return forward(data)
+
     def loss(self, prediction, data):
         raise NotImplementedError()
 
