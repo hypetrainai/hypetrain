@@ -14,7 +14,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import gzip
 import pickle as pkl
-from submodules import *
+from model import naive_generator as NNModel
 from collections import OrderedDict
 import utils
 
@@ -26,49 +26,10 @@ train_dataset = dataloader.KaraokeDataLoader('data/train.pkl.gz', batch_size = b
 
 test_dataset = dataloader.KaraokeDataLoader('data/test.pkl.gz', batch_size = batch_size)
 
-class ModuleDict():
-    def __init__(self):
-        pass
-
-    def __getitem__(self, key):
-        return getattr(self, key)
-
-    def __setitem__(self, key, value):
-        setattr(self, key, value)
-
-
-class naive_generator(nn.Module, ModuleDict):
-    def __init__(self):
-        super(naive_generator, self).__init__()
-
-        #self.op_dict = ModuleDict(self)
-
-        layer_defs = []
-        layer_defs.append(nn.Sequential(convbn_1d(1,32,3,1,1,1), nn.ReLU()))
-        for i in range(11):
-            layer_defs.append(nn.Sequential(convbn_1d(32,32,3,1,1,2**(1+i)), nn.ReLU()))
-        for i in range(11):
-            layer_defs.append(nn.Sequential(convbn_1d(32,32,3,1,1,2**(1+i)), nn.ReLU()))
-        layer_defs.append(nn.Sequential(nn.Conv1d(32,1,3,1,1,1)))
-
-        self.full = nn.Sequential(*layer_defs)
-
-        #self.full = self.op_dict['layer1']
-
-        #self.full = nn.Sequential(self.layer1, self.layer2, self.layer3, self.layer4, self.layer5, \
-        #                         self.layer6, self.layer7, self.layer8, self.layer9)
-
-    def forward(self, x):
-
-
-        out = self.full(x) + x
-
-        return out 
-
-model = naive_generator()
+model = NNModel()
 model = nn.DataParallel(model).cuda()
-optimizer = optim.Adam(model.parameters(), lr = 0.1)
-max_step = 1000000
+optimizer = optim.Adam(model.parameters(), lr = 0.04)
+max_step = 100000
 
 try:
     for step in range(max_step):
@@ -90,14 +51,14 @@ try:
         optimizer.zero_grad()
 
         if step%100 == 0:
-            print('Oh no! Your training loss is %.3f'%(loss))
+            print('Oh no! Your training loss is %.3f at step %d'%(loss, step))
             
         if step%2500 == 0:
             print('Saving model!')
             torch.save(model.state_dict(),'models/checkpoint.pt')
             print('Done!')
         
-        if step%20000 == 0 and step>0:
+        if step%25000 == 0 and step>0:
             for param_group in optimizer.param_groups:
                 param_group['lr'] *= 0.2
             
@@ -107,6 +68,8 @@ torch.cuda.empty_cache()
 
 print('Writing predictions')
 model.eval()
+
+'''
 with torch.no_grad():
 
     data = train_dataset.get_random_batch(-1)[0]
@@ -118,3 +81,4 @@ with torch.no_grad():
     wav.write('out/predicted.wav', 44100, prediction.detach().cpu().numpy())
     wav.write('out/gt.wav', 44100, data.data[1])
     wav.write('out/onvocal.wav', 44100, data.data[0])
+'''
