@@ -14,12 +14,11 @@ import matplotlib
 import matplotlib.pyplot as plt
 import gzip
 import pickle as pkl
-import model
 from collections import OrderedDict
+import importlib
 import utils
 import dataloader
 
-NNModel = getattr(model, sys.argv[1])
 
 batch_size = 24
 
@@ -27,8 +26,9 @@ train_dataset = dataloader.KaraokeDataLoader('data/train.pkl.gz', batch_size = b
 
 test_dataset = dataloader.KaraokeDataLoader('data/test.pkl.gz', batch_size = batch_size)
 
+module_name, model_name = sys.argv[1].rsplit('.', 1)
+NNModel = getattr(importlib.import_module(module_name), model_name)
 model = NNModel()
-model = nn.DataParallel(model).cuda()
 optimizer = optim.Adam(model.parameters(), lr = 0.04)
 max_step = 100000
 
@@ -36,15 +36,9 @@ try:
     for step in range(max_step):
 
         data = train_dataset.get_random_batch(10000)
-        #data_vocal = np.array([data[i].data[0] for i in range(batch_size)], dtype=np.float32)
-        #data_offvocal = np.array([data[i].data[1] for i in range(batch_size)], dtype=np.float32)
-        data_vocal, data_offvocal = zip(*[d.data for d in data])
-
-        data_vocal = torch.Tensor(data_vocal).cuda().unsqueeze(1)
-        data_offvocal = torch.Tensor(data_offvocal).cuda().unsqueeze(1)
-
-        prediction = model.forward(data_vocal)
-        loss = torch.mean((prediction - data_offvocal)**2)/10000000.0
+        data = model.preprocess(data)
+        prediction = model.forward(data)
+        loss = model.loss(prediction, data)
 
         loss.backward()
 
