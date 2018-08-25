@@ -7,12 +7,12 @@ import utils
 
 class Simple(Network):
     def __init__(self):
-        super(Simple, self).__init__()
         self.sr = 44100
         self.hop_length_ms = 10
         self.window_length_ms = 40
         self.n_mels = 128
         self.fmin = 25
+        super(Simple, self).__init__()
 
     def BuildModel(self):
         input_channels = self.n_mels + utils.FFTChannels(self.window_length_ms)
