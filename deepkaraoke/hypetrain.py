@@ -59,6 +59,20 @@ try:
                 'optimizer': optimizer.state_dict()
             }
             torch.save(model_state,FLAGS.log_dir+'/model_%d.pt'%step)
+            print('Uploading Prediction!')
+            
+            with torch.no_grad():
+                model.eval()
+
+                data = train_dataset.get_single_segment(0, 200000, 3000000)[0]
+                prediction = model.forward([data]).detach().cpu().numpy()
+                print(np.unique(prediction))
+                max_value = np.amax(np.abs(prediction))
+                prediction /= max_value
+                prediction = prediction[0,0]
+                print(np.unique(prediction))
+                writer.add_audio('audio_prediction', prediction, step)
+                model.train()
             print('Done!')
 
         if step%25000 == 0 and step>0:

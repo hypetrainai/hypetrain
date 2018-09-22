@@ -22,7 +22,7 @@ class KaraokeDataLoader(object):
             self.N = len(self.data)
             self.song_lengths = {k: len(d[0]) for k, d in self.data.items()}
 
-    def get_random_batch(self, sample_length=None):
+    def get_random_batch(self, extract_idx = None, sample_length=None):
         sample_length = sample_length or self.sample_length
         names = np.random.choice(list(self.data.keys()), self.batch_size)
         lengths = np.array([self.song_lengths[name] for name in names])
@@ -46,3 +46,21 @@ class KaraokeDataLoader(object):
             for name, start, length in list(
                 zip(names, starts, sample_lengths))
         ]
+    
+    def get_single_segment(self, extract_idx = 0, sample_length = 200000, start_value = 3000000):
+        sample_length = sample_length or self.sample_length
+        names = [list(self.data.keys())[extract_idx]]
+        lengths = np.array([sample_length for name in names])
+        starts = [start_value] 
+        sample_lengths = lengths
+        return [
+            DataItem(
+                name=name,
+                start_offset=start,
+                length=length,
+                data=(self.data[name][0][start:start + length],
+                      self.data[name][1][start:start + length]))
+            for name, start, length in list(
+                zip(names, starts, sample_lengths))
+        ]
+        

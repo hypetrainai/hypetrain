@@ -10,8 +10,8 @@ def run_from_ipython():
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--log_dir', type=str, default='trained_models/test', help='where to save the models')
-parser.add_argument('--module_name', type=str, default='fftmodel')
-parser.add_argument('--model_name', type=str, default='Simple')
+parser.add_argument('--module_name', type=str, default='model')
+parser.add_argument('--model_name', type=str, default='naive_generator')
 
 if run_from_ipython():
     ARGS = parser.parse_args([])
