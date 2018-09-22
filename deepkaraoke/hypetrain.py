@@ -53,7 +53,7 @@ for step in range(1, 100000):
         print('Oh no! Your training loss is %.3f at step %d' % (loss, step))
         writer.add_scalar('steps/s', 100.0 / (time.time() - start_time), step)
 
-    if step%1000 == 0:
+    if step%100 == 0:
         print('Evaluating model!')
 
         model.eval()
