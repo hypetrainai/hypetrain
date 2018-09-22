@@ -79,6 +79,8 @@ def MelSpectrogram(waveform_or_stft,
     n_fft, _ = NFFT(sr, window_length_ms)
     mel_matrix = librosa.filters.mel(sr, n_fft, n_mels, fmin)
     mel = np.dot(mel_matrix, np.abs(stft)**2)
+    # TODO: Maybe use mel.
+    mel = np.abs(stft)**2
     return (1 + mel)**(1./3.)
 
 
@@ -93,4 +95,7 @@ def InverseMelSpectrogram(mel_spectrogram,
     n_fft, _ = NFFT(sr, window_length_ms)
     mel_matrix = librosa.filters.mel(sr, n_fft, n_mels, fmin)
     inv_mel_matrix = np.linalg.pinv(mel_matrix)
-    return np.sqrt(np.maximum(0, np.dot(inv_mel_matrix, mel_spectrogram)))
+    linear_spectrogram = np.dot(inv_mel_matrix, mel_spectrogram)
+    # TODO: Maybe use mel.
+    linear_spectrogram = mel_spectrogram
+    return np.sqrt(np.maximum(0, linear_spectrogram))
