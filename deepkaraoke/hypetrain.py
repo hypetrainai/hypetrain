@@ -9,6 +9,7 @@ import numpy as np
 import glob
 import csv, pickle, os, sys
 import os
+import time
 import scipy.io.wavfile as wav
 import matplotlib
 import matplotlib.pyplot as plt
@@ -21,81 +22,75 @@ import dataloader
 from CONSOLE_ARGS import ARGS as FLAGS
 from tensorboardX import SummaryWriter
 
-os.makedirs(FLAGS.log_dir,exist_ok=True)
+os.makedirs(FLAGS.log_dir, exist_ok=True)
 writer = SummaryWriter(FLAGS.log_dir)
 
 batch_size = 24
-
 train_dataset = dataloader.KaraokeDataLoader('data/train.pkl.gz', batch_size = batch_size)
-
 test_dataset = dataloader.KaraokeDataLoader('data/test.pkl.gz', batch_size = batch_size)
 
 NNModel = getattr(importlib.import_module(FLAGS.module_name), FLAGS.model_name)
-model = NNModel()
-optimizer = optim.Adam(model.parameters(), lr = 0.04)
-max_step = 100000
+model = NNModel(writer)
+optimizer = optim.Adam(model.parameters(), lr = FLAGS.lr)
 
-try:
-    for step in range(max_step):
+start_time = time.time()
+for step in range(1, 100000):
 
-        data = train_dataset.get_random_batch(10000)
-        data = model.preprocess(data)
-        prediction = model.forward(data)
-        loss = model.loss(prediction, data)
+    model.current_step = step
 
-        loss.backward()
+    data = train_dataset.get_random_batch(20000)
+    data = model.preprocess(data)
+    prediction = model.forward(data)
+    loss = model.loss(prediction, data)
+    writer.add_scalar('loss_train/total', loss, step)
 
-        optimizer.step()
-        optimizer.zero_grad()
+    loss.backward()
 
-        if step%100 == 0:
-            print('Oh no! Your training loss is %.3f at step %d'%(loss, step))
-            writer.add_scalar('training_loss', loss, step)
+    optimizer.step()
+    optimizer.zero_grad()
 
-        if step%2500 == 0:
-            print('Saving model!')
-            model_state = {
-                'state_dict': model.state_dict(),
-                'optimizer': optimizer.state_dict()
-            }
-            torch.save(model_state,FLAGS.log_dir+'/model_%d.pt'%step)
-            print('Uploading Prediction!')
-            
-            with torch.no_grad():
-                model.eval()
+    if step%100 == 0:
+        print('Oh no! Your training loss is %.3f at step %d' % (loss, step))
+        writer.add_scalar('steps/s', 100.0 / (time.time() - start_time), step)
 
-                data = train_dataset.get_single_segment(0, 200000, 3000000)[0]
-                prediction = model.forward([data]).detach().cpu().numpy()
-                print(np.unique(prediction))
-                max_value = np.amax(np.abs(prediction))
-                prediction /= max_value
-                prediction = prediction[0,0]
-                print(np.unique(prediction))
-                writer.add_audio('audio_prediction', prediction, step)
-                model.train()
-            print('Done!')
+    if step%1000 == 0:
+        print('Evaluating model!')
 
-        if step%25000 == 0 and step>0:
-            for param_group in optimizer.param_groups:
-                param_group['lr'] *= 0.2
+        model.eval()
+        with torch.no_grad():
+            torch.cuda.empty_cache()
+            data = test_dataset.get_random_batch(20000)
+            data = model.preprocess(data)
+            prediction = model.forward(data)
+            loss = model.loss(prediction, data)
+            print('Oh no! Your test loss is %.3f at step %d' % (loss, step))
+            writer.add_scalar('loss_test/total', loss, step)
 
-except KeyboardInterrupt:
-    pass
-torch.cuda.empty_cache()
+            for dataset, prefix in [(train_dataset, 'train'), (test_dataset, 'test')]:
+                torch.cuda.empty_cache()
+                # data = dataset.get_random_batch(500000, batch_size=1)
+                data = [dataset.get_single_segment(extract_idx=0, start_value=3000000, sample_length=200000)]
+                prediction = model.predict(model.preprocess(data))
+                writer.add_audio(prefix + '/predicted', prediction, step, sample_rate=44100)
+                on_vocal, off_vocal = utils.Convert16BitToFloat(data[0].data[0], data[0].data[1])
+                writer.add_audio(prefix + '/gt_onvocal', on_vocal, step, sample_rate=44100)
+                writer.add_audio(prefix + '/gt_offvocal', off_vocal, step, sample_rate=44100)
+        torch.cuda.empty_cache()
+        model.train()
 
-print('Writing predictions')
-model.eval()
+    if step%2500 == 0:
+        print('Saving model!')
+        model_state = {
+            'step': step,
+            'state_dict': model.state_dict(),
+            'optimizer': optimizer.state_dict()
+        }
+        torch.save(model_state, FLAGS.log_dir + '/model_%d.pt' % step)
+        print('Uploading Prediction!')
 
-'''
-with torch.no_grad():
+    if step%25000 == 0:
+        for param_group in optimizer.param_groups:
+            param_group['lr'] *= 0.2
 
-    data = train_dataset.get_random_batch(-1)[0]
-    prediction = model.predict(torch.Tensor(data.data[0]).unsqueeze(0).unsqueeze(1).cuda())
-    try:
-        os.mkdir('out')
-    except OSError:
-        pass
-    wav.write('out/predicted.wav', 44100, prediction.detach().cpu().numpy())
-    wav.write('out/gt.wav', 44100, data.data[1])
-    wav.write('out/onvocal.wav', 44100, data.data[0])
-'''
+    if step%100 == 0:
+        start_time = time.time()

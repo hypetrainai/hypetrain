@@ -22,20 +22,21 @@ class KaraokeDataLoader(object):
             self.N = len(self.data)
             self.song_lengths = {k: len(d[0]) for k, d in self.data.items()}
 
-    def get_random_batch(self, extract_idx = None, sample_length=None):
+    def get_random_batch(self, extract_idx=None, sample_length=None, batch_size=None):
         sample_length = sample_length or self.sample_length
-        names = np.random.choice(list(self.data.keys()), self.batch_size)
+        batch_size = batch_size or self.batch_size
+        names = np.random.choice(list(self.data.keys()), batch_size)
         lengths = np.array([self.song_lengths[name] for name in names])
         if sample_length == -1:
-            starts = [0] * self.batch_size
+            starts = [0] * batch_size
             sample_lengths = lengths
         else:
             max_start_offsets = (
                 (1 - 2 * self.ignore_percentage) * lengths - sample_length)
-            start_offsets = np.random.rand(self.batch_size) * max_start_offsets
+            start_offsets = np.random.rand(batch_size) * max_start_offsets
             starts = (
                 self.ignore_percentage * lengths + start_offsets).astype(int)
-            sample_lengths = [sample_length] * self.batch_size
+            sample_lengths = [sample_length] * batch_size
         return [
             DataItem(
                 name=name,
@@ -46,21 +47,14 @@ class KaraokeDataLoader(object):
             for name, start, length in list(
                 zip(names, starts, sample_lengths))
         ]
-    
+
     def get_single_segment(self, extract_idx = 0, sample_length = 200000, start_value = 3000000):
         sample_length = sample_length or self.sample_length
-        names = [list(self.data.keys())[extract_idx]]
-        lengths = np.array([sample_length for name in names])
-        starts = [start_value] 
-        sample_lengths = lengths
-        return [
-            DataItem(
-                name=name,
-                start_offset=start,
-                length=length,
-                data=(self.data[name][0][start:start + length],
-                      self.data[name][1][start:start + length]))
-            for name, start, length in list(
-                zip(names, starts, sample_lengths))
-        ]
-        
+        name = list(self.data.keys())[extract_idx]
+        return DataItem(
+            name=name,
+            start_offset=start_value,
+            length=sample_length,
+            data=(self.data[name][0][start_value:start_value + sample_length],
+                  self.data[name][1][start_value:start_value + sample_length]))
+
