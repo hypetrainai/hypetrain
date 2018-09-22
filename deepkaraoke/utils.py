@@ -6,11 +6,13 @@ import numpy as np
 
 
 def Convert16BitToFloat(*data):
-    return [d / 2**15 for d in data]
+    ret = [d / 2**15 for d in data]
+    return ret[0] if len(ret) == 1 else ret
 
 
 def ConvertFloatTo16Bit(*data):
-    return [d * 2**15 for d in data]
+    ret = [d * 2**15 for d in data]
+    return ret[0] if len(ret) == 1 else ret
 
 
 # Not fully exact but good enough for debugging uses.
@@ -20,7 +22,7 @@ def FramesToSamples(num_frames, sr=44100, hop_length_ms=10):
 
 
 def PlotMel(title, mel, sr=44100, hop_length_ms=10, fmin=25):
-    plt.figure(figsize=(10, 4))
+    fig = plt.figure(figsize=(10, 4))
     librosa.display.specshow(
         mel,
         sr=sr,
@@ -29,19 +31,25 @@ def PlotMel(title, mel, sr=44100, hop_length_ms=10, fmin=25):
         x_axis='time',
         cmap='viridis')
     plt.colorbar()
+    plt.clim(1, 6);
     plt.title(title)
     plt.tight_layout()
+    fig.canvas.draw()
+    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    data = data.transpose([2, 0, 1])
+    return data
 
 
-def FFTChannels(window_length_ms):
+def NFFT(sr, window_length_ms):
     window_length = int(window_length_ms / 1000 * sr)
-    n_fft = 2**np.ceil(np.log2(window_length))
+    n_fft = int(2**np.ceil(np.log2(window_length)))
     return n_fft, window_length
 
 
 def STFT(waveform, sr=44100, hop_length_ms=10, window_length_ms=40):
     hop_length = int(hop_length_ms / 1000 * sr)
-    n_fft, window_length = FFTChannels(window_length_ms)
+    n_fft, window_length = NFFT(sr, window_length_ms)
     return librosa.core.stft(
         waveform,
         hop_length=hop_length,
@@ -52,7 +60,7 @@ def STFT(waveform, sr=44100, hop_length_ms=10, window_length_ms=40):
 
 def InverseSTFT(stft, sr=44100, hop_length_ms=10, window_length_ms=40):
     hop_length = int(hop_length_ms / 1000 * sr)
-    _, window_length = FFTChannels(window_length_ms)
+    _, window_length = NFFT(sr, window_length_ms)
     return librosa.core.istft(
         stft, hop_length=hop_length, win_length=window_length, center=False)
 
@@ -62,28 +70,27 @@ def MelSpectrogram(waveform_or_stft,
                    hop_length_ms=10,
                    window_length_ms=40,
                    n_mels=128,
-                   fmin=25,
-                   mel_magnitude_lower_bound=1e-3):
+                   fmin=25):
     if len(waveform_or_stft.shape) == 1:
         stft = STFT(waveform_or_stft, sr, hop_length_ms, window_length_ms)
     else:
         stft = waveform_or_stft
 
-    n_fft, _ = FFTChannels(window_length_ms)
-    mel_matrix = librosa.filters.mel(sr, n_fft, n_mels, fmin).T
-    mel = np.dot(np.abs(stft), mel_matrix)
-    return np.log(np.maximum(mel, mel_magnitude_lower_bound))
+    n_fft, _ = NFFT(sr, window_length_ms)
+    mel_matrix = librosa.filters.mel(sr, n_fft, n_mels, fmin)
+    mel = np.dot(mel_matrix, np.abs(stft)**2)
+    return (1 + mel)**(1./3.)
 
 
-def InverseMelSpectrogram(log_mel_spectrogram,
+def InverseMelSpectrogram(mel_spectrogram,
                           sr=44100,
                           window_length_ms=40,
                           n_mels=128,
                           fmin=25):
     """Returns stft magnitudes. Follow up with InverseSTFT for waveforms."""
-    mel_spectrogram = np.exp(log_mel_spectrogram)
+    mel_spectrogram = mel_spectrogram**3 - 1
 
-    n_fft, _ = FFTChannels(window_length_ms)
-    mel_matrix = librosa.filters.mel(sr, n_fft, n_mels, fmin).T
-    row_norm = np.sum(mel_matrix, axis=0)[np.newaxis, :]
-    return np.dot(mel_spectrogram / row_norm, mel_matrix.T)
+    n_fft, _ = NFFT(sr, window_length_ms)
+    mel_matrix = librosa.filters.mel(sr, n_fft, n_mels, fmin)
+    inv_mel_matrix = np.linalg.pinv(mel_matrix)
+    return np.sqrt(np.maximum(0, np.dot(inv_mel_matrix, mel_spectrogram)))
