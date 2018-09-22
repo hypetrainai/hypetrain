@@ -19,7 +19,9 @@ class Simple(Network):
     def BuildModel(self):
         n_fft, _ = utils.NFFT(self.sr, self.window_length_ms)
         fft_channels = (n_fft + 1) // 2 + 1
-        input_channels = self.n_mels + fft_channels
+        # TODO: Use mel.
+        # input_channels = self.n_mels + fft_channels
+        input_channels = 2 * fft_channels
         layer_defs = []
         layer_defs.append(convbn_1d(input_channels, 256, 3, 1, 1, 1))
         for i in range(11):
@@ -62,11 +64,13 @@ class Simple(Network):
         return self.model.forward(vocal_stacked)
 
     def loss(self, prediction, data):
-        predicted_mel = prediction[:, :self.n_mels]
+        n_fft, _ = utils.NFFT(self.sr, self.window_length_ms)
+        fft_channels = (n_fft + 1) // 2 + 1
+        predicted_mel = prediction[:, :-fft_channels]
         gt_mel = torch.Tensor(data['offvocal_mel']).cuda()
         loss_mel = torch.mean((predicted_mel - gt_mel)**4)
 
-        predicted_phase = prediction[:, self.n_mels:]
+        predicted_phase = prediction[:, -fft_channels:]
         gt_phase = torch.Tensor(data['offvocal_phase']).cuda()
         loss_phase = torch.mean(1 - torch.cos(predicted_phase - gt_phase))
 
@@ -81,9 +85,12 @@ class Simple(Network):
         prediction = self.forward(data)
         prediction = prediction.detach().cpu().numpy()
         assert prediction.shape[0] == 1
-        predicted_mel = prediction[0, :self.n_mels]
-        predicted_phase = prediction[0, self.n_mels:]
+
+        n_fft, _ = utils.NFFT(self.sr, self.window_length_ms)
+        fft_channels = (n_fft + 1) // 2 + 1
+        predicted_mel = prediction[0, :-fft_channels]
         # TODO: predict phase.
+        # predicted_phase = prediction[0, -fft_channels:]
         predicted_phase = data['vocal_phase'][0]
 
         summary_prefix = 'train' if self.training else 'test'
