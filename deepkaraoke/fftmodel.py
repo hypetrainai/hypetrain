@@ -74,7 +74,7 @@ class Simple(Network):
         self._summary_writer.add_scalar(summary_prefix + '/mel', loss_mel, self.current_step)
         self._summary_writer.add_scalar(summary_prefix + '/phase', loss_phase, self.current_step)
 
-        return loss_mel + loss_phase
+        return loss_mel + 0 * loss_phase
 
     def predict(self, data):
         prediction = self.forward(data)
@@ -82,6 +82,7 @@ class Simple(Network):
         assert prediction.shape[0] == 1
         predicted_mel = prediction[0, :self.n_mels]
         predicted_phase = prediction[0, self.n_mels:]
+        predicted_phase = data['vocal_phase'][0]
 
         summary_prefix = 'train' if self.training else 'test'
         self._summary_writer.add_image(summary_prefix + '/gt_onvocal',
