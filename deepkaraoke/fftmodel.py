@@ -78,8 +78,7 @@ class Simple(Network):
         self._summary_writer.add_scalar(summary_prefix + '/mel', loss_mel, self.current_step)
         self._summary_writer.add_scalar(summary_prefix + '/phase', loss_phase, self.current_step)
 
-        # TODO: predict phase.
-        return loss_mel + 0 * loss_phase
+        return loss_mel + loss_phase
 
     def predict(self, data):
         prediction = self.forward(data)
@@ -110,3 +109,55 @@ class Simple(Network):
         result = utils.InverseSTFT(
             predicted_stft, self.sr, self.hop_length_ms, self.window_length_ms)
         return result
+
+class Flatten(nn.Module):
+    
+    def __init__(self):
+        super(Flatten, self).__init__()
+    
+    def forward(self, input):
+        return input.view(input.size(0), -1)
+
+class Discriminator(Network):
+
+    def __init__(self, summary_writer):
+        
+        self.sr = 44100
+        self.hop_length_ms = 10
+        self.window_length_ms = 40
+        self.n_mels = 128
+        self.fmin = 0
+        
+        super(Discriminator, self).__init__(summary_writer)
+        
+    def BuildModel(self):
+        n_fft, _ = utils.NFFT(self.sr, self.window_length_ms)
+        fft_channels = (n_fft + 1) // 2 + 1
+        
+        input_channels = 2 * fft_channels
+        layer_defs = []
+        layer_defs.append(convbn_1d(input_channels, 256, 3, 2, 1, 1))
+        layer_defs.append(convbn_1d(256, 256, 3, 1, 1, 1))
+        for i in range(4):
+            layer_defs.append(convbn_1d(256, 256, 3, 2, 1, 1))
+            layer_defs.append(convbn_1d(256, 256, 3, 1, 1, 1))
+        layer_defs.append(Flatten())
+        layer_defs.append(nn.Linear(256,2))
+        return nn.Sequential(*layer_defs)
+        
+    def loss(self, input, labels):
+        
+        criterion = nn.CrossEntropyLoss()
+        
+        
+        return criterion(input, labels)
+    
+    def forward(self, data):        
+        if type(data) is dict:
+            vocal_stacked = np.concatenate(
+                (data['offvocal_mel'], data['offvocal_phase']), axis=1)
+            data = torch.Tensor(vocal_stacked).cuda()
+        return self.model.forward(data)
+    
+    
+    

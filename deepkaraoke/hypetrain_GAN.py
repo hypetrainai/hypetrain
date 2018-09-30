@@ -20,6 +20,7 @@ import importlib
 import utils
 import dataloader
 from CONSOLE_ARGS import ARGS as FLAGS
+from fftmodel import Discriminator as disc
 from tensorboardX import SummaryWriter
 
 os.makedirs(FLAGS.log_dir, exist_ok=True)
@@ -30,8 +31,10 @@ train_dataset = dataloader.KaraokeDataLoader('data/train.pkl.gz', batch_size = b
 test_dataset = dataloader.KaraokeDataLoader('data/test.pkl.gz', batch_size = batch_size)
 
 NNModel = getattr(importlib.import_module(FLAGS.module_name), FLAGS.model_name)
+model_D = disc(writer)
 model = NNModel(writer)
 optimizer = optim.Adam(model.parameters(), lr = FLAGS.lr)
+optimizer_disc = optim.Adam(model_D.parameters(), lr = FLAGS.lr)
 
 start_time = time.time()
 for step in range(1, 100000):
@@ -40,20 +43,41 @@ for step in range(1, 100000):
 
     data = train_dataset.get_random_batch(20000)
     data = model.preprocess(data)
-    #print(data['vocal_phase'])
+    
     prediction = model.forward(data)
-    print(prediction.shape)
     loss = model.loss(prediction, data)
     writer.add_scalar('loss_train/total', loss, step)
+    
+    GAN_pred = model_D.forward(prediction)
+    GAN_gt = model_D.forward(data)
+    gt_disc = torch.cat([torch.zeros([GAN_pred.size(0)]).type(torch.int), torch.ones([GAN_gt.size(0)]).type(torch.int)])
+    
+    
+    scores_pred = F.softmax(GAN_pred, 1)
+    scores_gt = F.softmax(GAN_gt, 1)
+    
+    #print(scores_pred)
+    
+    GAN_loss = -1.0*torch.mean(torch.log(1.0-scores_pred[:,0]))
+    writer.add_scalar('loss_train/GAN_gen_loss', GAN_loss, step)
 
+    loss += GAN_loss
+    
     loss.backward()
 
     optimizer.step()
     optimizer.zero_grad()
+    
+    for disc_step in range(5):
+        GAN_loss_disc = torch.mean(torch.log(1.0-scores_pred[:,0]))+torch.mean(torch.log(scores_gt[:,0]))
+        GAN_loss_disc.backward()
+        optimizer_disc.step()
+        optimizer_disc.zero_grad()
 
     if step%100 == 0:
         print('Oh no! Your training loss is %.3f at step %d' % (loss, step))
         writer.add_scalar('steps/s', 100.0 / (time.time() - start_time), step)
+        writer.add_scalar('loss_train/disc_loss', GAN_loss_disc, step)
 
     if step%1000 == 0:
         print('Evaluating model!')
