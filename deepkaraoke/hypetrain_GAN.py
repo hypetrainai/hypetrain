@@ -34,15 +34,15 @@ NNModel = getattr(importlib.import_module(FLAGS.module_name), FLAGS.model_name)
 model_D = disc(writer)
 model = NNModel(writer)
 optimizer = optim.Adam(model.parameters(), lr = FLAGS.lr)
-optimizer_disc = optim.Adam(model_D.parameters(), lr = FLAGS.lr)
+optimizer_disc = optim.Adam(model_D.parameters(), lr = 0.01*FLAGS.lr)
 
 start_time = time.time()
+data = train_dataset.get_random_batch(20000)
+data = model.preprocess(data)
 for step in range(1, 100000):
 
     model.current_step = step
 
-    data = train_dataset.get_random_batch(20000)
-    data = model.preprocess(data)
     
     prediction = model.forward(data)
     loss = model.loss(prediction, data)
@@ -50,11 +50,11 @@ for step in range(1, 100000):
     
     GAN_pred = model_D.forward(prediction)
     GAN_gt = model_D.forward(data)
-    gt_disc = torch.cat([torch.zeros([GAN_pred.size(0)]).type(torch.int), torch.ones([GAN_gt.size(0)]).type(torch.int)])
+    #gt_disc = torch.cat([torch.zeros([GAN_pred.size(0)]).type(torch.int), torch.ones([GAN_gt.size(0)]).type(torch.int)])
     
     
-    scores_pred = F.softmax(GAN_pred, 1)
-    scores_gt = F.softmax(GAN_gt, 1)
+    scores_pred = torch.clamp(F.softmax(GAN_pred, 1), 0.00001, 0.99999)
+    scores_gt = torch.clamp(F.softmax(GAN_gt, 1), 0.00001, 0.99999)
     
     #print(scores_pred)
     
@@ -63,13 +63,17 @@ for step in range(1, 100000):
 
     loss += GAN_loss
     
-    loss.backward()
+    loss.backward(retain_graph=True)
 
-    optimizer.step()
-    optimizer.zero_grad()
+    #optimizer.step()
+    #optimizer.zero_grad()
+    #optimizer_disc.zero_grad()
     
-    for disc_step in range(5):
+    for disc_step in range(1):
         GAN_loss_disc = torch.mean(torch.log(1.0-scores_pred[:,0]))+torch.mean(torch.log(scores_gt[:,0]))
+        GAN_loss_disc = torch.mean(scores_pred[:,0]) + torch.mean(scores_gt[:,0])
+        print('GEN:', torch.sum(scores_pred[:,0]>0.5))
+        print('DISC:', torch.sum(scores_gt[:,0]<0.5))
         GAN_loss_disc.backward()
         optimizer_disc.step()
         optimizer_disc.zero_grad()
