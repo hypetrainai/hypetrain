@@ -67,9 +67,6 @@ for i in range(0, len(layers)):
     b.grid(row=i, columnspan=2, sticky=tk.W)
     buttons.append(b)
 
-lf_properties = tk.Frame(lf, bg="pale green")
-lf_properties.grid(row=len(layers)+1)
-
 def setin(i):
     inp = layers[i]
     for button in buttons:
@@ -86,19 +83,26 @@ def setInput(inp):
     layertype = inp
 
 list_nodes = []
-currNode = currLayer(lf_properties)
+list_other_widgets = []
 layertype = None
 networkSettings = NetworkSettings()
 
 run_button = tk.Button(lf, text='Run', width=10, anchor=tk.W)
-run_button.grid(row=len(layers), columnspan=2, sticky=tk.W)
+run_button.grid(row=len(layers)+len(list_other_widgets), columnspan=2, sticky=tk.W)
+list_other_widgets.append(run_button)
 
 import_button = tk.Button(lf, text='Set Import Path', width=10, anchor=tk.W)
-import_button.grid(row=len(layers)+1, columnspan=2, sticky=tk.W)
+import_button.grid(row=len(layers)+len(list_other_widgets), columnspan=2, sticky=tk.W)
+list_other_widgets.append(import_button)
 import_path = "test"
 
 b = tk.Button(lf, text='Create Code', width=10, anchor=tk.W)
-b.grid(row=len(layers)+2, columnspan=2, sticky=tk.W)
+b.grid(row=len(layers)+len(list_other_widgets), columnspan=2, sticky=tk.W)
+list_other_widgets.append(b)
+
+lf_properties = tk.Frame(lf, bg="pale green")
+lf_properties.grid(row=len(layers)+len(list_other_widgets))
+currNode = currLayer(lf_properties)
 
 def run_network():
     run_fx()
