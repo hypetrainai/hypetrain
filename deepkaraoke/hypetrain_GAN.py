@@ -34,12 +34,12 @@ NNModel = getattr(importlib.import_module(FLAGS.module_name), FLAGS.model_name)
 model_D = disc(writer)
 model = NNModel(writer)
 optimizer = optim.Adam(model.parameters(), lr = FLAGS.lr)
-optimizer_disc = optim.Adam(model_D.parameters(), lr = 0.01*FLAGS.lr)
+optimizer_disc = optim.Adam(model_D.parameters(), lr = 0.02*FLAGS.lr)
 
 start_time = time.time()
-data = train_dataset.get_random_batch(20000)
-data = model.preprocess(data)
 for step in range(1, 100000):
+    data = train_dataset.get_random_batch(20000)
+    data = model.preprocess(data)
 
     model.current_step = step
 
@@ -52,36 +52,47 @@ for step in range(1, 100000):
     GAN_gt = model_D.forward(data)
     #gt_disc = torch.cat([torch.zeros([GAN_pred.size(0)]).type(torch.int), torch.ones([GAN_gt.size(0)]).type(torch.int)])
     
-    
     scores_pred = torch.clamp(F.softmax(GAN_pred, 1), 0.00001, 0.99999)
     scores_gt = torch.clamp(F.softmax(GAN_gt, 1), 0.00001, 0.99999)
     
     #print(scores_pred)
     
     GAN_loss = -1.0*torch.mean(torch.log(1.0-scores_pred[:,0]))
+    #print(GAN_loss)
     writer.add_scalar('loss_train/GAN_gen_loss', GAN_loss, step)
 
     loss += GAN_loss
     
-    loss.backward(retain_graph=True)
+    loss.backward()
 
-    #optimizer.step()
-    #optimizer.zero_grad()
-    #optimizer_disc.zero_grad()
+    optimizer.step()
+    optimizer.zero_grad()
+    optimizer_disc.zero_grad()
     
-    for disc_step in range(1):
+    for disc_step in range(2):
+        data = train_dataset.get_random_batch(20000)
+        data = model.preprocess(data)
+        prediction = model.forward(data)
+        loss = model.loss(prediction, data)
+        writer.add_scalar('loss_train/total', loss, step)
+
+        GAN_pred = model_D.forward(prediction)
+        GAN_gt = model_D.forward(data)
+        
+        scores_pred = torch.clamp(F.softmax(GAN_pred, 1), 0.00001, 0.99999)
+        scores_gt = torch.clamp(F.softmax(GAN_gt, 1), 0.00001, 0.99999)
+    
         GAN_loss_disc = torch.mean(torch.log(1.0-scores_pred[:,0]))+torch.mean(torch.log(scores_gt[:,0]))
-        GAN_loss_disc = torch.mean(scores_pred[:,0]) + torch.mean(scores_gt[:,0])
-        print('GEN:', torch.sum(scores_pred[:,0]>0.5))
-        print('DISC:', torch.sum(scores_gt[:,0]<0.5))
+        
         GAN_loss_disc.backward()
         optimizer_disc.step()
         optimizer_disc.zero_grad()
+        optimizer.zero_grad()
+    writer.add_scalar('loss_train/disc_loss', GAN_loss_disc, step)
 
     if step%100 == 0:
         print('Oh no! Your training loss is %.3f at step %d' % (loss, step))
         writer.add_scalar('steps/s', 100.0 / (time.time() - start_time), step)
-        writer.add_scalar('loss_train/disc_loss', GAN_loss_disc, step)
 
     if step%1000 == 0:
         print('Evaluating model!')
@@ -101,10 +112,11 @@ for step in range(1, 100000):
                 # data = dataset.get_random_batch(500000, batch_size=1)
                 data = [dataset.get_single_segment(extract_idx=0, start_value=3000000, sample_length=200000)]
                 prediction = model.predict(model.preprocess(data))
-                writer.add_audio(prefix + '/predicted', prediction, step, sample_rate=44100)
+                writer.add_audio(prefix + '/predicted', prediction, step, sample_rate=FLAGS.sample_rate)
                 on_vocal, off_vocal = utils.Convert16BitToFloat(data[0].data[0], data[0].data[1])
-                writer.add_audio(prefix + '/gt_onvocal', on_vocal, step, sample_rate=44100)
-                writer.add_audio(prefix + '/gt_offvocal', off_vocal, step, sample_rate=44100)
+                print(off_vocal.shape)
+                writer.add_audio(prefix + '/gt_onvocal', on_vocal, step, sample_rate=FLAGS.sample_rate)
+                writer.add_audio(prefix + '/gt_offvocal', off_vocal, step, sample_rate=FLAGS.sample_rate)
         torch.cuda.empty_cache()
         model.train()
 

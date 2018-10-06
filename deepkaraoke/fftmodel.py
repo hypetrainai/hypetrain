@@ -109,10 +109,10 @@ class Discriminator(Network):
         layer_defs.append(convbn_1d(input_channels, 256, 3, 2, 1, 1))
         layer_defs.append(convbn_1d(256, 256, 3, 1, 1, 1))
         for i in range(4):
-            layer_defs.append(convbn_1d(256, 256, 3, 2, 1, 1))
+            layer_defs.append(convbn_1d(256, 256, 3, 1, 1, 1))
             layer_defs.append(convbn_1d(256, 256, 3, 1, 1, 1))
         layer_defs.append(Flatten())
-        layer_defs.append(nn.Linear(256,2))
+        layer_defs.append(nn.Linear(4864,2))
         return nn.Sequential(*layer_defs)
 
     def loss(self, input, labels):
@@ -127,6 +127,7 @@ class Discriminator(Network):
             vocal_stacked = np.concatenate(
                 (data['offvocal_mel'], data['offvocal_phase']), axis=1)
             data = torch.Tensor(vocal_stacked).cuda()
+            #print(data.shape)
         return self.model.forward(data)
 
 
