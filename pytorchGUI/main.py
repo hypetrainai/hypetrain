@@ -5,6 +5,7 @@ from layerType import *
 from varType import *
 from layer import *
 from currLayer import *
+from NetworkSettings import *
 
 
 layers = []
@@ -86,11 +87,20 @@ def setInput(inp):
 list_nodes = []
 currNode = currLayer(lf_properties)
 layertype = None
+networkSettings = NetworkSettings()
 
+run_button = tk.Button(lf, text='Run', width=10, anchor=tk.W)
+run_button.grid(row=len(layers), columnspan=2, sticky=tk.W)
 
+import_button = tk.Button(lf, text='Set Import Path', width=10, anchor=tk.W)
+import_button.grid(row=len(layers)+1, columnspan=2, sticky=tk.W)
+import_path = "test"
 
 b = tk.Button(lf, text='Create Code', width=10, anchor=tk.W)
-b.grid(row=len(layers), columnspan=2, sticky=tk.W)
+b.grid(row=len(layers)+2, columnspan=2, sticky=tk.W)
+
+def run_network():
+    print("run the network")
 
 def setin2():
     for button in buttons:
@@ -133,10 +143,9 @@ def DFS_nodes(node, code_init,code_forward):
     return code_init,code_forward
 
 
-
-
+run_button.config(command=run_network)
+import_button.config(command=networkSettings.setPath)
 b.config(command=lambda: setin2())
-
 
 def selectORcreate( event ):
     global layertype
