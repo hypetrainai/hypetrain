@@ -6,6 +6,7 @@ from varType import *
 from layer import *
 from currLayer import *
 from NetworkSettings import *
+from nnet_backend import *
 
 
 layers = []
@@ -100,7 +101,7 @@ b = tk.Button(lf, text='Create Code', width=10, anchor=tk.W)
 b.grid(row=len(layers)+2, columnspan=2, sticky=tk.W)
 
 def run_network():
-    print("run the network")
+    run_fx()
 
 def setin2():
     for button in buttons:
