@@ -40,9 +40,7 @@ for step in range(1, 100000):
 
     data = train_dataset.get_random_batch(20000)
     data = model.preprocess(data)
-    #print(data['vocal_phase'])
     prediction = model.forward(data)
-    print(prediction.shape)
     loss = model.loss(prediction, data)
     writer.add_scalar('loss_train/total', loss, step)
 

@@ -6,15 +6,15 @@ from network import Network
 import utils
 
 
-class Simple(Network):
+class Generator(Network):
 
     def __init__(self, summary_writer):
         self.sr = 44100
         self.hop_length_ms = 10
         self.window_length_ms = 40
-        self.n_mels = 128
+        self.n_mels = 80
         self.fmin = 0
-        super(Simple, self).__init__(summary_writer)
+        super(Generator, self).__init__(summary_writer)
 
     def BuildModel(self):
         n_fft, _ = utils.NFFT(self.sr, self.window_length_ms)
@@ -67,18 +67,19 @@ class Simple(Network):
         n_fft, _ = utils.NFFT(self.sr, self.window_length_ms)
         fft_channels = (n_fft + 1) // 2 + 1
         predicted_mel = prediction[:, :-fft_channels]
-        gt_mel = torch.Tensor(data['offvocal_mel']).cuda()
-        loss_mel = torch.mean((predicted_mel - gt_mel)**4)
-
         predicted_phase = prediction[:, -fft_channels:]
+        predicted_real = predicted_mel * torch.cos(predicted_phase)
+        predicted_imag = predicted_mel * torch.sin(predicted_phase)
+        gt_mel = torch.Tensor(data['offvocal_mel']).cuda()
         gt_phase = torch.Tensor(data['offvocal_phase']).cuda()
-        loss_phase = torch.mean(1 - torch.cos(predicted_phase - gt_phase))
+        gt_real = gt_mel * torch.cos(gt_phase)
+        gt_imag = gt_mel * torch.sin(gt_phase)
+        loss = torch.mean((predicted_real - gt_real)**2 +
+                          (predicted_imag - gt_imag)**2)
 
         summary_prefix = 'loss_train' if self.training else 'loss_test'
-        self._summary_writer.add_scalar(summary_prefix + '/mel', loss_mel, self.current_step)
-        self._summary_writer.add_scalar(summary_prefix + '/phase', loss_phase, self.current_step)
-
-        return loss_mel + loss_phase
+        self._summary_writer.add_scalar(summary_prefix, loss, self.current_step)
+        return loss
 
     def predict(self, data):
         prediction = self.forward(data)
@@ -111,29 +112,29 @@ class Simple(Network):
         return result
 
 class Flatten(nn.Module):
-    
+
     def __init__(self):
         super(Flatten, self).__init__()
-    
+
     def forward(self, input):
         return input.view(input.size(0), -1)
 
 class Discriminator(Network):
 
     def __init__(self, summary_writer):
-        
+
         self.sr = 44100
         self.hop_length_ms = 10
         self.window_length_ms = 40
         self.n_mels = 128
         self.fmin = 0
-        
+
         super(Discriminator, self).__init__(summary_writer)
-        
+
     def BuildModel(self):
         n_fft, _ = utils.NFFT(self.sr, self.window_length_ms)
         fft_channels = (n_fft + 1) // 2 + 1
-        
+
         input_channels = 2 * fft_channels
         layer_defs = []
         layer_defs.append(convbn_1d(input_channels, 256, 3, 2, 1, 1))
@@ -144,20 +145,20 @@ class Discriminator(Network):
         layer_defs.append(Flatten())
         layer_defs.append(nn.Linear(256,2))
         return nn.Sequential(*layer_defs)
-        
+
     def loss(self, input, labels):
-        
+
         criterion = nn.CrossEntropyLoss()
-        
-        
+
+
         return criterion(input, labels)
-    
-    def forward(self, data):        
+
+    def forward(self, data):
         if type(data) is dict:
             vocal_stacked = np.concatenate(
                 (data['offvocal_mel'], data['offvocal_phase']), axis=1)
             data = torch.Tensor(vocal_stacked).cuda()
         return self.model.forward(data)
-    
-    
-    
+
+
+

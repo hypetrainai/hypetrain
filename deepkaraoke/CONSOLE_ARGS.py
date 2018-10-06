@@ -12,7 +12,7 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('--log_dir', type=str, default='trained_models/test_new', help='where to save the models')
 parser.add_argument('--module_name', type=str, default='fftmodel')
-parser.add_argument('--model_name', type=str, default='Simple')
+parser.add_argument('--model_name', type=str, default='Generator')
 parser.add_argument('--lr', type=int, default=0.01)
 
 if run_from_ipython():

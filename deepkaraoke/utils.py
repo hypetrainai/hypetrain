@@ -31,7 +31,7 @@ def PlotMel(title, mel, sr=44100, hop_length_ms=10, fmin=25):
         x_axis='time',
         cmap='viridis')
     plt.colorbar()
-    plt.clim(1, 6);
+    plt.clim(0, 4);
     plt.title(title)
     plt.tight_layout()
     fig.canvas.draw()
@@ -69,33 +69,33 @@ def MelSpectrogram(waveform_or_stft,
                    sr=44100,
                    hop_length_ms=10,
                    window_length_ms=40,
-                   n_mels=128,
+                   n_mels=80,
                    fmin=25):
     if len(waveform_or_stft.shape) == 1:
         stft = STFT(waveform_or_stft, sr, hop_length_ms, window_length_ms)
     else:
         stft = waveform_or_stft
 
-    n_fft, _ = NFFT(sr, window_length_ms)
-    mel_matrix = librosa.filters.mel(sr, n_fft, n_mels, fmin)
     # TODO: Use mel.
+    # n_fft, _ = NFFT(sr, window_length_ms)
+    # mel_matrix = librosa.filters.mel(sr, n_fft, n_mels, fmin)
     # mel = np.dot(mel_matrix, np.abs(stft)**2)
     mel = np.abs(stft)**2
-    return (1 + mel)**(1./3.)
+    return mel**(1./3.)
 
 
 def InverseMelSpectrogram(mel_spectrogram,
                           sr=44100,
                           window_length_ms=40,
-                          n_mels=128,
+                          n_mels=80,
                           fmin=25):
     """Returns stft magnitudes. Follow up with InverseSTFT for waveforms."""
-    mel_spectrogram = mel_spectrogram**3 - 1
+    mel_spectrogram = mel_spectrogram**3
 
-    n_fft, _ = NFFT(sr, window_length_ms)
-    mel_matrix = librosa.filters.mel(sr, n_fft, n_mels, fmin)
-    inv_mel_matrix = np.linalg.pinv(mel_matrix)
     # TODO: Use mel.
+    # n_fft, _ = NFFT(sr, window_length_ms)
+    # mel_matrix = librosa.filters.mel(sr, n_fft, n_mels, fmin)
+    # inv_mel_matrix = np.linalg.pinv(mel_matrix)
     # linear_spectrogram = np.dot(inv_mel_matrix, mel_spectrogram)
     linear_spectrogram = mel_spectrogram
     return np.sqrt(np.maximum(0, linear_spectrogram))
