@@ -4,23 +4,15 @@ import numpy as np
 from submodules import convbn_1d
 from network import Network
 import utils
+from CONSOLE_ARGS import ARGS as FLAGS
 
 
 class Generator(Network):
 
-    def __init__(self, summary_writer):
-        self.sr = 44100
-        self.hop_length_ms = 10
-        self.window_length_ms = 40
-        self.n_mels = 80
-        self.fmin = 0
-        super(Generator, self).__init__(summary_writer)
-
     def BuildModel(self):
-        n_fft, _ = utils.NFFT(self.sr, self.window_length_ms)
-        fft_channels = (n_fft + 1) // 2 + 1
+        n_fft, fft_channels, _ = utils.NFFT()
         # TODO: Use mel.
-        # input_channels = self.n_mels + fft_channels
+        # input_channels = FLAGS.n_mels + fft_channels
         input_channels = 2 * fft_channels
         layer_defs = []
         layer_defs.append(convbn_1d(input_channels, 256, 3, 1, 1, 1))
@@ -39,21 +31,13 @@ class Generator(Network):
         for d in data:
             data_vocal = d.data[0]
             data_vocal = utils.Convert16BitToFloat(data_vocal)
-            stft_vocal = utils.STFT(
-                data_vocal, self.sr, self.hop_length_ms, self.window_length_ms)
+            stft_vocal = utils.STFT(data_vocal)
             data_offvocal = d.data[1]
             data_offvocal = utils.Convert16BitToFloat(data_offvocal)
-            stft_offvocal = utils.STFT(
-                data_offvocal, self.sr, self.hop_length_ms, self.window_length_ms)
-            ret['vocal_mel'].append(
-                utils.MelSpectrogram(
-                    stft_vocal, self.sr, self.hop_length_ms,
-                    self.window_length_ms, self.n_mels, self.fmin))
+            stft_offvocal = utils.STFT(data_offvocal)
+            ret['vocal_mel'].append(utils.MelSpectrogram(stft_vocal))
             ret['vocal_phase'].append(np.angle(stft_vocal))
-            ret['offvocal_mel'].append(
-                utils.MelSpectrogram(
-                    stft_offvocal, self.sr, self.hop_length_ms,
-                    self.window_length_ms, self.n_mels, self.fmin))
+            ret['offvocal_mel'].append(utils.MelSpectrogram(stft_offvocal))
             ret['offvocal_phase'].append(np.angle(stft_offvocal))
         return ret
 
@@ -64,8 +48,7 @@ class Generator(Network):
         return self.model.forward(vocal_stacked)
 
     def loss(self, prediction, data):
-        n_fft, _ = utils.NFFT(self.sr, self.window_length_ms)
-        fft_channels = (n_fft + 1) // 2 + 1
+        n_fft, fft_channels, _ = utils.NFFT()
         predicted_mel = prediction[:, :-fft_channels]
         predicted_phase = prediction[:, -fft_channels:]
         predicted_real = predicted_mel * torch.cos(predicted_phase)
@@ -86,8 +69,7 @@ class Generator(Network):
         prediction = prediction.detach().cpu().numpy()
         assert prediction.shape[0] == 1
 
-        n_fft, _ = utils.NFFT(self.sr, self.window_length_ms)
-        fft_channels = (n_fft + 1) // 2 + 1
+        n_fft, fft_channels, _ = utils.NFFT()
         predicted_mel = prediction[0, :-fft_channels]
         # TODO: predict phase.
         # predicted_phase = prediction[0, -fft_channels:]
@@ -104,11 +86,9 @@ class Generator(Network):
                                        utils.PlotMel('predicted', predicted_mel),
                                        self.current_step)
 
-        predicted_magnitude = utils.InverseMelSpectrogram(
-            predicted_mel, self.sr, self.window_length_ms, self.n_mels, self.fmin)
+        predicted_magnitude = utils.InverseMelSpectrogram(predicted_mel)
         predicted_stft = predicted_magnitude * np.exp(1j * predicted_phase)
-        result = utils.InverseSTFT(
-            predicted_stft, self.sr, self.hop_length_ms, self.window_length_ms)
+        result = utils.InverseSTFT(predicted_stft)
         return result
 
 class Flatten(nn.Module):
@@ -121,19 +101,8 @@ class Flatten(nn.Module):
 
 class Discriminator(Network):
 
-    def __init__(self, summary_writer):
-
-        self.sr = 44100
-        self.hop_length_ms = 10
-        self.window_length_ms = 40
-        self.n_mels = 128
-        self.fmin = 0
-
-        super(Discriminator, self).__init__(summary_writer)
-
     def BuildModel(self):
-        n_fft, _ = utils.NFFT(self.sr, self.window_length_ms)
-        fft_channels = (n_fft + 1) // 2 + 1
+        n_fft, fft_channels, _ = utils.NFFT()
 
         input_channels = 2 * fft_channels
         layer_defs = []
