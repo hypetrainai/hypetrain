@@ -33,6 +33,7 @@ def PlotMel(title, mel):
         hop_length=MillisecondsToSamples(FLAGS.hop_length_ms),
         fmin=FLAGS.fmin,
         x_axis='time',
+        y_axis='linear',  # TODO: use mel.
         cmap='viridis')
     plt.colorbar()
     plt.clim(0, 4);

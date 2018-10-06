@@ -43,32 +43,32 @@ for step in range(1, 100000):
 
     model.current_step = step
 
-    
+
     prediction = model.forward(data)
     loss = model.loss(prediction, data)
     writer.add_scalar('loss_train/total', loss, step)
-    
+
     GAN_pred = model_D.forward(prediction)
     GAN_gt = model_D.forward(data)
     #gt_disc = torch.cat([torch.zeros([GAN_pred.size(0)]).type(torch.int), torch.ones([GAN_gt.size(0)]).type(torch.int)])
-    
+
     scores_pred = torch.clamp(F.softmax(GAN_pred, 1), 0.00001, 0.99999)
     scores_gt = torch.clamp(F.softmax(GAN_gt, 1), 0.00001, 0.99999)
-    
+
     #print(scores_pred)
-    
+
     GAN_loss = -1.0*torch.mean(torch.log(1.0-scores_pred[:,0]))
     #print(GAN_loss)
     writer.add_scalar('loss_train/GAN_gen_loss', GAN_loss, step)
 
     loss += GAN_loss
-    
+
     loss.backward()
 
     optimizer.step()
     optimizer.zero_grad()
     optimizer_disc.zero_grad()
-    
+
     for disc_step in range(2):
         data = train_dataset.get_random_batch(20000)
         data = model.preprocess(data)
@@ -78,12 +78,12 @@ for step in range(1, 100000):
 
         GAN_pred = model_D.forward(prediction)
         GAN_gt = model_D.forward(data)
-        
+
         scores_pred = torch.clamp(F.softmax(GAN_pred, 1), 0.00001, 0.99999)
         scores_gt = torch.clamp(F.softmax(GAN_gt, 1), 0.00001, 0.99999)
-    
+
         GAN_loss_disc = torch.mean(torch.log(1.0-scores_pred[:,0]))+torch.mean(torch.log(scores_gt[:,0]))
-        
+
         GAN_loss_disc.backward()
         optimizer_disc.step()
         optimizer_disc.zero_grad()
