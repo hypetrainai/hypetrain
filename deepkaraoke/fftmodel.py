@@ -57,7 +57,7 @@ class Generator(Network):
         # TODO: predict phase.
         # loss = torch.mean((predicted_real - gt_real)**2 +
         #                   (predicted_imag - gt_imag)**2)
-        predicted_mel = 1 + torch.sqrt(predicted_real**2 + predicted_imag**2)
+        predicted_mel = torch.sqrt(predicted_real**2 + predicted_imag**2)
         loss = torch.mean((predicted_mel - gt_mel)**2)
         return loss
 
@@ -69,7 +69,7 @@ class Generator(Network):
         n_fft, fft_channels, _ = utils.NFFT()
         predicted_real = prediction[0, :-fft_channels]
         predicted_imag = prediction[0, -fft_channels:]
-        predicted_mel = 1 + np.sqrt(predicted_real**2 + predicted_imag**2)
+        predicted_mel = np.sqrt(predicted_real**2 + predicted_imag**2)
         # TODO: predict phase.
         predicted_phase = data['vocal_phase'][0]
 
