@@ -62,7 +62,7 @@ class Generator(Network):
         loss = torch.mean((predicted_mel - gt_mel)**2)
         return loss
 
-    def predict(self, data):
+    def predict(self, data, summary_prefix=''):
         prediction = self.forward(data)
         prediction = prediction.detach().cpu().numpy()
         assert prediction.shape[0] == 1
@@ -74,7 +74,6 @@ class Generator(Network):
         # TODO: predict phase.
         predicted_phase = data['vocal_phase'][0]
 
-        summary_prefix = 'train' if self.training else 'test'
         self._summary_writer.add_image(summary_prefix + '/gt_onvocal',
                                        utils.PlotMel('gt onvocal', data['vocal_mel'][0]),
                                        self.current_step)

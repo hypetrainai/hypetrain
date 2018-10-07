@@ -43,6 +43,7 @@ def PlotMel(title, mel):
     data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
     data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
     data = data.transpose([2, 0, 1])
+    plt.close()
     return data
 
 

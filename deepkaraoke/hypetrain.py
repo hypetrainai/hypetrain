@@ -34,6 +34,7 @@ model = NNModel(writer)
 optimizer = optim.Adam(model.parameters(), lr = FLAGS.lr)
 
 start_time = time.time()
+last_step = 0
 for step in range(1, 100000):
 
     model.current_step = step
@@ -49,9 +50,9 @@ for step in range(1, 100000):
     optimizer.step()
     optimizer.zero_grad()
 
-    if step%100 == 0:
+    if step < 100 or step%100 == 0:
         print('Oh no! Your training loss is %.3f at step %d' % (loss, step))
-        writer.add_scalar('steps/s', 100.0 / (time.time() - start_time), step)
+        writer.add_scalar('steps/s', (step - last_step) / (time.time() - start_time), step)
 
     if step%1000 == 0:
         print('Evaluating model!')
@@ -59,7 +60,7 @@ for step in range(1, 100000):
         model.eval()
         with torch.no_grad():
             torch.cuda.empty_cache()
-            data = test_dataset.get_random_batch(20000)
+            data = test_dataset.get_random_batch(10000)
             data = model.preprocess(data)
             prediction = model.forward(data)
             loss = model.loss(prediction, data)
@@ -70,7 +71,7 @@ for step in range(1, 100000):
                 torch.cuda.empty_cache()
                 # data = dataset.get_random_batch(500000, batch_size=1)
                 data = [dataset.get_single_segment(extract_idx=0, start_value=3000000, sample_length=200000)]
-                prediction = model.predict(model.preprocess(data))
+                prediction = model.predict(model.preprocess(data), prefix)
                 writer.add_audio(prefix + '/predicted', prediction, step, sample_rate=FLAGS.sample_rate)
                 on_vocal, off_vocal = utils.Convert16BitToFloat(data[0].data[0], data[0].data[1])
                 writer.add_audio(prefix + '/gt_onvocal', on_vocal, step, sample_rate=FLAGS.sample_rate)
@@ -94,3 +95,4 @@ for step in range(1, 100000):
 
     if step%100 == 0:
         start_time = time.time()
+        last_step = step

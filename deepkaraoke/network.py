@@ -20,7 +20,7 @@ class Network(nn.Module):
     def loss(self, prediction, data):
         raise NotImplementedError()
 
-    def predict(self, data):
+    def predict(self, data, summary_prefix=''):
         prediction = self.forward(data)
         prediction = prediction.detach().cpu().numpy()
         assert prediction.shape[0] == 1
