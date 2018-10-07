@@ -83,12 +83,12 @@ def MelSpectrogram(waveform_or_stft):
     # mel_matrix = librosa.filters.mel(FLAGS.sample_rate, n_fft, FLAGS.n_mels, FLAGS.fmin)
     # mel = np.dot(mel_matrix, np.abs(stft)**2)
     mel = np.abs(stft)**2
-    return mel**(1./3.)
+    return (1 + mel)**(1./3.)
 
 
 def InverseMelSpectrogram(mel_spectrogram):
     """Returns stft magnitudes. Follow up with InverseSTFT for waveforms."""
-    mel_spectrogram = mel_spectrogram**3
+    mel_spectrogram = mel_spectrogram**3 - 1
 
     # TODO: Use mel.
     # n_fft, _, _ = NFFT()

@@ -49,19 +49,17 @@ class Generator(Network):
 
     def loss(self, prediction, data):
         n_fft, fft_channels, _ = utils.NFFT()
-        predicted_mel = prediction[:, :-fft_channels]
-        predicted_phase = prediction[:, -fft_channels:]
-        predicted_real = predicted_mel * torch.cos(predicted_phase)
-        predicted_imag = predicted_mel * torch.sin(predicted_phase)
+        predicted_real = prediction[:, :-fft_channels]
+        predicted_imag = prediction[:, -fft_channels:]
         gt_mel = torch.Tensor(data['offvocal_mel']).cuda()
         gt_phase = torch.Tensor(data['offvocal_phase']).cuda()
         gt_real = gt_mel * torch.cos(gt_phase)
         gt_imag = gt_mel * torch.sin(gt_phase)
-        loss = torch.mean((predicted_real - gt_real)**2 +
-                          (predicted_imag - gt_imag)**2)
-
-        summary_prefix = 'loss_train' if self.training else 'loss_test'
-        self._summary_writer.add_scalar(summary_prefix, loss, self.current_step)
+        # TODO: predict phase.
+        # loss = torch.mean((predicted_real - gt_real)**2 +
+        #                   (predicted_imag - gt_imag)**2)
+        predicted_mel = torch.sqrt(predicted_real**2 + predicted_imag**2)
+        loss = torch.mean((predicted_mel - gt_mel)**2)
         return loss
 
     def predict(self, data):
@@ -70,9 +68,10 @@ class Generator(Network):
         assert prediction.shape[0] == 1
 
         n_fft, fft_channels, _ = utils.NFFT()
-        predicted_mel = prediction[0, :-fft_channels]
+        predicted_real = prediction[0, :-fft_channels]
+        predicted_imag = prediction[:, -fft_channels:]
+        predicted_mel = np.sqrt(predicted_real**2 + predicted_imag**2)
         # TODO: predict phase.
-        # predicted_phase = prediction[0, -fft_channels:]
         predicted_phase = data['vocal_phase'][0]
 
         summary_prefix = 'train' if self.training else 'test'
