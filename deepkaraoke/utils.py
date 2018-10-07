@@ -36,7 +36,7 @@ def PlotMel(title, mel):
         y_axis='linear',  # TODO: use mel.
         cmap='viridis')
     plt.colorbar()
-    plt.clim(0, 4);
+    plt.clim(1, 5);
     plt.title(title)
     plt.tight_layout()
     fig.canvas.draw()
@@ -88,6 +88,7 @@ def MelSpectrogram(waveform_or_stft):
 
 def InverseMelSpectrogram(mel_spectrogram):
     """Returns stft magnitudes. Follow up with InverseSTFT for waveforms."""
+    assert np.all(mel_spectrogram >= 1.0)
     mel_spectrogram = mel_spectrogram**3 - 1
 
     # TODO: Use mel.
@@ -96,4 +97,4 @@ def InverseMelSpectrogram(mel_spectrogram):
     # inv_mel_matrix = np.linalg.pinv(mel_matrix)
     # linear_spectrogram = np.dot(inv_mel_matrix, mel_spectrogram)
     linear_spectrogram = mel_spectrogram
-    return np.sqrt(np.maximum(0, linear_spectrogram))
+    return np.sqrt(np.maximum(0.0, linear_spectrogram))
