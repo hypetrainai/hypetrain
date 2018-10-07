@@ -110,7 +110,7 @@ class Discriminator(Network):
             layer_defs.append(convbn_1d(256, 256, 3, 1, 1, 1))
             layer_defs.append(convbn_1d(256, 256, 3, 1, 1, 1))
         layer_defs.append(Flatten())
-        layer_defs.append(nn.Linear(4864,2))
+        layer_defs.append(nn.Linear(15360,2))
         return nn.Sequential(*layer_defs)
 
     def loss(self, input, labels):

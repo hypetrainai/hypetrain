@@ -10,7 +10,7 @@ def run_from_ipython():
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--log_dir', type=str, default='trained_models/test_debug', help='where to save the models')
+parser.add_argument('--log_dir', type=str, default='trained_models/GAN0p001_batch64', help='where to save the models')
 parser.add_argument('--module_name', type=str, default='fftmodel')
 parser.add_argument('--model_name', type=str, default='Generator')
 parser.add_argument('--lr', type=float, default=0.01)

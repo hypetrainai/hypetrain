@@ -26,7 +26,7 @@ from tensorboardX import SummaryWriter
 os.makedirs(FLAGS.log_dir, exist_ok=True)
 writer = SummaryWriter(FLAGS.log_dir)
 
-batch_size = 24
+batch_size = 64
 train_dataset = dataloader.KaraokeDataLoader('data/train.pkl.gz', batch_size = batch_size)
 test_dataset = dataloader.KaraokeDataLoader('data/test.pkl.gz', batch_size = batch_size)
 
@@ -34,7 +34,7 @@ NNModel = getattr(importlib.import_module(FLAGS.module_name), FLAGS.model_name)
 model_D = disc(writer)
 model = NNModel(writer)
 optimizer = optim.Adam(model.parameters(), lr = FLAGS.lr)
-optimizer_disc = optim.Adam(model_D.parameters(), lr = 0.02*FLAGS.lr)
+optimizer_disc = optim.Adam(model_D.parameters(), lr = 0.001*FLAGS.lr)
 
 start_time = time.time()
 for step in range(1, 100000):
@@ -61,20 +61,19 @@ for step in range(1, 100000):
     #print(GAN_loss)
     writer.add_scalar('loss_train/GAN_gen_loss', GAN_loss, step)
 
-    loss += GAN_loss
+    total_loss = loss + 0.002*GAN_loss
 
-    loss.backward()
+    total_loss.backward()
 
     optimizer.step()
     optimizer.zero_grad()
     optimizer_disc.zero_grad()
 
-    for disc_step in range(2):
+    for disc_step in range(5):
         data = train_dataset.get_random_batch(20000)
         data = model.preprocess(data)
         prediction = model.forward(data)
-        loss = model.loss(prediction, data)
-        writer.add_scalar('loss_train/total', loss, step)
+        #writer.add_scalar('loss_train/total', loss, step)
 
         GAN_pred = model_D.forward(prediction)
         GAN_gt = model_D.forward(data)
