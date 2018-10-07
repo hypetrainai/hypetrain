@@ -74,13 +74,13 @@ class Generator(Network):
         # TODO: predict phase.
         predicted_phase = data['vocal_phase'][0]
 
-        self._summary_writer.add_image(summary_prefix + '/gt_onvocal',
+        self._summary_writer.add_image(summary_prefix + '/gt_mel_onvocal',
                                        utils.PlotMel('gt onvocal', data['vocal_mel'][0]),
                                        self.current_step)
-        self._summary_writer.add_image(summary_prefix + '/gt_offvocal',
+        self._summary_writer.add_image(summary_prefix + '/gt_mel_offvocal',
                                        utils.PlotMel('gt offvocal', data['offvocal_mel'][0]),
                                        self.current_step)
-        self._summary_writer.add_image(summary_prefix + '/predicted',
+        self._summary_writer.add_image(summary_prefix + '/predicted_mel',
                                        utils.PlotMel('predicted', predicted_mel),
                                        self.current_step)
 
