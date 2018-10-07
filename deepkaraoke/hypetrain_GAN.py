@@ -69,7 +69,7 @@ for step in range(1, 100000):
     optimizer.zero_grad()
     optimizer_disc.zero_grad()
 
-    for disc_step in range(5):
+    for disc_step in range(3):
         data = train_dataset.get_random_batch(20000)
         data = model.preprocess(data)
         prediction = model.forward(data)
@@ -89,7 +89,7 @@ for step in range(1, 100000):
         optimizer.zero_grad()
     writer.add_scalar('loss_train/disc_loss', GAN_loss_disc, step)
 
-    if step%100 == 0:
+    if step%25 == 0:
         print('Oh no! Your training loss is %.3f at step %d' % (loss, step))
         writer.add_scalar('steps/s', 100.0 / (time.time() - start_time), step)
 
@@ -113,7 +113,6 @@ for step in range(1, 100000):
                 prediction = model.predict(model.preprocess(data))
                 writer.add_audio(prefix + '/predicted', prediction, step, sample_rate=FLAGS.sample_rate)
                 on_vocal, off_vocal = utils.Convert16BitToFloat(data[0].data[0], data[0].data[1])
-                print(off_vocal.shape)
                 writer.add_audio(prefix + '/gt_onvocal', on_vocal, step, sample_rate=FLAGS.sample_rate)
                 writer.add_audio(prefix + '/gt_offvocal', off_vocal, step, sample_rate=FLAGS.sample_rate)
         torch.cuda.empty_cache()
