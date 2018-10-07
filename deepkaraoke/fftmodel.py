@@ -1,11 +1,10 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from submodules import convbn_1d
+import submodules
 from network import Network
 import utils
 from CONSOLE_ARGS import ARGS as FLAGS
-
 
 class Generator(Network):
 
@@ -15,9 +14,9 @@ class Generator(Network):
         # input_channels = FLAGS.n_mels + fft_channels
         input_channels = 2 * fft_channels
         layer_defs = []
-        layer_defs.append(convbn_1d(input_channels, 256, 3, 1, 1, 1))
-        for i in range(11):
-            layer_defs.append(convbn_1d(256, 256, 3, 1, 1, 1))
+        layer_defs.append(nn.Conv1d(input_channels, 256, 1, 1))
+        for i in range(50):
+            layer_defs.append(submodules.ResNetModule1d(256, 256, 3, 1, 1, 1))
         layer_defs.append(nn.Conv1d(256, input_channels, 1, 1))
         return nn.Sequential(*layer_defs)
 
@@ -104,11 +103,11 @@ class Discriminator(Network):
 
         input_channels = 2 * fft_channels
         layer_defs = []
-        layer_defs.append(convbn_1d(input_channels, 256, 3, 2, 1, 1))
-        layer_defs.append(convbn_1d(256, 256, 3, 1, 1, 1))
+        layer_defs.append(submodules.ResNetModule1d(input_channels, 256, 3, 2, 1, 1))
+        layer_defs.append(submodules.ResNetModule1d(256, 256, 3, 1, 1, 1))
         for i in range(4):
-            layer_defs.append(convbn_1d(256, 256, 3, 1, 1, 1))
-            layer_defs.append(convbn_1d(256, 256, 3, 1, 1, 1))
+            layer_defs.append(submodules.ResNetModule1d(256, 256, 3, 1, 1, 1))
+            layer_defs.append(submodules.ResNetModule1d(256, 256, 3, 1, 1, 1))
         layer_defs.append(Flatten())
         layer_defs.append(nn.Linear(15360,2))
         return nn.Sequential(*layer_defs)

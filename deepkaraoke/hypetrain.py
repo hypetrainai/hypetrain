@@ -31,7 +31,8 @@ test_dataset = dataloader.KaraokeDataLoader('data/test.pkl.gz', batch_size = bat
 
 NNModel = getattr(importlib.import_module(FLAGS.module_name), FLAGS.model_name)
 model = NNModel(writer)
-optimizer = optim.Adam(model.parameters(), lr = FLAGS.lr)
+current_lr = FLAGS.lr / 10
+optimizer = optim.Adam(model.parameters(), lr = current_lr)
 
 start_time = time.time()
 last_step = 0
@@ -89,9 +90,15 @@ for step in range(1, 100000):
         torch.save(model_state, FLAGS.log_dir + '/model_%d.pt' % step)
         print('Uploading Prediction!')
 
+    if step == 10:
+        current_lr = FLAGS.lr
+
     if step%25000 == 0:
-        for param_group in optimizer.param_groups:
-            param_group['lr'] *= 0.2
+        current_lr *= 0.2
+
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = current_lr
+    writer.add_scalar('lr', current_lr, step)
 
     if step%100 == 0:
         start_time = time.time()
