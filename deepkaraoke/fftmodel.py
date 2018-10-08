@@ -54,11 +54,8 @@ class Generator(Network):
         gt_phase = torch.Tensor(data['offvocal_phase']).cuda()
         gt_real = gt_mel * torch.cos(gt_phase)
         gt_imag = gt_mel * torch.sin(gt_phase)
-        # TODO: predict phase.
-        # loss = torch.mean((predicted_real - gt_real)**2 +
-        #                   (predicted_imag - gt_imag)**2)
-        predicted_mel = torch.sqrt(predicted_real**2 + predicted_imag**2)
-        loss = torch.mean((predicted_mel - gt_mel)**2)
+        loss = torch.mean((predicted_real - gt_real)**2 +
+                          (predicted_imag - gt_imag)**2)
         return loss
 
     def predict(self, data, summary_prefix=''):
@@ -70,8 +67,7 @@ class Generator(Network):
         predicted_real = prediction[0, :-fft_channels]
         predicted_imag = prediction[0, -fft_channels:]
         predicted_mel = np.sqrt(predicted_real**2 + predicted_imag**2)
-        # TODO: predict phase.
-        predicted_phase = data['vocal_phase'][0]
+        predicted_phase = np.arctan2(predicted_imag, predicted_real)
 
         self._summary_writer.add_image(summary_prefix + '/gt_mel_onvocal',
                                        utils.PlotMel('gt onvocal', data['vocal_mel'][0]),
