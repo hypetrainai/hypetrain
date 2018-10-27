@@ -69,6 +69,7 @@ class Generator(Network):
         predicted_mel = np.sqrt(predicted_real**2 + predicted_imag**2)
         predicted_phase = np.arctan2(predicted_imag, predicted_real)
 
+        '''
         self._summary_writer.add_image(summary_prefix + '/gt_mel_onvocal',
                                        utils.PlotMel('gt onvocal', data['vocal_mel'][0]),
                                        self.current_step)
@@ -78,7 +79,7 @@ class Generator(Network):
         self._summary_writer.add_image(summary_prefix + '/predicted_mel',
                                        utils.PlotMel('predicted', predicted_mel),
                                        self.current_step)
-
+        '''
         predicted_magnitude = utils.InverseMelSpectrogram(predicted_mel)
         predicted_stft = predicted_magnitude * np.exp(1j * predicted_phase)
         result = utils.InverseSTFT(predicted_stft)
@@ -99,11 +100,11 @@ class Discriminator(Network):
 
         input_channels = 2 * fft_channels
         layer_defs = []
-        layer_defs.append(submodules.ResNetModule1d(input_channels, 256, 3, 2, 1, 1))
-        layer_defs.append(submodules.ResNetModule1d(256, 256, 3, 1, 1, 1))
+        layer_defs.append(submodules.convbn_1d(input_channels, 256, 3, 2, 1, 1))
+        layer_defs.append(submodules.convbn_1d(256, 256, 3, 1, 1, 1))
         for i in range(4):
-            layer_defs.append(submodules.ResNetModule1d(256, 256, 3, 1, 1, 1))
-            layer_defs.append(submodules.ResNetModule1d(256, 256, 3, 1, 1, 1))
+            layer_defs.append(submodules.convbn_1d(256, 256, 3, 1, 1, 1))
+            layer_defs.append(submodules.convbn_1d(256, 256, 3, 1, 1, 1))
         layer_defs.append(Flatten())
         layer_defs.append(nn.Linear(15360,2))
         return nn.Sequential(*layer_defs)

@@ -34,8 +34,18 @@ NNModel = getattr(importlib.import_module(FLAGS.module_name), FLAGS.model_name)
 model_D = disc(writer)
 model = NNModel(writer)
 optimizer = optim.Adam(model.parameters(), lr = FLAGS.lr)
-optimizer_disc = optim.Adam(model_D.parameters(), lr = 0.001*FLAGS.lr)
+optimizer_disc = optim.Adam(model_D.parameters(), lr = 0.0025*FLAGS.lr)
 
+'''
+model_state = torch.load('trained_models/GAN0p001_batch64_new/model_20000.pt')
+disc_state = torch.load('trained_models/GAN0p001_batch64_new/model_disc_20000.pt')
+
+model.load_state_dict(model_state['state_dict'])
+optimizer.load_state_dict(model_state['optimizer'])
+
+model_D.load_state_dict(disc_state['state_dict'])
+optimizer_disc.load_state_dict(disc_state['optimizer'])
+'''
 start_time = time.time()
 for step in range(1, 100000):
     data = train_dataset.get_random_batch(20000)
@@ -68,8 +78,10 @@ for step in range(1, 100000):
     optimizer.step()
     optimizer.zero_grad()
     optimizer_disc.zero_grad()
+    
+    disc_iter = 3
 
-    for disc_step in range(3):
+    for disc_step in range(disc_iter):
         data = train_dataset.get_random_batch(20000)
         data = model.preprocess(data)
         prediction = model.forward(data)
@@ -91,7 +103,7 @@ for step in range(1, 100000):
 
     if step%25 == 0:
         print('Oh no! Your training loss is %.3f at step %d' % (loss, step))
-        writer.add_scalar('steps/s', 100.0 / (time.time() - start_time), step)
+        writer.add_scalar('steps/s', 25.0 / (time.time() - start_time), step)
 
     if step%1000 == 0:
         print('Evaluating model!')
@@ -109,7 +121,7 @@ for step in range(1, 100000):
             for dataset, prefix in [(train_dataset, 'train'), (test_dataset, 'test')]:
                 torch.cuda.empty_cache()
                 # data = dataset.get_random_batch(500000, batch_size=1)
-                data = [dataset.get_single_segment(extract_idx=0, start_value=3000000, sample_length=200000)]
+                data = [dataset.get_single_segment(extract_idx=0, start_value=2000000, sample_length=200000)]
                 prediction = model.predict(model.preprocess(data))
                 writer.add_audio(prefix + '/predicted', prediction, step, sample_rate=FLAGS.sample_rate)
                 on_vocal, off_vocal = utils.Convert16BitToFloat(data[0].data[0], data[0].data[1])
@@ -118,17 +130,22 @@ for step in range(1, 100000):
         torch.cuda.empty_cache()
         model.train()
 
-    if step%2500 == 0:
+    if step%2000 == 0:
         print('Saving model!')
         model_state = {
             'step': step,
             'state_dict': model.state_dict(),
             'optimizer': optimizer.state_dict()
         }
+        disc_model_state = {
+            'step': step,
+            'state_dict': model_D.state_dict(),
+            'optimizer': optimizer_disc.state_dict()
+        }
         torch.save(model_state, FLAGS.log_dir + '/model_%d.pt' % step)
-        print('Uploading Prediction!')
+        torch.save(disc_model_state, FLAGS.log_dir + '/model_disc_%d.pt' % step)
 
-    if step%25000 == 0:
+    if step%10000 == 0:
         for param_group in optimizer.param_groups:
             param_group['lr'] *= 0.2
 

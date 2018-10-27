@@ -50,6 +50,7 @@ class KaraokeDataLoader(object):
 
     def get_single_segment(self, extract_idx=0, start_value=3000000, sample_length=200000):
         sample_length = sample_length or self.sample_length
+        #print(sample_length)
         name = list(self.data.keys())[extract_idx]
         return DataItem(
             name=name,
