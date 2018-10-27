@@ -90,6 +90,10 @@ delete_button = tk.Button(lf, text='Delete', width=10, anchor=tk.W)
 delete_button.grid(row=len(layers)+len(list_other_widgets), columnspan=2, sticky=tk.W)
 list_other_widgets.append(delete_button)
 
+disconnect_button = tk.Button(lf, text='Disconnect', width=10, anchor=tk.W)
+disconnect_button.grid(row=len(layers)+len(list_other_widgets), columnspan=2, sticky=tk.W)
+list_other_widgets.append(disconnect_button)
+
 run_button = tk.Button(lf, text='Run', width=10, anchor=tk.W)
 run_button.grid(row=len(layers)+len(list_other_widgets), columnspan=2, sticky=tk.W)
 list_other_widgets.append(run_button)
@@ -160,6 +164,13 @@ def delete_curr_node():
     del(list_nodes[index])
 
 delete_button.config(command=delete_curr_node)
+
+def disconnect_curr_node():
+    if currNode.layer is None:
+        return
+    currNode.disconnect(main_canvas)
+
+disconnect_button.config(command=disconnect_curr_node)
 
 
 def selectORcreate( event ):

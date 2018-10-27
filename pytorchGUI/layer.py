@@ -48,3 +48,8 @@ class layer:
         self.prev = None
         self.nextLayers = None
 
+    def disconnect_next(self, canvas):
+        for n in self.nextLayers:
+            canvas.delete(self.nextLayers[n])
+            del(n.prev[self])
+        self.nextLayers = {}

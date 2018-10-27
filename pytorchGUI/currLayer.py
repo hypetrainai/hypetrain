@@ -31,10 +31,10 @@ class currLayer:
             self.select(node, canvas)
         if self.rect:
             canvas.delete(self.rect)
-        self.generateRect(self.layer, canvas)
         self.layer.move(x, y, canvas)
         for n in self.layer.nextLayers:
             n.move(n.x, n.y, canvas)
+        self.generateRect(self.layer, canvas)
 
     def generateRect(self, node, canvas):
         x1, y1 = (node.x - 25), (node.y - 25)
@@ -45,3 +45,6 @@ class currLayer:
         curLayer = self.layer
         self.deselect(canvas)
         curLayer.delete(canvas)
+
+    def disconnect(self, canvas):
+        self.layer.disconnect_next(canvas)
