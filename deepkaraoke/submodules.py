@@ -33,10 +33,10 @@ nn.BatchNorm3d(out_planes))
 
 class ResNetModule1d(nn.Module):
 
-    def __init__(self, in_planes, out_planes, kernel_size, stride, pad, dilation, transpose=False):
+    def __init__(self, in_planes, out_planes, kernel_size, stride, pad, dilation, transpose=False, causal=False):
 
         super(ResNetModule1d, self).__init__()
-
+        self.causal = kernel_size - 1 if causal else 0
         self.convstart = convbn_1d(in_planes, out_planes//4, 1, stride=1, pad=0, dilation=1, transpose=transpose)
         self.convmid = convbn_1d(out_planes//4, out_planes//4, kernel_size, stride, pad, dilation, transpose)
         self.convend = convbn_1d(out_planes//4, out_planes, 1, stride=1, pad=0, dilation=1, transpose=transpose)
@@ -44,8 +44,10 @@ class ResNetModule1d(nn.Module):
     def forward(self, input):
         out = self.convstart(input)
         out = F.relu(out)
+        if self.causal:
+          out = torch.cat((torch.zeros_like(out[:, :, :self.causal, ...]),
+                           out[:, :, :-self.causal, ...]), dim=2)
         out = self.convmid(out)
         out = F.relu(out)
         out = self.convend(out)
-        return F.relu(out+input)
-
+        return F.relu(out + input)

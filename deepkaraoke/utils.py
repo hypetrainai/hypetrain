@@ -25,18 +25,18 @@ def FramesToSamples(num_frames):
     return num_frames * MillisecondsToSamples(FLAGS.hop_length_ms)
 
 
-def PlotMel(title, mel):
+def PlotSpectrogram(title, spectrogram, y_axis='linear'):
     fig = plt.figure(figsize=(10, 4))
     librosa.display.specshow(
-        mel,
+        spectrogram,
         sr=FLAGS.sample_rate,
         hop_length=MillisecondsToSamples(FLAGS.hop_length_ms),
         fmin=FLAGS.fmin,
         x_axis='time',
-        y_axis='linear',  # TODO: use mel.
+        y_axis=y_axis,
         cmap='viridis')
     plt.colorbar()
-    plt.clim(1, 5);
+    plt.clim(0, 4);
     plt.title(title)
     plt.tight_layout()
     fig.canvas.draw()
@@ -79,11 +79,9 @@ def MelSpectrogram(waveform_or_stft):
     else:
         stft = waveform_or_stft
 
-    # TODO: Use mel.
-    # n_fft, _, _ = NFFT()
-    # mel_matrix = librosa.filters.mel(FLAGS.sample_rate, n_fft, FLAGS.n_mels, FLAGS.fmin)
-    # mel = np.dot(mel_matrix, np.abs(stft)**2)
-    mel = np.abs(stft)**2
+    n_fft, _, _ = NFFT()
+    mel_matrix = librosa.filters.mel(FLAGS.sample_rate, n_fft, FLAGS.n_mels, FLAGS.fmin)
+    mel = np.dot(mel_matrix, np.abs(stft)**2)
     return (1 + mel)**(1./3.) - 1
 
 
@@ -92,10 +90,8 @@ def InverseMelSpectrogram(mel_spectrogram):
     assert np.all(mel_spectrogram >= 0.0)
     mel_spectrogram = (mel_spectrogram + 1)**3 - 1
 
-    # TODO: Use mel.
-    # n_fft, _, _ = NFFT()
-    # mel_matrix = librosa.filters.mel(FLAGS.sample_rate, n_fft, FLAGS.n_mels, FLAGS.fmin)
-    # inv_mel_matrix = np.linalg.pinv(mel_matrix)
-    # linear_spectrogram = np.dot(inv_mel_matrix, mel_spectrogram)
-    linear_spectrogram = mel_spectrogram
+    n_fft, _, _ = NFFT()
+    mel_matrix = librosa.filters.mel(FLAGS.sample_rate, n_fft, FLAGS.n_mels, FLAGS.fmin)
+    inv_mel_matrix = np.linalg.pinv(mel_matrix)
+    linear_spectrogram = np.dot(inv_mel_matrix, mel_spectrogram)
     return np.sqrt(np.maximum(0.0, linear_spectrogram))

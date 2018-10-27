@@ -21,7 +21,6 @@ class Network(nn.Module):
         raise NotImplementedError()
 
     def predict(self, data, summary_prefix=''):
-        prediction = self.forward(data)
         prediction = prediction.detach().cpu().numpy()
         assert prediction.shape[0] == 1
         return prediction

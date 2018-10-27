@@ -10,10 +10,7 @@ from network import Network
 
 
 class naive_generator(Network):
-    
-    #def __init__(self):
-    #    super(naive_generator, self).__init__()
-    
+
     def BuildModel(self):
         layer_defs = []
         layer_defs.append(convbn_1d(1,32,3,1,1,1))
