@@ -1,6 +1,5 @@
 from tkinter import *
 import tkinter as tk
-
 from layerType import *
 from varType import *
 from layer import *
@@ -87,25 +86,25 @@ list_other_widgets = []
 layertype = None
 networkSettings = NetworkSettings()
 
+delete_button = tk.Button(lf, text='Delete', width=10, anchor=tk.W)
+delete_button.grid(row=len(layers)+len(list_other_widgets), columnspan=2, sticky=tk.W)
+list_other_widgets.append(delete_button)
+
 run_button = tk.Button(lf, text='Run', width=10, anchor=tk.W)
 run_button.grid(row=len(layers)+len(list_other_widgets), columnspan=2, sticky=tk.W)
 list_other_widgets.append(run_button)
+def run_network():
+    run_fx()
+run_button.config(command=run_network)
 
 import_button = tk.Button(lf, text='Set Import Path', width=10, anchor=tk.W)
 import_button.grid(row=len(layers)+len(list_other_widgets), columnspan=2, sticky=tk.W)
 list_other_widgets.append(import_button)
-import_path = "test"
+import_button.config(command=networkSettings.setPath)
 
 b = tk.Button(lf, text='Create Code', width=10, anchor=tk.W)
 b.grid(row=len(layers)+len(list_other_widgets), columnspan=2, sticky=tk.W)
 list_other_widgets.append(b)
-
-lf_properties = tk.Frame(lf, bg="pale green")
-lf_properties.grid(row=len(layers)+len(list_other_widgets))
-currNode = currLayer(lf_properties)
-
-def run_network():
-    run_fx()
 
 def setin2():
     for button in buttons:
@@ -130,8 +129,8 @@ def setin2():
 def DFS_nodes(node, code_init,code_forward):
     node.covered = True
     for prev in node.prev:
-        if not prev[0].covered:
-            code_init,code_forward = DFS_nodes(prev[0], code_init,code_forward)
+        if not prev.covered:
+            code_init,code_forward = DFS_nodes(prev, code_init,code_forward)
     if node.layer.name == 'Input' or node.layer.name == 'Flatten':
         return code_init,code_forward
     statement = '    ' + node.layervars[0].var + ' = '
@@ -147,10 +146,21 @@ def DFS_nodes(node, code_init,code_forward):
     code_init.append(statement)
     return code_init,code_forward
 
-
-run_button.config(command=run_network)
-import_button.config(command=networkSettings.setPath)
 b.config(command=lambda: setin2())
+
+lf_properties = tk.Frame(lf, bg="pale green")
+lf_properties.grid(row=len(layers)+len(list_other_widgets))
+currNode = currLayer(lf_properties)
+
+def delete_curr_node():
+    if currNode.layer is None:
+        return
+    index = list_nodes.index(currNode.layer)
+    currNode.delete(main_canvas)
+    del(list_nodes[index])
+
+delete_button.config(command=delete_curr_node)
+
 
 def selectORcreate( event ):
     global layertype
@@ -175,10 +185,8 @@ def move( event ):
     if selected is None:
         return
     selected.move( event.x, event.y, main_canvas)
-    for node in list_nodes:
-        for prev in node.prev:
-            if prev[0] == selected:
-                node.move(node.x, node.y, main_canvas)
+    for n in selected.nextLayers:
+        n.move(n.x, n.y, main_canvas)
     currNode.select(selected, main_canvas)
     
 def connect( event ):
