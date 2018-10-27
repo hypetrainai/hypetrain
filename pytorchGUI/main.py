@@ -184,10 +184,7 @@ def move( event ):
     selected = currNode.layer
     if selected is None:
         return
-    selected.move( event.x, event.y, main_canvas)
-    for n in selected.nextLayers:
-        n.move(n.x, n.y, main_canvas)
-    currNode.select(selected, main_canvas)
+    currNode.move(selected, event.x, event.y, main_canvas)
     
 def connect( event ):
     x = event.x
