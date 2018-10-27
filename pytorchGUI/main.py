@@ -9,7 +9,7 @@ from nnet_backend import *
 
 
 layers = []
-Input = layerType("Input", "snow", 1, 1)
+Input = layerType("Input", "snow", 0, -1)
 Input.add_var("name", "str", 'Input')
 Input.add_var("Image Size X", "int", 256)
 Input.add_var("Image Size Y", "int", 256)
@@ -29,7 +29,7 @@ Fully_Conn = layerType("Fully Conn", "red", 1, 1)
 Fully_Conn.add_var("name", "str", 'FC')
 Fully_Conn.add_var("hidden_size", "int", 64)
 
-CE_loss = layerType("CE Loss", "purple", 1, 1)
+CE_loss = layerType("CE Loss", "purple", 2, 0)
 CE_loss.add_var("name", "str", 'loss')
 
 layers.append(Input)

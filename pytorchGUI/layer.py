@@ -1,5 +1,6 @@
 from tkinter import *
 import traceback
+import sys
 
 class layerVar:
     def __init__(self, vartype):
@@ -10,7 +11,7 @@ class layer:
     def __init__(self, x, y, canvas, layertype):
         self.x = x
         self.y = y
-        self.layer = layertype
+        self.type = layertype
         self.w = self.create_oval(canvas)
         self.prev = {}
         self.nextLayers = {}
@@ -20,7 +21,7 @@ class layer:
     def create_oval(self, canvas):
         x1,y1 = (self.x-25), (self.y-25)
         x2,y2 = (self.x+25), (self.y+25)                              
-        return canvas.create_oval(x1, y1, x2, y2, fill=self.layer.color)
+        return canvas.create_oval(x1, y1, x2, y2, fill=self.type.color)
     def move(self, x, y, canvas):
         self.x = x
         self.y = y
@@ -32,6 +33,8 @@ class layer:
     def connect(self, prev, canvas):
         if prev in self.prev:
             canvas.delete(self.prev[prev])
+        elif self.prev_available() <= 0 or prev.next_available() <= 0:
+            return
         line = canvas.create_line(prev.x, prev.y, self.x, self.y, arrow=LAST)
         self.prev[prev] = line
         prev.nextLayers[self] = line
@@ -53,3 +56,13 @@ class layer:
             canvas.delete(self.nextLayers[n])
             del(n.prev[self])
         self.nextLayers = {}
+
+    def prev_available(self):
+        if self.type.prevCount == -1:
+            return sys.maxsize
+        return self.type.prevCount - len(self.prev)
+
+    def next_available(self):
+        if self.type.nextCount == -1:
+            return sys.maxsize
+        return self.type.nextCount - len(self.nextLayers)
