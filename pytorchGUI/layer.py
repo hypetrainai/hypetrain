@@ -66,3 +66,11 @@ class layer:
         if self.type.nextCount == -1:
             return sys.maxsize
         return self.type.nextCount - len(self.nextLayers)
+
+    def get_vars(self):
+        var_array = {}
+        for layervar in self.layervars:
+            var_array[layervar.vartype.name] = layervar.var
+        return var_array
+
+
