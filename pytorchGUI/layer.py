@@ -73,4 +73,19 @@ class layer:
             var_array[layervar.vartype.name] = layervar.var
         return var_array
 
+    def __getitem__(self, key):
+        for layervar in self.layervars:
+            if layervar.vartype.name == key:
+                return layervar.var
+
+        print("could not find key " + key)
+        return None
+
+    def __setitem__(self, key, item):
+        for layervar in self.layervars:
+            if layervar.vartype.name == key:
+                layervar.var = item
+                return;
+
+        print("could not find key " + key)
 
