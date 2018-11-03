@@ -45,6 +45,7 @@ class currLayer:
         curLayer = self.layer
         self.deselect(canvas)
         curLayer.delete(canvas)
+        self.layer = None
 
     def disconnect(self, canvas):
         self.layer.disconnect_next(canvas)

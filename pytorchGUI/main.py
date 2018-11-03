@@ -95,10 +95,6 @@ list_other_widgets = []
 layertype = None
 networkSettings = NetworkSettings()
 
-delete_button = tk.Button(lf, text='Delete', width=10, anchor=tk.W)
-delete_button.grid(row=len(layers)+len(list_other_widgets), columnspan=2, sticky=tk.W)
-list_other_widgets.append(delete_button)
-
 disconnect_button = tk.Button(lf, text='Disconnect', width=10, anchor=tk.W)
 disconnect_button.grid(row=len(layers)+len(list_other_widgets), columnspan=2, sticky=tk.W)
 list_other_widgets.append(disconnect_button)
@@ -202,14 +198,12 @@ lf_properties = tk.Frame(lf, bg="pale green")
 lf_properties.grid(row=len(layers)+len(list_other_widgets))
 currNode = currLayer(lf_properties)
 
-def delete_curr_node():
+def delete_curr_node(event):
     if currNode.layer is None:
         return
     index = list_nodes.index(currNode.layer)
     currNode.delete(main_canvas)
     del(list_nodes[index])
-
-delete_button.config(command=delete_curr_node)
 
 def disconnect_curr_node():
     if currNode.layer is None:
@@ -244,6 +238,8 @@ def move( event ):
     currNode.move(selected, event.x, event.y, main_canvas)
     
 def connect( event ):
+    if currNode.layer is None:
+        return
     x = event.x
     y = event.y
     selected = None
@@ -258,5 +254,6 @@ def connect( event ):
 main_canvas.bind( "<Button-1>", selectORcreate)
 main_canvas.bind( "<Button-3>", connect)
 main_canvas.bind( "<B1-Motion>", move)
+root.bind( "<BackSpace>", delete_curr_node)
 
 mainloop()
