@@ -13,21 +13,26 @@ Input = layerType("Input", "snow", 0, -1)
 Input.add_var("name", "str", 'Input')
 Input.add_var("Image Size X", "int", 256)
 Input.add_var("Image Size Y", "int", 256)
-Input.add_var("Channel", "int", 3)
+Input.add_var("out_channels", "int", 3)
 Conv_2D = layerType("Conv 2D", "blue", 1, 1)
 Conv_2D.add_var("name", "str", 'conv2d')
 Conv_2D.add_var("code", "str", 'torch.nn.Conv2d')
-Conv_2D.add_var("out_channels", "int", 1)
+Conv_2D.add_var("out_channels", "int", 128)
 Conv_2D.add_var("kernel_size", "int", 3)
 Conv_2D.add_var("stride", "int", 1)
+Conv_2D.add_var("Image Size X", "int", 256)
+Conv_2D.add_var("Image Size Y", "int", 256)
 Max_Pool_2D = layerType("Max Pool 2D", "green", 1, 1)
 Max_Pool_2D.add_var("name", "str", 'maxpool')
 Max_Pool_2D.add_var("code", "str", 'torch.nn.MaxPool2d')
 Max_Pool_2D.add_var("kernel_size", "int", 3)
 Max_Pool_2D.add_var("stride", "int", 2)
-Max_Pool_2D.add_var("padding", "int", 1)
+Max_Pool_2D.add_var("out_channels", "int", 128)
+Max_Pool_2D.add_var("Image Size X", "int", 256)
+Max_Pool_2D.add_var("Image Size Y", "int", 256)
 Flatten = layerType("Flatten", "orange", 1, 1)
 Flatten.add_var("name", "str", 'flatten')
+Flatten.add_var("out_features", "int", 0)
 Fully_Conn = layerType("Fully Conn", "red", 1, 1)
 Fully_Conn.add_var("name", "str", 'FC')
 Fully_Conn.add_var("code", "str", 'torch.nn.Linear')
@@ -127,8 +132,9 @@ def setin2():
     for node in list_nodes:
         node.covered = False
     for node in list_nodes:
-        if node.layer == layers[5]:
+        if node.type == layers[5]:
             code_init,code_forward = DFS_nodes(node, code_init,code_forward)
+    code_forward.append('    return x')
     for line in code_init:
         print(line)
     for line in code_forward:
@@ -139,19 +145,55 @@ def DFS_nodes(node, code_init,code_forward):
     for prev in node.prev:
         if not prev.covered:
             code_init,code_forward = DFS_nodes(prev, code_init,code_forward)
-    if node.layer.name == 'Input' or node.layer.name == 'Flatten':
+    if node.type.name == 'Input':
         return code_init,code_forward
-    statement = '    ' + node.layervars[0].var + ' = '
-    if node.layer.name == 'Conv 2D':
-        padding = int((node.layervars[1].var-1)/2)
-        statement += 'T.nn.Conv2d(in_channels=<INPUT>, out_channels=' + str(node.layervars[2].var) + ',kernel_size='+ str(node.layervars[1].var)+',padding='+str(padding)+')'
-    elif node.layer.name == 'Max Pool 2D':
-        statement += 'T.nn.MaxPool2d()'
-    elif node.layer.name == 'Fully Conn':
-        statement += 'T.nn.Linear()'
-    elif node.layer.name == 'CE Loss':
-        statement += 'T.nn.CrossEntropyLoss()'
+    var_dict = node.get_vars()
+    if node.type.name == 'Flatten':
+        statement2 = '    x = x.view(-1, ' + str(var_dict['out_features']) + ')'
+        code_forward.append(statement2)
+        return code_init,code_forward
+    var_dict_prev = []
+    for prev in node.prev:
+        var_dict_prev.append(prev.get_vars())
+    statement = '    ' + var_dict['name'] + ' = ' + var_dict['code']
+    statement2 = '    x = '
+    if node.type.name == 'Conv 2D':
+        padding = int((var_dict['kernel_size']-1)/2)
+        statement += '('
+        statement += 'in_channels=' + str(var_dict_prev[0]['out_channels'])
+        statement += ', '
+        statement += 'out_channels=' + str(var_dict['out_channels'])
+        statement += ', '
+        statement += 'kernel_size=' + str(var_dict['kernel_size'])
+        statement += ', '
+        statement += 'stride=' + str(var_dict['stride'])
+        statement += ', '
+        statement += 'padding=' + str(padding)
+        statement += ')'
+        statement2 += var_dict['name'] + '(x)'
+    elif node.type.name == 'Max Pool 2D':
+        padding = int((var_dict['kernel_size']-1)/2)
+        statement += '('
+        statement += 'kernel_size=' + str(var_dict['kernel_size'])
+        statement += ', '
+        statement += 'stride=' + str(var_dict['stride'])
+        statement += ', '
+        statement += 'padding=' + str(padding)
+        statement += ')'
+        statement2 += var_dict['name'] + '(x)'
+    elif node.type.name == 'Fully Conn':
+        statement += '('
+        statement += 'in_features=' + str(var_dict_prev[0]['out_features'])
+        statement += ', '
+        statement += 'out_features=' + str(var_dict['out_features'])
+        statement += ')'
+        statement2 += var_dict['name'] + '(x)'
+    elif node.type.name == 'CE Loss':
+        statement += '()'
+        code_init.append(statement)
+        return code_init,code_forward
     code_init.append(statement)
+    code_forward.append(statement2)
     return code_init,code_forward
 
 b.config(command=lambda: setin2())
