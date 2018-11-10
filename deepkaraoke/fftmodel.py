@@ -69,33 +69,37 @@ class Generator(Network):
         predicted_imag = prediction[0, -fft_channels:]
         predicted_mel = np.sqrt(predicted_real**2 + predicted_imag**2)
 
-        #self._summary_writer.add_image(
-        #    summary_prefix + '/gt_mel_onvocal',
-        #    utils.PlotSpectrogram('gt onvocal', np.abs(data['vocal_stft'][0])),
-        #    self.current_step)
-        #self._summary_writer.add_image(
-        #    summary_prefix + '/gt_mel_offvocal',
-        #    utils.PlotSpectrogram('gt offvocal',
-        #                          np.abs(data['offvocal_stft'][0])),
-        #    self.current_step)
-        #self._summary_writer.add_image(
-        #    summary_prefix + '/predicted_mel',
-        #    utils.PlotSpectrogram('predicted', predicted_mel),
-        #    self.current_step)
+        self._summary_writer.add_image(
+            summary_prefix + '/gt_mel_onvocal',
+            utils.PlotSpectrogram('gt onvocal', np.abs(data['vocal_stft'][0])),
+            self.current_step)
+        self._summary_writer.add_image(
+            summary_prefix + '/gt_mel_offvocal',
+            utils.PlotSpectrogram('gt offvocal',
+                                  np.abs(data['offvocal_stft'][0])),
+            self.current_step)
+        self._summary_writer.add_image(
+            summary_prefix + '/predicted_mel',
+            utils.PlotSpectrogram('predicted', predicted_mel),
+            self.current_step)
 
+        predicted_magnitude = predicted_mel
         # predicted_magnitude = utils.InverseMelSpectrogram(predicted_mel)
-        predicted_stft = predicted_real + 1j * predicted_imag
+        predicted_stft = predicted_magnitude * np.exp(1j * np.angle(data['offvocal_stft'][0]))
+        # predicted_stft = predicted_real + 1j * predicted_imag
         result = utils.InverseSTFT(predicted_stft)
         return result
 
 
 class AutoregressiveGenerator(Generator):
 
-    NUM_LAYERS = 10
+    NUM_LAYERS = 50
     CONV_SIZE = 3
 
     def BuildModel(self):
         n_fft, fft_channels, _ = utils.NFFT()
+        # Input is (magnitude + phase) for both (onvocal, prev_offvocal).
+        # Output is (magnitude + phase) for offvocal.
         # TODO: Use mel.
         # input_channels = 2 * (FLAGS.n_mels + fft_channels)
         # output_channels = FLAGS.n_mels + fft_channels
@@ -121,7 +125,7 @@ class AutoregressiveGenerator(Generator):
         # Shift offvocal forward by 1 sample for next sample prediction.
         offvocal_stacked = np.concatenate(
             (np.zeros_like(offvocal_stacked[:, :, :1]),
-             offvocal_stacked[:, :, 1:]), axis=2)
+             offvocal_stacked[:, :, :-1]), axis=2)
         input = np.concatenate((vocal_stacked, offvocal_stacked), axis=1)
         return self.model.forward(torch.Tensor(input).cuda())
 
@@ -133,6 +137,23 @@ class AutoregressiveGenerator(Generator):
         gt_imag = torch.Tensor(np.imag(data['offvocal_stft'])).cuda()
         loss = torch.mean((predicted_real - gt_real)**2 +
                           (predicted_imag - gt_imag)**2)
+
+        if self.current_step % 1000 == 0:
+          self._summary_writer.add_image(
+              'train/gt_mel_onvocal',
+              utils.PlotSpectrogram('gt onvocal', np.abs(data['vocal_stft'][0])),
+              self.current_step)
+          self._summary_writer.add_image(
+              'train/gt_mel_offvocal',
+              utils.PlotSpectrogram('gt offvocal',
+                                    np.abs(data['offvocal_stft'][0])),
+              self.current_step)
+          predicted_magnitude = np.abs(predicted_real[0].detach().cpu().numpy() +
+                                       1j * predicted_imag[0].detach().cpu().numpy())
+          self._summary_writer.add_image(
+              'train/predicted_mel',
+              utils.PlotSpectrogram('predicted', predicted_magnitude),
+              self.current_step)
         return loss
 
     def predict(self, data, summary_prefix=''):
@@ -172,8 +193,10 @@ class AutoregressiveGenerator(Generator):
             utils.PlotSpectrogram('predicted', predicted_mel),
             self.current_step)
 
+        predicted_magnitude = predicted_mel
         # predicted_magnitude = utils.InverseMelSpectrogram(predicted_mel)
-        predicted_stft = predicted_real + 1j * predicted_imag
+        predicted_stft = predicted_magnitude * np.exp(1j * np.angle(data['offvocal_stft'][0]))
+        # predicted_stft = predicted_real + 1j * predicted_imag
         result = utils.InverseSTFT(predicted_stft)
         return result
 
