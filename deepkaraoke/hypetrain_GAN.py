@@ -36,16 +36,16 @@ model = NNModel(writer)
 optimizer = optim.Adam(model.parameters(), lr = FLAGS.lr)
 optimizer_disc = optim.Adam(model_D.parameters(), lr = 0.0025*FLAGS.lr)
 
-'''
-model_state = torch.load('trained_models/GAN0p001_batch64_new/model_20000.pt')
-disc_state = torch.load('trained_models/GAN0p001_batch64_new/model_disc_20000.pt')
+
+model_state = torch.load('trained_models/GANwithphase2/model_20000.pt')
+disc_state = torch.load('trained_models/GANwithphase2/model_disc_20000.pt')
 
 model.load_state_dict(model_state['state_dict'])
 optimizer.load_state_dict(model_state['optimizer'])
 
 model_D.load_state_dict(disc_state['state_dict'])
 optimizer_disc.load_state_dict(disc_state['optimizer'])
-'''
+
 start_time = time.time()
 for step in range(1, 100000):
     data = train_dataset.get_random_batch(20000)
