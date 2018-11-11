@@ -47,7 +47,7 @@ model_D.load_state_dict(disc_state['state_dict'])
 optimizer_disc.load_state_dict(disc_state['optimizer'])
 
 start_time = time.time()
-for step in range(1, 100000):
+for step in range(0, 100000):
     data = train_dataset.get_random_batch(20000)
     data = model.preprocess(data)
 

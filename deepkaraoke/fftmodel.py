@@ -69,19 +69,19 @@ class Generator(Network):
         predicted_imag = prediction[0, -fft_channels:]
         predicted_mel = np.sqrt(predicted_real**2 + predicted_imag**2)
 
-        #self._summary_writer.add_image(
-        #    summary_prefix + '/gt_mel_onvocal',
-        #    utils.PlotSpectrogram('gt onvocal', np.abs(data['vocal_stft'][0])),
-        #    self.current_step)
-        #self._summary_writer.add_image(
-        #    summary_prefix + '/gt_mel_offvocal',
-        #    utils.PlotSpectrogram('gt offvocal',
-        #                          np.abs(data['offvocal_stft'][0])),
-        #    self.current_step)
-        #self._summary_writer.add_image(
-        #    summary_prefix + '/predicted_mel',
-        #    utils.PlotSpectrogram('predicted', predicted_mel),
-        #    self.current_step)
+        self._summary_writer.add_image(
+            summary_prefix + '/gt_mel_onvocal',
+            utils.PlotSpectrogram('gt onvocal', np.abs(data['vocal_stft'][0])),
+            self.current_step)
+        self._summary_writer.add_image(
+            summary_prefix + '/gt_mel_offvocal',
+            utils.PlotSpectrogram('gt offvocal',
+                                  np.abs(data['offvocal_stft'][0])),
+            self.current_step)
+        self._summary_writer.add_image(
+            summary_prefix + '/predicted_mel',
+            utils.PlotSpectrogram('predicted', predicted_mel),
+            self.current_step)
 
         # predicted_magnitude = utils.InverseMelSpectrogram(predicted_mel)
         predicted_stft = predicted_real + 1j * predicted_imag
