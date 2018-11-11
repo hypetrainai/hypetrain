@@ -6,7 +6,7 @@ class currLayer:
         self.layer = None
         self.rect  = None
         self.property_frame = property_frame
-    def select(self, node, canvas):
+    def select(self, node, canvas, nameCount):
         self.deselect(canvas)
         self.layer = node
         self.generateRect(self.layer, canvas)
@@ -15,11 +15,16 @@ class currLayer:
             tk.Label(self.property_frame, text=layervar.vartype.name).grid(row=i)
             stringv = tk.StringVar()
             stringv.set(layervar.var)
-            tk.Entry(self.property_frame, textvariable=stringv).grid(row=i, column=1)
+            entry = tk.Entry(self.property_frame, textvariable=stringv)
+            entry.grid(row=i, column=1)
+            self.set_entry_bg(entry, layervar, nameCount)
             i = i + 1
-            def entry_changed_callback(*args, stringv=stringv, layervar=layervar):
-                layervar.var=stringv.get()
+            def entry_changed_callback(*args, stringv=stringv, layervar=layervar, nameCount=nameCount, entry=entry):
+                nameCount.changeName(layervar.var, stringv.get())
+                layervar.var = stringv.get()
+                self.set_entry_bg(entry, layervar, nameCount)
             stringv.trace("w", callback=entry_changed_callback)
+
     def deselect(self, canvas):
         if self.rect:
             canvas.delete(self.rect)
@@ -49,3 +54,11 @@ class currLayer:
 
     def disconnect(self, canvas):
         self.layer.disconnect_next(canvas)
+
+    def set_entry_bg(self, entry, layervar, nameCount):
+        if layervar.vartype.name == 'name':
+            if nameCount.count(layervar.var) > 1:
+                entry.config({"bg": "Red"})
+            else:
+                entry.config({"bg": "White"})
+

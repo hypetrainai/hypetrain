@@ -8,7 +8,7 @@ class layerVar:
         self.var = vartype.default
         
 class layer:
-    def __init__(self, x, y, canvas, layertype):
+    def __init__(self, x, y, canvas, layertype, nameCount):
         self.x = x
         self.y = y
         self.type = layertype
@@ -18,6 +18,8 @@ class layer:
         self.layervars = []
         for varT in layertype.vars:
             self.layervars.append(layerVar(varT))
+        self['name'] = nameCount.nextName(self['name'])
+
     def create_oval(self, canvas):
         x1,y1 = (self.x-25), (self.y-25)
         x2,y2 = (self.x+25), (self.y+25)                              
@@ -77,7 +79,6 @@ class layer:
         for layervar in self.layervars:
             if layervar.vartype.name == key:
                 return layervar.var
-
         print("could not find key " + key)
         return None
 
@@ -86,6 +87,5 @@ class layer:
             if layervar.vartype.name == key:
                 layervar.var = item
                 return;
-
         print("could not find key " + key)
 

@@ -6,7 +6,7 @@ from layer import *
 from currLayer import *
 from NetworkSettings import *
 from nnet_backend import *
-
+from name_count import *
 
 layers = []
 Input = layerType("Input", "snow", 0, -1)
@@ -91,6 +91,7 @@ def setInput(inp):
     layertype = inp
 
 list_nodes = []
+node_names = NameCount()
 list_other_widgets = []
 layertype = None
 networkSettings = NetworkSettings()
@@ -116,6 +117,10 @@ b.grid(row=len(layers)+len(list_other_widgets), columnspan=2, sticky=tk.W)
 list_other_widgets.append(b)
 
 def setin2():
+    hasDupes, name = node_names.hasDupes()
+    if hasDupes:
+        print("ERROR - Duplicate layer name: " + name)
+        return
     for button in buttons:
         button.config(highlightbackground="white")
     #print('hello world')
@@ -201,6 +206,9 @@ currNode = currLayer(lf_properties)
 def delete_curr_node(event):
     if currNode.layer is None:
         return
+    if root.focus_get().winfo_class() == 'Entry':
+        return
+    node_names.removeName(currNode.layer['name']);
     index = list_nodes.index(currNode.layer)
     currNode.delete(main_canvas)
     del(list_nodes[index])
@@ -225,11 +233,12 @@ def selectORcreate( event ):
             selected = node
             break
     if selected:
-        currNode.select(selected, main_canvas)
+        currNode.select(selected, main_canvas, node_names)
     else:
-        selected = layer(x, y, main_canvas, layertype)
-        currNode.select(selected, main_canvas)
+        selected = layer(x, y, main_canvas, layertype, node_names)
+        currNode.select(selected, main_canvas, node_names)
         list_nodes.append(selected)
+        node_names.addName(selected['name'])
         
 def move( event ):
     selected = currNode.layer
@@ -249,7 +258,7 @@ def connect( event ):
             break
     if selected:
         selected.connect(currNode.layer, main_canvas)
-        currNode.select(selected, main_canvas)
+        currNode.select(selected, main_canvas, node_names)
 
 main_canvas.bind( "<Button-1>", selectORcreate)
 main_canvas.bind( "<Button-3>", connect)
