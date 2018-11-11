@@ -1,6 +1,7 @@
 import collections
 import numpy as np
 import pickle as pkl
+import utils
 
 DataItem = collections.namedtuple('DataItem',
                                   ['name', 'start_offset', 'length', 'data'])
@@ -13,7 +14,7 @@ class KaraokeDataLoader(object):
                  ignore_percentage=0.05,
                  sample_length=7056):
         self.batch_size = batch_size
-        #ignore_percentage defines the area on either end of the song which we want to ignore.
+        # ignore_percentage defines the area on either end of the song which we want to ignore.
         self.ignore_percentage = ignore_percentage
         self.sample_length = sample_length
 
@@ -21,6 +22,13 @@ class KaraokeDataLoader(object):
             self.data = pkl.load(file)
             self.N = len(self.data)
             self.song_lengths = {k: len(d[0]) for k, d in self.data.items()}
+
+            # Normalize data.
+            for k, (on_vocal, off_vocal) in self.data.items():
+                on_vocal = utils.Convert16BitToFloat(on_vocal)
+                off_vocal = utils.Convert16BitToFloat(off_vocal)
+                norm = np.amax(np.abs(on_vocal + off_vocal))
+                self.data[k] = (on_vocal / norm, off_vocal / norm)
 
     def get_random_batch(self, sample_length=None, batch_size=None):
         sample_length = sample_length or self.sample_length

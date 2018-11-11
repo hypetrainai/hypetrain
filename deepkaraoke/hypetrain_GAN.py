@@ -78,7 +78,7 @@ for step in range(0, 100000):
     optimizer.step()
     optimizer.zero_grad()
     optimizer_disc.zero_grad()
-    
+
     disc_iter = 3
 
     for disc_step in range(disc_iter):
@@ -118,15 +118,14 @@ for step in range(0, 100000):
             print('Oh no! Your test loss is %.3f at step %d' % (loss, step))
             writer.add_scalar('loss_test/total', loss, step)
 
-            for dataset, prefix in [(train_dataset, 'train'), (test_dataset, 'test')]:
+            for dataset, prefix in [(train_dataset, 'eval_train'), (test_dataset, 'eval_test')]:
                 torch.cuda.empty_cache()
                 # data = dataset.get_random_batch(500000, batch_size=1)
                 data = [dataset.get_single_segment(extract_idx=0, start_value=2000000, sample_length=200000)]
                 prediction = model.predict(model.preprocess(data))
                 writer.add_audio(prefix + '/predicted', prediction, step, sample_rate=FLAGS.sample_rate)
-                on_vocal, off_vocal = utils.Convert16BitToFloat(data[0].data[0], data[0].data[1])
-                writer.add_audio(prefix + '/gt_onvocal', on_vocal, step, sample_rate=FLAGS.sample_rate)
-                writer.add_audio(prefix + '/gt_offvocal', off_vocal, step, sample_rate=FLAGS.sample_rate)
+                writer.add_audio(prefix + '/gt_onvocal', data[0].data[0], step, sample_rate=FLAGS.sample_rate)
+                writer.add_audio(prefix + '/gt_offvocal', data[0].data[1], step, sample_rate=FLAGS.sample_rate)
         torch.cuda.empty_cache()
         model.train()
 
