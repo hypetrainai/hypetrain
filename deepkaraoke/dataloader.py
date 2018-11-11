@@ -27,7 +27,7 @@ class KaraokeDataLoader(object):
             for k, (on_vocal, off_vocal) in self.data.items():
                 on_vocal = utils.Convert16BitToFloat(on_vocal)
                 off_vocal = utils.Convert16BitToFloat(off_vocal)
-                norm = np.amax(np.abs(on_vocal + off_vocal))
+                norm = np.amax([np.abs(on_vocal), np.abs(off_vocal)])
                 self.data[k] = (on_vocal / norm, off_vocal / norm)
 
     def get_random_batch(self, sample_length=None, batch_size=None):
@@ -57,7 +57,7 @@ class KaraokeDataLoader(object):
         ]
 
     def get_single_segment(self, extract_idx=0, start_value=3000000, sample_length=200000):
-        
+
         #print(sample_length)
         name = list(self.data.keys())[extract_idx]
         sample_length = sample_length or len(self.data[name][0])

@@ -53,8 +53,8 @@ class Generator(Network):
         predicted_imag = prediction[:, -fft_channels:]
         gt_real = torch.Tensor(np.real(data['offvocal_stft'])).cuda()
         gt_imag = torch.Tensor(np.imag(data['offvocal_stft'])).cuda()
-        loss = torch.mean(torch.abs(predicted_real - gt_real) +
-                          torch.abs(predicted_imag - gt_imag))
+        loss = torch.mean((predicted_real - gt_real)**2 +
+                          (predicted_imag - gt_imag)**2)
         return loss
 
     def predict(self, data, summary_prefix=''):
@@ -133,8 +133,8 @@ class AutoregressiveGenerator(Generator):
         predicted_imag = prediction[:, -fft_channels:]
         gt_real = torch.Tensor(np.real(data['offvocal_stft'])).cuda()
         gt_imag = torch.Tensor(np.imag(data['offvocal_stft'])).cuda()
-        loss = torch.mean(torch.abs(predicted_real - gt_real) +
-                          torch.abs(predicted_imag - gt_imag))
+        loss = torch.mean((predicted_real - gt_real)**2 +
+                          (predicted_imag - gt_imag)**2)
 
         if self.current_step % 1000 == 0:
           self._summary_writer.add_image(
