@@ -30,10 +30,8 @@ class Generator(Network):
         }
         for d in data:
             data_vocal = d.data[0]
-            data_vocal = utils.Convert16BitToFloat(data_vocal)
             stft_vocal = utils.STFT(data_vocal)
             data_offvocal = d.data[1]
-            data_offvocal = utils.Convert16BitToFloat(data_offvocal)
             stft_offvocal = utils.STFT(data_offvocal)
             ret['vocal_stft'].append(stft_vocal)
             ret['vocal_mel'].append(utils.MelSpectrogram(stft_vocal))
@@ -55,8 +53,8 @@ class Generator(Network):
         predicted_imag = prediction[:, -fft_channels:]
         gt_real = torch.Tensor(np.real(data['offvocal_stft'])).cuda()
         gt_imag = torch.Tensor(np.imag(data['offvocal_stft'])).cuda()
-        loss = torch.mean((predicted_real - gt_real)**2 +
-                          (predicted_imag - gt_imag)**2)
+        loss = torch.mean(torch.abs(predicted_real - gt_real) +
+                          torch.abs(predicted_imag - gt_imag))
         return loss
 
     def predict(self, data, summary_prefix=''):
@@ -135,8 +133,8 @@ class AutoregressiveGenerator(Generator):
         predicted_imag = prediction[:, -fft_channels:]
         gt_real = torch.Tensor(np.real(data['offvocal_stft'])).cuda()
         gt_imag = torch.Tensor(np.imag(data['offvocal_stft'])).cuda()
-        loss = torch.mean((predicted_real - gt_real)**2 +
-                          (predicted_imag - gt_imag)**2)
+        loss = torch.mean(torch.abs(predicted_real - gt_real) +
+                          torch.abs(predicted_imag - gt_imag))
 
         if self.current_step % 1000 == 0:
           self._summary_writer.add_image(

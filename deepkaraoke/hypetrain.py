@@ -74,9 +74,8 @@ for step in range(1, 100000):
                 data = [dataset.get_single_segment(extract_idx=0, start_value=3000000, sample_length=200000)]
                 prediction = model.predict(model.preprocess(data), prefix)
                 writer.add_audio(prefix + '/predicted', prediction, step, sample_rate=FLAGS.sample_rate)
-                on_vocal, off_vocal = utils.Convert16BitToFloat(data[0].data[0], data[0].data[1])
-                writer.add_audio(prefix + '/gt_onvocal', on_vocal, step, sample_rate=FLAGS.sample_rate)
-                writer.add_audio(prefix + '/gt_offvocal', off_vocal, step, sample_rate=FLAGS.sample_rate)
+                writer.add_audio(prefix + '/gt_onvocal', data[0].data[0], step, sample_rate=FLAGS.sample_rate)
+                writer.add_audio(prefix + '/gt_offvocal', data[0].data[1], step, sample_rate=FLAGS.sample_rate)
         torch.cuda.empty_cache()
         model.train()
 
