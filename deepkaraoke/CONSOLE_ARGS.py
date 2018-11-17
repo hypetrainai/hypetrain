@@ -22,7 +22,7 @@ parser.add_argument('--n_mels', type=int, default=128)
 parser.add_argument('--fmin', type=int, default=0)
 
 #TENSORBOARD ARGS
-parser.add_argument('--show_mel', type=bool, default=True, help='Do we show mel spectrogram images on Tensorboard?')
+parser.add_argument('--image_summaries', type=bool, default=True, help='Enable image summaries on tensorboard?')
 
 
 if run_from_ipython():

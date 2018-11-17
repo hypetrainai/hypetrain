@@ -66,7 +66,7 @@ class Generator(Network):
         predicted_real = prediction[0, :-fft_channels]
         predicted_imag = prediction[0, -fft_channels:]
         predicted_mel = np.sqrt(predicted_real**2 + predicted_imag**2)
-        if FLAGS.show_mel:
+        if FLAGS.image_summaries:
             self._summary_writer.add_image(
                 summary_prefix + '/gt_mel_onvocal',
                 utils.PlotSpectrogram('gt onvocal', np.abs(data['vocal_stft'][0])),
@@ -136,22 +136,22 @@ class AutoregressiveGenerator(Generator):
         loss = torch.mean((predicted_real - gt_real)**2 +
                           (predicted_imag - gt_imag)**2)
 
-        if self.current_step % 1000 == 0:
-          self._summary_writer.add_image(
-              'train/gt_mel_onvocal',
-              utils.PlotSpectrogram('gt onvocal', np.abs(data['vocal_stft'][0])),
-              self.current_step)
-          self._summary_writer.add_image(
-              'train/gt_mel_offvocal',
-              utils.PlotSpectrogram('gt offvocal',
-                                    np.abs(data['offvocal_stft'][0])),
-              self.current_step)
-          predicted_magnitude = np.abs(predicted_real[0].detach().cpu().numpy() +
-                                       1j * predicted_imag[0].detach().cpu().numpy())
-          self._summary_writer.add_image(
-              'train/predicted_mel',
-              utils.PlotSpectrogram('predicted', predicted_magnitude),
-              self.current_step)
+        if self.current_step % 1000 == 0 and FLAGS.image_summaries:
+            self._summary_writer.add_image(
+                'train/gt_mel_onvocal',
+                utils.PlotSpectrogram('gt onvocal', np.abs(data['vocal_stft'][0])),
+                self.current_step)
+            self._summary_writer.add_image(
+                'train/gt_mel_offvocal',
+                utils.PlotSpectrogram('gt offvocal',
+                                      np.abs(data['offvocal_stft'][0])),
+                self.current_step)
+            predicted_magnitude = np.abs(predicted_real[0].detach().cpu().numpy() +
+                                         1j * predicted_imag[0].detach().cpu().numpy())
+            self._summary_writer.add_image(
+                'train/predicted_mel',
+                utils.PlotSpectrogram('predicted', predicted_magnitude),
+                self.current_step)
         return loss
 
     def predict(self, data, summary_prefix=''):
@@ -177,19 +177,20 @@ class AutoregressiveGenerator(Generator):
         predicted_imag = prediction[0, -fft_channels:]
         predicted_mel = np.sqrt(predicted_real**2 + predicted_imag**2)
 
-        self._summary_writer.add_image(
-            summary_prefix + '/gt_mel_onvocal',
-            utils.PlotSpectrogram('gt onvocal', np.abs(data['vocal_stft'][0])),
-            self.current_step)
-        self._summary_writer.add_image(
-            summary_prefix + '/gt_mel_offvocal',
-            utils.PlotSpectrogram('gt offvocal',
-                                  np.abs(data['offvocal_stft'][0])),
-            self.current_step)
-        self._summary_writer.add_image(
-            summary_prefix + '/predicted_mel',
-            utils.PlotSpectrogram('predicted', predicted_mel),
-            self.current_step)
+        if FLAGS.image_summaries:
+            self._summary_writer.add_image(
+                summary_prefix + '/gt_mel_onvocal',
+                utils.PlotSpectrogram('gt onvocal', np.abs(data['vocal_stft'][0])),
+                self.current_step)
+            self._summary_writer.add_image(
+                summary_prefix + '/gt_mel_offvocal',
+                utils.PlotSpectrogram('gt offvocal',
+                                      np.abs(data['offvocal_stft'][0])),
+                self.current_step)
+            self._summary_writer.add_image(
+                summary_prefix + '/predicted_mel',
+                utils.PlotSpectrogram('predicted', predicted_mel),
+                self.current_step)
 
         predicted_magnitude = predicted_mel
         # predicted_magnitude = utils.InverseMelSpectrogram(predicted_mel)
