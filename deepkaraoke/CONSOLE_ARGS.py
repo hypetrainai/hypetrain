@@ -21,6 +21,9 @@ parser.add_argument('--window_length_ms', type=int, default=40)
 parser.add_argument('--n_mels', type=int, default=128)
 parser.add_argument('--fmin', type=int, default=0)
 
+#TENSORBOARD ARGS
+parser.add_argument('--show_mel', type=bool, default=True, help='Do we show mel spectrogram images on Tensorboard?')
+
 
 if run_from_ipython():
     ARGS = parser.parse_args([])
