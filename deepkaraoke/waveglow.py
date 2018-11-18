@@ -9,7 +9,7 @@ import utils
 from CONSOLE_ARGS import ARGS as FLAGS
 
 _NUM_FLOWS = 12
-_N_CHANNELS = 8  # Must be even.
+_N_CHANNELS = 8
 _CONV_LAYERS = 8
 _CONV_CHANNELS = 512
 _STD_TRAIN = np.sqrt(0.5)
@@ -48,7 +48,7 @@ class AffineCoupling(nn.Module):
             layer_defs.append(submodules.ResNetModule1d(_CONV_CHANNELS, _CONV_CHANNELS, 3, 1, 1, 2**(1+i), bias=True, bn=False, wn=True))
         end = submodules.conv_1d(_CONV_CHANNELS, 2, 3, 1, 1, 1, bias=True)
         # Initializing last layer to 0 makes the affine coupling layers
-        # do nothing at first.  This helps with training stability
+        # do nothing at first.  This helps with training stability.
         end.weight.data.zero_()
         end.bias.data.zero_()
         layer_defs.append(end)
@@ -72,14 +72,14 @@ class Model(nn.Module):
         for i in range(_NUM_FLOWS):
             self.conv.append(InvertibleConv1x1(_N_CHANNELS))
             self.coupling.append(AffineCoupling())
+        self.cond_proj = submodules.conv_1d(_N_CHANNELS, _N_CHANNELS // 2, 1, 1, 0, 1, bias=False, wn=True)
 
     def forward(self, conditioning, x):
         assert len(x.size()) == 2
         assert conditioning.size() == x.size()
-        x = x.view([x.size()[0], _N_CHANNELS // 2, -1])
-        x_a = torch.cat((torch.zeros((x.size()[0], _N_CHANNELS // 2, 1)).cuda(), x[:, :, :-1]), dim=2)
-        x = torch.cat((x_a, x), dim=1)
-        conditioning = conditioning.view([x.size()[0], _N_CHANNELS // 2, -1])
+        x = x.view([x.size()[0], _N_CHANNELS, -1])
+        conditioning = conditioning.view([x.size()[0], _N_CHANNELS, -1])
+        conditioning = self.cond_proj(conditioning)
         total_conv_loss = 0
         total_coupling_loss = 0
         # TODO: early emit.
@@ -88,7 +88,6 @@ class Model(nn.Module):
             total_conv_loss += -torch.log(torch.abs(torch.det(self.conv[i].conv.weight.squeeze())))
             x, coupling_loss = self.coupling[i].forward(conditioning, x)
             total_coupling_loss += coupling_loss
-        _, x = torch.split(x, _N_CHANNELS // 2, dim=1)
         x = x.view([x.size()[0], -1])
         return x, total_conv_loss, total_coupling_loss
 
@@ -105,10 +104,10 @@ class Generator(Network):
         assert len(on_vocal.shape) == 2
         if self.training:
             assert _N_CHANNELS % 2 == 0
-            assert on_vocal.shape[1] % (_N_CHANNELS // 2)== 0
+            assert on_vocal.shape[1] % _N_CHANNELS == 0
         else:
-            # Pad to multiple of _N_CHANNELS // 2.
-            pad_size = (_N_CHANNELS // 2 - on_vocal.shape[1] % (_N_CHANNELS // 2)) % (_N_CHANNELS // 2)
+            # Pad to multiple of _N_CHANNELS.
+            pad_size = (_N_CHANNELS - on_vocal.shape[1] % _N_CHANNELS) % _N_CHANNELS
             on_vocal = np.pad(on_vocal, [(0, 0), (0, pad_size)], 'constant')
             off_vocal = np.pad(off_vocal, [(0, 0), (0, pad_size)], 'constant')
         return on_vocal, off_vocal
