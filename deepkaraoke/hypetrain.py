@@ -25,9 +25,8 @@ from tensorboardX import SummaryWriter
 os.makedirs(FLAGS.log_dir, exist_ok=True)
 writer = SummaryWriter(FLAGS.log_dir)
 
-batch_size = 24
-train_dataset = dataloader.KaraokeDataLoader('data/train.pkl.gz', batch_size = batch_size)
-test_dataset = dataloader.KaraokeDataLoader('data/test.pkl.gz', batch_size = batch_size)
+train_dataset = dataloader.KaraokeDataLoader('data/train.pkl.gz', batch_size = FLAGS.batch_size)
+test_dataset = dataloader.KaraokeDataLoader('data/test.pkl.gz', batch_size = FLAGS.batch_size)
 
 NNModel = getattr(importlib.import_module(FLAGS.module_name), FLAGS.model_name)
 model = NNModel(writer)
@@ -40,7 +39,7 @@ for step in range(1, 100000):
 
     model.current_step = step
 
-    data = train_dataset.get_random_batch(20000)
+    data = train_dataset.get_random_batch(FLAGS.train_seqlen)
     data = model.preprocess(data)
     prediction = model.forward(data)
     loss = model.loss(prediction, data)
@@ -61,7 +60,7 @@ for step in range(1, 100000):
         model.eval()
         with torch.no_grad():
             torch.cuda.empty_cache()
-            data = test_dataset.get_random_batch(10000)
+            data = test_dataset.get_random_batch(FLAGS.train_seqlen)
             data = model.preprocess(data)
             prediction = model.forward(data)
             loss = model.loss(prediction, data)
@@ -70,7 +69,7 @@ for step in range(1, 100000):
 
             for dataset, prefix in [(train_dataset, 'eval_train'), (test_dataset, 'eval_test')]:
                 torch.cuda.empty_cache()
-                # data = dataset.get_random_batch(500000, batch_size=1)
+                # data = dataset.get_random_batch(500000, FLAGS.batch_size=1)
                 data = [dataset.get_single_segment(extract_idx=0, start_value=3000000, sample_length=200000)]
                 prediction = model.predict(model.preprocess(data), prefix)
                 writer.add_audio(prefix + '/predicted', prediction, step, sample_rate=FLAGS.sample_rate)

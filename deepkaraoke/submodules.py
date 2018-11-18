@@ -7,39 +7,35 @@ import math
 import numpy as np
 
 
-def convbn_1d(in_planes, out_planes, kernel_size, stride, pad, dilation, transpose=False):
+def conv_1d(in_planes, out_planes, kernel_size, stride, pad, dilation, transpose=False, bias=False, wn=False):
     if not transpose:
-        return nn.Sequential(nn.Conv1d(in_planes, out_planes, kernel_size=kernel_size,
-                                       stride=stride, padding=dilation if dilation > 1 else pad,
-                                       dilation = dilation, bias=False),
-                                       nn.BatchNorm1d(out_planes)
-                                       )
+        res = nn.Conv1d(in_planes, out_planes, kernel_size=kernel_size,
+                        stride=stride, padding=dilation if dilation > 1 else pad,
+                        dilation=dilation, bias=bias)
     else:
-        return nn.Sequential(nn.ConvTranspose1d(in_planes, out_planes, kernel_size=kernel_size, stride=stride, padding=pad, dilation = dilation, bias=False,output_padding=1),
-                         nn.BatchNorm1d(out_planes)
-                                      )
+        res = nn.ConvTranspose1d(in_planes, out_planes, kernel_size=kernel_size,
+                                 stride=stride, padding=pad, dilation=dilation, bias=bias,
+                                 output_padding=1)
+    if wn:
+        res = nn.utils.weight_norm(res)
+    return res
 
 
-def convbn(in_planes, out_planes, kernel_size, stride, pad, dilation):
+def convbn_1d(in_planes, out_planes, kernel_size, stride, pad, dilation, transpose=False, bias=False, wn=False):
+    return nn.Sequential(conv_1d(in_planes, out_planes, kernel_size, stride, pad, dilation, transpose, wn),
+                         nn.BatchNorm1d(out_planes))
 
-    return nn.Sequential(nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size, stride=stride, padding=dilation if dilation > 1 else pad, dilation = dilation, bias=False),
-                         nn.BatchNorm2d(out_planes))
-
-
-def convbn_3d(in_planes, out_planes, kernel_size, stride, pad):
-
-    return nn.Sequential(nn.Conv3d(in_planes, out_planes, kernel_size=kernel_size, padding=pad, stride=stride,bias=False),
-nn.BatchNorm3d(out_planes))
 
 class ResNetModule1d(nn.Module):
 
-    def __init__(self, in_planes, out_planes, kernel_size, stride, pad, dilation, transpose=False, causal=False):
+    def __init__(self, in_planes, out_planes, kernel_size, stride, pad, dilation, transpose=False, causal=False, bias=False, bn=True, wn=False):
 
         super(ResNetModule1d, self).__init__()
         self.causal = kernel_size - 1 if causal else 0
-        self.convstart = convbn_1d(in_planes, out_planes//4, 1, stride=1, pad=0, dilation=1, transpose=transpose)
-        self.convmid = convbn_1d(out_planes//4, out_planes//4, kernel_size, stride, pad, dilation, transpose)
-        self.convend = convbn_1d(out_planes//4, out_planes, 1, stride=1, pad=0, dilation=1, transpose=transpose)
+        conv_fn = convbn_1d if bn else conv_1d
+        self.convstart = conv_fn(in_planes, out_planes//4, 1, stride=1, pad=0, dilation=1, transpose=transpose, bias=bias, wn=wn)
+        self.convmid = conv_fn(out_planes//4, out_planes//4, kernel_size, stride, pad, dilation, transpose, bias=bias, wn=wn)
+        self.convend = conv_fn(out_planes//4, out_planes, 1, stride=1, pad=0, dilation=1, transpose=transpose, bias=bias, wn=wn)
 
     def forward(self, input):
         out = self.convstart(input)

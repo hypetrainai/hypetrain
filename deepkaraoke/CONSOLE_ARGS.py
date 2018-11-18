@@ -14,6 +14,8 @@ parser.add_argument('--log_dir', type=str, default='trained_models/withnorm_high
 parser.add_argument('--module_name', type=str, default='fftmodel')
 parser.add_argument('--model_name', type=str, default='Generator')
 parser.add_argument('--lr', type=float, default=0.01)
+parser.add_argument('--batch_size', type=int, default=24)
+parser.add_argument('--train_seqlen', type=int, default=10000, help='sequence length during training')
 
 parser.add_argument('--sample_rate', type=int, default=16000)
 parser.add_argument('--hop_length_ms', type=int, default=10)
