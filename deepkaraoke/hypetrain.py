@@ -69,7 +69,7 @@ for step in range(1, 100000):
 
             for dataset, prefix in [(train_dataset, 'eval_train'), (test_dataset, 'eval_test')]:
                 torch.cuda.empty_cache()
-                # data = dataset.get_random_batch(500000, FLAGS.batch_size=1)
+                # data = dataset.get_random_batch(500000, batch_size=1)
                 data = [dataset.get_single_segment(extract_idx=0, start_value=3000000, sample_length=200000)]
                 prediction = model.predict(model.preprocess(data), prefix)
                 writer.add_audio(prefix + '/predicted', prediction, step, sample_rate=FLAGS.sample_rate)

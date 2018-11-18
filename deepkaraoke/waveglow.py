@@ -136,7 +136,7 @@ class Generator(Network):
         prediction = np.zeros([1, 0])
         for i in range(0, data[0].shape[1], chunk_size):
             end = min(data[0].shape[1], i + chunk_size)
-            data_i = [data[0][:, :end], data[1][:, :end]]
+            data_i = [data[0][:, i:end], data[1][:, i:end]]
             prediction_i = self.forward(data_i)[0].detach().cpu().numpy()
             prediction = np.concatenate((prediction, prediction_i), axis=1)
         return prediction
