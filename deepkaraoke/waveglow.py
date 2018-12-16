@@ -38,7 +38,7 @@ class InvertibleConv1x1(nn.Module):
             self.W_inverse = None
             return self.conv(x)
         else:
-            if not self.W_inverse:
+            if self.W_inverse is None:
                 self.W_inverse = self.conv.weight.squeeze().inverse()[..., None]
             return F.conv1d(x, self.W_inverse, bias=None)
 
