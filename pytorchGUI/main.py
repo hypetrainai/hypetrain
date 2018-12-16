@@ -123,7 +123,6 @@ def setin2():
         return
     for button in buttons:
         button.config(highlightbackground="white")
-    #print('hello world')
     code_init = []
     code_forward = []
     code_init.append('class Test(nn.Module):')
@@ -140,7 +139,11 @@ def setin2():
         print(line)
     for line in code_forward:
         print(line)
-    
+    init_lines = "\n".join(code_init)
+    forward_lines = "\n".join(code_forward)
+    all_lines = init_lines + "\n" + forward_lines
+    run_by_string(all_lines)
+
 def DFS_nodes(node, code_init,code_forward):
     node.covered = True
     for prev in node.prev:
@@ -156,8 +159,8 @@ def DFS_nodes(node, code_init,code_forward):
     var_dict_prev = []
     for prev in node.prev:
         var_dict_prev.append(prev.get_vars())
-    statement = '    ' + var_dict['name'] + ' = ' + var_dict['code']
-    statement2 = '    x = '
+    statement = '    self.' + var_dict['name'] + ' = ' + var_dict['code']
+    statement2 = '    x = self.'
     if node.type.name == 'Conv 2D':
         padding = int((var_dict['kernel_size']-1)/2)
         statement += '('

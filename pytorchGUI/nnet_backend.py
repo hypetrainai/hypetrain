@@ -21,10 +21,6 @@ from torch.utils.data import Dataset, DataLoader
 
 
 
-
-
-
-
 class test_net(nn.Module):
     def __init__(self, c=3, img_size=32):
         super(test_net, self).__init__()
@@ -120,7 +116,6 @@ def run_fx():
     net = test_net().cuda()
     opt = optim.Adam(net.parameters(), lr=lr, weight_decay=weight_decay)
     loss = nn.CrossEntropyLoss()
-
     for i_batch,sample_batch in enumerate(dataloader):
         opt.zero_grad()
         data = sample_batch['img'].cuda().float()
@@ -136,3 +131,26 @@ def run_fx():
 
 
 
+def run_by_string(code_string):
+    dataset = test_dataset()
+    dataloader = DataLoader(dataset, batch_size=256, shuffle=True, num_workers=6)
+
+    lr = 0.001
+    weight_decay=0.0001
+
+    exec_contents = {'nn':nn, 'torch': torch}
+    exec(code_string, exec_contents)
+    net = exec_contents['Test']().cuda()
+    print("net is:")
+    print(net)
+    opt = optim.Adam(net.parameters(), lr=lr, weight_decay=weight_decay)
+    loss = nn.CrossEntropyLoss()
+    for i_batch,sample_batch in enumerate(dataloader):
+        opt.zero_grad()
+        data = sample_batch['img'].cuda().float()
+        labs = sample_batch['lab'].cuda().long()
+        pred = net(data)
+        L = loss(pred, labs)
+        L.backward()
+        opt.step()
+        print(i_batch, L)
