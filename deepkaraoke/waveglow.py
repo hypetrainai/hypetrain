@@ -10,6 +10,7 @@ from CONSOLE_ARGS import ARGS as FLAGS
 
 _NUM_FLOWS = 12
 _N_CHANNELS = 8
+assert _N_CHANNELS % 8 == 0
 _CONV_LAYERS = 8
 _CONV_CHANNELS = 512
 _STD_TRAIN = np.sqrt(0.5)
@@ -30,20 +31,24 @@ class InvertibleConv1x1(nn.Module):
         W = W.view(c, c, 1)
         self.conv.weight.data = W
 
-        self.W_inverse = Variable(self.conv.weight.squeeze().inverse())[..., None].cuda()
+        self.W_inverse = None
 
     def forward(self, x):
         if self.training:
+            self.W_inverse = None
             return self.conv(x)
         else:
+            if not self.W_inverse:
+                self.W_inverse = self.conv.weight.squeeze().inverse()[..., None]
             return F.conv1d(x, self.W_inverse, bias=None)
 
 
 class AffineCoupling(nn.Module):
-    def __init__(self):
+    def __init__(self, channels):
         super(AffineCoupling, self).__init__()
+        self.channels = channels
         layer_defs = []
-        layer_defs.append(submodules.conv_1d(_N_CHANNELS // 2, _CONV_CHANNELS, 3, 1, 1, 1, bias=True, wn=True))
+        layer_defs.append(submodules.conv_1d(self.channels // 2, _CONV_CHANNELS, 3, 1, 1, 1, bias=True, wn=True))
         for i in range(_CONV_LAYERS):
             layer_defs.append(submodules.ResNetModule1d(_CONV_CHANNELS, _CONV_CHANNELS, 3, 1, 1, 2**(1+i), bias=True, bn=False, wn=True))
         end = submodules.conv_1d(_CONV_CHANNELS, 2, 3, 1, 1, 1, bias=True)
@@ -55,7 +60,7 @@ class AffineCoupling(nn.Module):
         self.model = nn.Sequential(*layer_defs)
 
     def forward(self, conditioning, x):
-        a, b = torch.split(x, _N_CHANNELS // 2, dim=1)
+        a, b = torch.split(x, self.channels // 2, dim=1)
         log_s, t = torch.split(self.model.forward(a + conditioning), 1, dim=1)
         if self.training:
             b = torch.exp(log_s) * b + t
@@ -67,12 +72,18 @@ class AffineCoupling(nn.Module):
 class Model(nn.Module):
     def __init__(self):
         super(Model, self).__init__()
+        self.cond_proj = submodules.conv_1d(_N_CHANNELS, _N_CHANNELS // 2, 1, 1, 0, 1, bias=False, wn=True)
         self.conv = nn.ModuleList()
         self.coupling = nn.ModuleList()
+        self.emit_layers = []
+        self.emit_channels = _N_CHANNELS // 4
+        assert self.emit_channels % 2 == 0
+        remaining_channels = _N_CHANNELS
         for i in range(_NUM_FLOWS):
-            self.conv.append(InvertibleConv1x1(_N_CHANNELS))
-            self.coupling.append(AffineCoupling())
-        self.cond_proj = submodules.conv_1d(_N_CHANNELS, _N_CHANNELS // 2, 1, 1, 0, 1, bias=False, wn=True)
+            if i in self.emit_layers:
+                remaining_channels -= self.emit_channels
+            self.conv.append(InvertibleConv1x1(remaining_channels))
+            self.coupling.append(AffineCoupling(remaining_channels))
 
     def forward(self, conditioning, x):
         assert len(x.size()) == 2
@@ -82,14 +93,38 @@ class Model(nn.Module):
         conditioning = self.cond_proj(conditioning)
         total_conv_loss = 0
         total_coupling_loss = 0
-        # TODO: early emit.
-        for i in range(12):
-            x = self.conv[i].forward(x)
-            total_conv_loss += -torch.log(torch.abs(torch.det(self.conv[i].conv.weight.squeeze())))
-            x, coupling_loss = self.coupling[i].forward(conditioning, x)
-            total_coupling_loss += coupling_loss
-        x = x.view([x.size()[0], -1])
-        return x, total_conv_loss, total_coupling_loss
+        outputs = []
+        if self.training:
+            for i in range(_NUM_FLOWS):
+                if i in self.emit_layers:
+                    outputs.append(x[:, :self.emit_channels, :])
+                    x = x[:, self.emit_channels:, :]
+                    conditioning = conditioning[:, self.emit_channels // 2:, :]
+                x = self.conv[i].forward(x)
+                total_conv_loss += -torch.log(torch.abs(torch.det(self.conv[i].conv.weight.squeeze())))
+                x, coupling_loss = self.coupling[i].forward(conditioning, x)
+                total_coupling_loss += coupling_loss
+        else:
+            remaining_channels = _N_CHANNELS - len(self.emit_layers) * self.emit_channels
+            assert remaining_channels > 0
+            x_remaining = x[:, :-remaining_channels, :]
+            x = x[:, -remaining_channels:, :]
+            cond_remaining = conditioning[:, :-remaining_channels // 2, :]
+            conditioning = conditioning[:, -remaining_channels // 2:, :]
+            for i in reversed(range(_NUM_FLOWS)):
+                x, _ = self.coupling[i].forward(conditioning, x)
+                x = self.conv[i].forward(x)
+                # TODO: this is buggy and doesn't work.
+                if i in self.emit_layers:
+                    x = torch.cat([x_remaining[:, -self.emit_channels:, :], x], dim=1)
+                    x_remaining = x_remaining[:, :-self.emit_channels, :]
+                    conditioning = torch.cat([conditioning[:, -self.emit_channels // 2:, :], conditioning], dim=1)
+                    cond_remaining = cond_remaining[:, :-self.emit_channels // 2, :]
+        outputs.append(x)
+
+        outputs = torch.cat(outputs, dim=1)
+        outputs = outputs.view([outputs.size()[0], -1])
+        return outputs, total_conv_loss, total_coupling_loss
 
 
 class Generator(Network):
@@ -103,7 +138,6 @@ class Generator(Network):
         assert on_vocal.shape == off_vocal.shape
         assert len(on_vocal.shape) == 2
         if self.training:
-            assert _N_CHANNELS % 2 == 0
             assert on_vocal.shape[1] % _N_CHANNELS == 0
         else:
             # Pad to multiple of _N_CHANNELS.
@@ -118,6 +152,13 @@ class Generator(Network):
         if self.training:
             self._summary_writer.add_scalar('loss_train/conv', total_conv_loss, self.current_step)
             self._summary_writer.add_scalar('loss_train/coupling', total_coupling_loss, self.current_step)
+            if self.current_step % 1000 == 0:
+                with torch.no_grad():
+                    self.eval()
+                    prediction, _, _ = self.model.forward(torch.Tensor(data[0]).cuda(), x)
+                    diff = np.amax(np.abs(data[1][0] - prediction[0].detach().cpu().numpy()))
+                    assert diff < 1e-4, diff
+                    self.train()
         loss = total_conv_loss + total_coupling_loss + torch.sum(x * x) / (2 * _STD_TRAIN * _STD_TRAIN)
         loss /= x.size(0) * x.size(1)
         return x, loss
