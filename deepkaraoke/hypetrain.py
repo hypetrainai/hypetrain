@@ -84,7 +84,7 @@ for step in range(1, 100000):
         torch.save(model_state, FLAGS.log_dir + '/model_%d.pt' % step)
         print('Uploading Prediction!')
 
-    if step == 10:
+    if step == 100:
         current_lr = FLAGS.lr
 
     if step%25000 == 0:

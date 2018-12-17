@@ -41,7 +41,7 @@ class AffineCoupling(nn.Module):
         super(AffineCoupling, self).__init__()
         self.channels = channels
         layer_defs = []
-        layer_defs.append(submodules.conv_1d(self.channels // 2, _CONV_CHANNELS, 3, 1, 1, 1, bias=True, wn=True))
+        layer_defs.append(submodules.conv_1d(self.channels, _CONV_CHANNELS, 3, 1, 1, 1, bias=True, wn=True))
         for i in range(_CONV_LAYERS):
             layer_defs.append(submodules.ResNetModule1d(_CONV_CHANNELS, _CONV_CHANNELS, 3, 1, 1, 2**(1+i), bias=True, bn=False, wn=True))
         end = submodules.conv_1d(_CONV_CHANNELS, 2, 3, 1, 1, 1, bias=True)
@@ -54,7 +54,7 @@ class AffineCoupling(nn.Module):
 
     def forward(self, conditioning, x, reverse=False):
         a, b = torch.split(x, self.channels // 2, dim=1)
-        log_s, t = torch.split(self.model.forward(a + conditioning), 1, dim=1)
+        log_s, t = torch.split(self.model.forward(torch.cat([a, conditioning], dim=1)), 1, dim=1)
         if reverse:
             b = (b - t) / torch.exp(log_s)
         else:
@@ -94,7 +94,7 @@ class Model(nn.Module):
                     x = x[:, self.emit_channels:, :]
                     conditioning = conditioning[:, self.emit_channels // 2:, :]
                 out = self.conv[i].forward(x)
-                total_conv_loss += -torch.log(torch.abs(torch.det(self.conv[i].weight)))
+                total_conv_loss += -torch.logdet(self.conv[i].weight)
                 with torch.no_grad():
                     pred = self.conv[i].forward(out, reverse=True)
                     diff = np.amax(np.abs((x - pred).detach().cpu().numpy()))
