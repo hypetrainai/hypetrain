@@ -33,14 +33,14 @@ class InvertibleConv1x1(nn.Module):
 
         self.W_inverse = None
 
-    def forward(self, x):
-        if self.training:
-            self.W_inverse = None
-            return self.conv(x)
-        else:
+    def forward(self, x, reverse=False):
+        if reverse:
             if self.W_inverse is None:
                 self.W_inverse = self.conv.weight.squeeze().inverse()[..., None]
             return F.conv1d(x, self.W_inverse, bias=None)
+        else:
+            self.W_inverse = None
+            return self.conv(x)
 
 
 class AffineCoupling(nn.Module):
@@ -59,13 +59,13 @@ class AffineCoupling(nn.Module):
         layer_defs.append(end)
         self.model = nn.Sequential(*layer_defs)
 
-    def forward(self, conditioning, x):
+    def forward(self, conditioning, x, reverse=False):
         a, b = torch.split(x, self.channels // 2, dim=1)
         log_s, t = torch.split(self.model.forward(a + conditioning), 1, dim=1)
-        if self.training:
-            b = torch.exp(log_s) * b + t
-        else:
+        if reverse:
             b = (b - t) / torch.exp(log_s)
+        else:
+            b = torch.exp(log_s) * b + t
         return torch.cat((a, b), dim=1), torch.sum(-log_s)
 
 
@@ -85,7 +85,7 @@ class Model(nn.Module):
             self.conv.append(InvertibleConv1x1(remaining_channels))
             self.coupling.append(AffineCoupling(remaining_channels))
 
-    def forward(self, conditioning, x):
+    def forward(self, conditioning, x, reverse=False):
         assert len(x.size()) == 2
         assert conditioning.size() == x.size()
         x = x.view([x.size()[0], _N_CHANNELS, -1])
@@ -94,7 +94,7 @@ class Model(nn.Module):
         total_conv_loss = 0
         total_coupling_loss = 0
         outputs = []
-        if self.training:
+        if not reverse:
             for i in range(_NUM_FLOWS):
                 if i in self.emit_layers:
                     outputs.append(x[:, :self.emit_channels, :])
@@ -112,8 +112,8 @@ class Model(nn.Module):
             cond_remaining = conditioning[:, :-remaining_channels // 2, :]
             conditioning = conditioning[:, -remaining_channels // 2:, :]
             for i in reversed(range(_NUM_FLOWS)):
-                x, _ = self.coupling[i].forward(conditioning, x)
-                x = self.conv[i].forward(x)
+                x, _ = self.coupling[i].forward(conditioning, x, reverse=True)
+                x = self.conv[i].forward(x, reverse=True)
                 # TODO: this is buggy and doesn't work.
                 if i in self.emit_layers:
                     x = torch.cat([x_remaining[:, -self.emit_channels:, :], x], dim=1)
@@ -146,19 +146,17 @@ class Generator(Network):
             off_vocal = np.pad(off_vocal, [(0, 0), (0, pad_size)], 'constant')
         return on_vocal, off_vocal
 
-    def forward(self, data):
+    def forward(self, data, reverse=False):
         x, total_conv_loss, total_coupling_loss = (
-            self.model.forward(torch.Tensor(data[0]).cuda(), torch.Tensor(data[1]).cuda()))
-        if self.training:
+            self.model.forward(torch.Tensor(data[0]).cuda(), torch.Tensor(data[1]).cuda(), reverse))
+        if self.training and not reverse:
             self._summary_writer.add_scalar('loss_train/conv', total_conv_loss, self.current_step)
             self._summary_writer.add_scalar('loss_train/coupling', total_coupling_loss, self.current_step)
             if self.current_step % 1000 == 0:
                 with torch.no_grad():
-                    self.eval()
-                    prediction, _, _ = self.model.forward(torch.Tensor(data[0]).cuda(), x)
+                    prediction, _, _ = self.model.forward(torch.Tensor(data[0]).cuda(), x, reverse=True)
                     diff = np.amax(np.abs(data[1][0] - prediction[0].detach().cpu().numpy()))
                     assert diff < 1e-4, diff
-                    self.train()
         loss = total_conv_loss + total_coupling_loss + torch.sum(x * x) / (2 * _STD_TRAIN * _STD_TRAIN)
         loss /= x.size(0) * x.size(1)
         return x, loss
@@ -177,6 +175,6 @@ class Generator(Network):
         for i in range(0, data[0].shape[1], chunk_size):
             end = min(data[0].shape[1], i + chunk_size)
             data_i = [data[0][:, i:end], data[1][:, i:end]]
-            prediction_i = self.forward(data_i)[0].detach().cpu().numpy()
+            prediction_i = self.forward(data_i, reverse=True)[0].detach().cpu().numpy()
             prediction = np.concatenate((prediction, prediction_i), axis=1)
         return prediction
