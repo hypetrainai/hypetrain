@@ -19,20 +19,17 @@ from collections import OrderedDict
 import importlib
 import utils
 import dataloader
-from CONSOLE_ARGS import ARGS as FLAGS
+from GLOBALS import FLAGS, GLOBAL
 from fftmodel import Discriminator as disc
 from tensorboardX import SummaryWriter
-
-os.makedirs(FLAGS.log_dir, exist_ok=True)
-writer = SummaryWriter(FLAGS.log_dir)
 
 batch_size = 64
 train_dataset = dataloader.KaraokeDataLoader('data/train.pkl.gz', batch_size = batch_size)
 test_dataset = dataloader.KaraokeDataLoader('data/test.pkl.gz', batch_size = batch_size)
 
 NNModel = getattr(importlib.import_module(FLAGS.module_name), FLAGS.model_name)
-model_D = disc(writer)
-model = NNModel(writer)
+model_D = disc()
+model = NNModel()
 optimizer = optim.Adam(model.parameters(), lr = FLAGS.lr)
 optimizer_disc = optim.Adam(model_D.parameters(), lr = 0.0025*FLAGS.lr)
 
@@ -51,12 +48,11 @@ for step in range(1, 100000):
     data = train_dataset.get_random_batch(20000)
     data = model.preprocess(data)
 
-    model.current_step = step
-
+    GLOBAL.current_step = step
 
     prediction = model.forward(data)
     loss = model.loss(prediction, data)
-    writer.add_scalar('loss_train/total', loss, step)
+    GLOBAL.summary_writer.add_scalar('loss_train/total', loss, step)
 
     GAN_pred = model_D.forward(prediction)
     GAN_gt = model_D.forward(data)
@@ -69,7 +65,7 @@ for step in range(1, 100000):
 
     GAN_loss = -1.0*torch.mean(torch.log(1.0-scores_pred[:,0]))
     #print(GAN_loss)
-    writer.add_scalar('loss_train/GAN_gen_loss', GAN_loss, step)
+    GLOBAL.summary_writer.add_scalar('loss_train/GAN_gen_loss', GAN_loss, step)
 
     total_loss = loss + 0.002*GAN_loss
 
@@ -85,7 +81,7 @@ for step in range(1, 100000):
         data = train_dataset.get_random_batch(20000)
         data = model.preprocess(data)
         prediction = model.forward(data)
-        #writer.add_scalar('loss_train/total', loss, step)
+        #GLOBAL.summary_writer.add_scalar('loss_train/total', loss, step)
 
         GAN_pred = model_D.forward(prediction)
         GAN_gt = model_D.forward(data)
@@ -99,11 +95,11 @@ for step in range(1, 100000):
         optimizer_disc.step()
         optimizer_disc.zero_grad()
         optimizer.zero_grad()
-    writer.add_scalar('loss_train/disc_loss', GAN_loss_disc, step)
+    GLOBAL.summary_writer.add_scalar('loss_train/disc_loss', GAN_loss_disc, step)
 
     if step%25 == 0:
         print('Oh no! Your training loss is %.3f at step %d' % (loss, step))
-        writer.add_scalar('steps/s', 25.0 / (time.time() - start_time), step)
+        GLOBAL.summary_writer.add_scalar('steps/s', 25.0 / (time.time() - start_time), step)
 
     if step%1000 == 0:
         print('Evaluating model!')
@@ -116,16 +112,16 @@ for step in range(1, 100000):
             prediction = model.forward(data)
             loss = model.loss(prediction, data)
             print('Oh no! Your test loss is %.3f at step %d' % (loss, step))
-            writer.add_scalar('loss_test/total', loss, step)
+            GLOBAL.summary_writer.add_scalar('loss_test/total', loss, step)
 
             for dataset, prefix in [(train_dataset, 'eval_train'), (test_dataset, 'eval_test')]:
                 torch.cuda.empty_cache()
                 # data = dataset.get_random_batch(500000, batch_size=1)
                 data = [dataset.get_single_segment(extract_idx=0, start_value=2000000, sample_length=200000)]
                 prediction = model.predict(model.preprocess(data))
-                writer.add_audio(prefix + '/predicted', prediction, step, sample_rate=FLAGS.sample_rate)
-                writer.add_audio(prefix + '/gt_onvocal', data[0].data[0], step, sample_rate=FLAGS.sample_rate)
-                writer.add_audio(prefix + '/gt_offvocal', data[0].data[1], step, sample_rate=FLAGS.sample_rate)
+                GLOBAL.summary_writer.add_audio(prefix + '/predicted', prediction, step, sample_rate=FLAGS.sample_rate)
+                GLOBAL.summary_writer.add_audio(prefix + '/gt_onvocal', data[0].data[0], step, sample_rate=FLAGS.sample_rate)
+                GLOBAL.summary_writer.add_audio(prefix + '/gt_offvocal', data[0].data[1], step, sample_rate=FLAGS.sample_rate)
         torch.cuda.empty_cache()
         model.train()
 

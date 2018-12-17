@@ -1,5 +1,16 @@
 import argparse
+import os
 import pprint
+from tensorboardX import SummaryWriter
+
+
+class AttrDict(dict):
+    def __init__(self, *args, **kwargs):
+        super(AttrDict, self).__init__(*args, **kwargs)
+        self.__dict__ = self
+
+GLOBAL = AttrDict()
+
 
 def run_from_ipython():
     try:
@@ -7,6 +18,7 @@ def run_from_ipython():
         return True
     except NameError:
         return False
+
 
 parser = argparse.ArgumentParser()
 
@@ -28,8 +40,11 @@ parser.add_argument('--image_summaries', type=bool, default=True, help='Enable i
 
 
 if run_from_ipython():
-    ARGS = parser.parse_args([])
+    FLAGS = parser.parse_args([])
 else:
-    ARGS = parser.parse_args()
+    FLAGS = parser.parse_args()
+pprint.pprint(vars(FLAGS))
 
-pprint.pprint(vars(ARGS))
+os.makedirs(FLAGS.log_dir, exist_ok=True)
+GLOBAL.summary_writer = SummaryWriter(FLAGS.log_dir)
+

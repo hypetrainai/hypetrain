@@ -3,9 +3,8 @@ import torch.nn as nn
 
 
 class Network(nn.Module):
-    def __init__(self, summary_writer):
+    def __init__(self):
         super(Network, self).__init__()
-        self._summary_writer = summary_writer
         self.model = nn.DataParallel(self.BuildModel()).cuda()
 
     def BuildModel(self):

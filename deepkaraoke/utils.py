@@ -3,7 +3,7 @@ import librosa.display
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-from CONSOLE_ARGS import ARGS as FLAGS
+from GLOBALS import FLAGS
 
 
 def Convert16BitToFloat(*data):

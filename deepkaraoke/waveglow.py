@@ -6,7 +6,7 @@ import numpy as np
 import submodules
 from network import Network
 import utils
-from CONSOLE_ARGS import ARGS as FLAGS
+from GLOBALS import FLAGS, GLOBAL
 
 _NUM_FLOWS = 12
 _N_CHANNELS = 8
@@ -150,9 +150,9 @@ class Generator(Network):
         x, total_conv_loss, total_coupling_loss = (
             self.model.forward(torch.Tensor(data[0]).cuda(), torch.Tensor(data[1]).cuda(), reverse))
         if self.training and not reverse:
-            self._summary_writer.add_scalar('loss_train/conv', total_conv_loss, self.current_step)
-            self._summary_writer.add_scalar('loss_train/coupling', total_coupling_loss, self.current_step)
-            if self.current_step % 1000 == 0:
+            GLOBAL.summary_writer.add_scalar('loss_train/conv', total_conv_loss, GLOBAL.current_step)
+            GLOBAL.summary_writer.add_scalar('loss_train/coupling', total_coupling_loss, GLOBAL.current_step)
+            if GLOBAL.current_step % 1000 == 0:
                 with torch.no_grad():
                     prediction, _, _ = self.model.forward(torch.Tensor(data[0]).cuda(), x, reverse=True)
                     diff = np.amax(np.abs(data[1][0] - prediction[0].detach().cpu().numpy()))
