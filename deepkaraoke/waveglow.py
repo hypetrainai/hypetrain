@@ -20,27 +20,20 @@ _STD_EVAL = 0.6
 class InvertibleConv1x1(nn.Module):
     def __init__(self, c):
         super(InvertibleConv1x1, self).__init__()
-        self.conv = torch.nn.Conv1d(c, c, kernel_size=1, bias=False)
-
+        self.channels = c
         # Sample a random orthonormal matrix to initialize weights
-        W = torch.qr(torch.FloatTensor(c, c).normal_())[0]
-
+        w_init = np.linalg.qr(np.random.randn(c, c))[0].astype(np.float32)
         # Ensure determinant is 1.0 not -1.0
-        if torch.det(W) < 0:
-            W[:,0] = -1*W[:,0]
-        W = W.view(c, c, 1)
-        self.conv.weight.data = W
-
-        self.W_inverse = None
+        if np.linalg.det(w_init) < 0:
+          w_init[:, 0] = -1 * w_init[:, 0]
+        self.register_parameter("weight", nn.Parameter(torch.Tensor(w_init)))
 
     def forward(self, x, reverse=False):
+        weight = self.weight
         if reverse:
-            if self.W_inverse is None:
-                self.W_inverse = self.conv.weight.squeeze().inverse()[..., None]
-            return F.conv1d(x, self.W_inverse, bias=None)
-        else:
-            self.W_inverse = None
-            return self.conv(x)
+            weight = torch.inverse(weight)
+        weight = weight.view(self.channels, self.channels, 1)
+        return F.conv1d(x, weight)
 
 
 class AffineCoupling(nn.Module):
@@ -66,7 +59,7 @@ class AffineCoupling(nn.Module):
             b = (b - t) / torch.exp(log_s)
         else:
             b = torch.exp(log_s) * b + t
-        return torch.cat((a, b), dim=1), torch.sum(-log_s)
+        return torch.cat((a, b), dim=1), torch.mean(-log_s)
 
 
 class Model(nn.Module):
@@ -100,10 +93,20 @@ class Model(nn.Module):
                     outputs.append(x[:, :self.emit_channels, :])
                     x = x[:, self.emit_channels:, :]
                     conditioning = conditioning[:, self.emit_channels // 2:, :]
-                x = self.conv[i].forward(x)
-                total_conv_loss += -torch.log(torch.abs(torch.det(self.conv[i].conv.weight.squeeze())))
-                x, coupling_loss = self.coupling[i].forward(conditioning, x)
+                out = self.conv[i].forward(x)
+                total_conv_loss += -torch.log(torch.abs(torch.det(self.conv[i].weight)))
+                with torch.no_grad():
+                    pred = self.conv[i].forward(out, reverse=True)
+                    diff = np.amax(np.abs((x - pred).detach().cpu().numpy()))
+                    GLOBAL.summary_writer.add_scalar('reverse/conv_%d' % i, diff, GLOBAL.current_step)
+                x = out
+                out, coupling_loss = self.coupling[i].forward(conditioning, x)
                 total_coupling_loss += coupling_loss
+                with torch.no_grad():
+                    pred, _ = self.coupling[i].forward(conditioning, out, reverse=True)
+                    diff = np.amax(np.abs((x - pred).detach().cpu().numpy()))
+                    GLOBAL.summary_writer.add_scalar('reverse/coupling_%d' % i, diff, GLOBAL.current_step)
+                x = out
         else:
             remaining_channels = _N_CHANNELS - len(self.emit_layers) * self.emit_channels
             assert remaining_channels > 0
@@ -152,13 +155,8 @@ class Generator(Network):
         if self.training and not reverse:
             GLOBAL.summary_writer.add_scalar('loss_train/conv', total_conv_loss, GLOBAL.current_step)
             GLOBAL.summary_writer.add_scalar('loss_train/coupling', total_coupling_loss, GLOBAL.current_step)
-            if GLOBAL.current_step % 1000 == 0:
-                with torch.no_grad():
-                    prediction, _, _ = self.model.forward(torch.Tensor(data[0]).cuda(), x, reverse=True)
-                    diff = np.amax(np.abs(data[1][0] - prediction[0].detach().cpu().numpy()))
-                    assert diff < 1e-4, diff
-        loss = total_conv_loss + total_coupling_loss + torch.sum(x * x) / (2 * _STD_TRAIN * _STD_TRAIN)
-        loss /= x.size(0) * x.size(1)
+        loss = total_conv_loss + total_coupling_loss
+        loss += torch.mean(x * x) / (2 * _STD_TRAIN * _STD_TRAIN)
         return x, loss
 
     def loss(self, prediction, data):
