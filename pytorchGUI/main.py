@@ -142,7 +142,7 @@ def setin2():
     init_lines = "\n".join(code_init)
     forward_lines = "\n".join(code_forward)
     all_lines = init_lines + "\n" + forward_lines
-    run_by_string(all_lines)
+    run_by_string(all_lines, networkSettings)
 
 def DFS_nodes(node, code_init,code_forward):
     node.covered = True

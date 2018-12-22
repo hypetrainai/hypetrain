@@ -72,8 +72,11 @@ class test_net(nn.Module):
 
 
 class test_dataset(Dataset):
-    def __init__(self, filepath='/home/darvin/Data/cifar-10-train'):
+    def __init__(self, filepath=''):
         self.datapath = filepath
+        if len(filepath) <= 0:
+            user = self.getUser()
+            self.datapath = '/home/darvin/Data/cifar-10-train' if user == 'darvin' else '/home/kotaro/Data/cifar-10-test'
         
     def __len__(self):
         length = 0
@@ -98,6 +101,11 @@ class test_dataset(Dataset):
         lab = ii
         return {'img': img, 'lab': lab}
 
+    def getUser(self):
+        users = listdir('/home')
+        for user in users:
+            return user
+        return 'darvin'
 
 
 
@@ -131,8 +139,8 @@ def run_fx():
 
 
 
-def run_by_string(code_string):
-    dataset = test_dataset()
+def run_by_string(code_string, networkSettings):
+    dataset = test_dataset(networkSettings.path)
     dataloader = DataLoader(dataset, batch_size=256, shuffle=True, num_workers=6)
 
     lr = 0.001
