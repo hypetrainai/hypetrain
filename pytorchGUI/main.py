@@ -73,145 +73,136 @@ widget_height = 40
 root = tk.Tk()
 root.title("Draw the Network")
 
-c = tk.Canvas(root, width=canvas_width, height=canvas_height)
-c.pack(expand = YES, fill = BOTH)
-message = Label( root, text = "Press and Drag the mouse to draw" )
-message.pack( side = BOTTOM )
+root_canvas = tk.Canvas(root, width=canvas_width, height=canvas_height)
+root_canvas.pack(expand = YES, fill = BOTH)
+message = Label(root, text = "Press and Drag the mouse to draw")
+message.pack(side = BOTTOM)
 
-lf = tk.Frame(c, width=left_frame_width, height=canvas_height, highlightbackground="green", highlightthickness=1, bg="lavender")
-c.create_window(0, 0, anchor=tk.NW, window=lf)
+left_frame = tk.Frame(root_canvas, width=left_frame_width, height=canvas_height, highlightbackground="green", highlightthickness=1, bg="lavender")
+root_canvas.create_window(0, 0, anchor=tk.NW, window=left_frame)
 
-rf = tk.Canvas(c, width=1000,height=canvas_height)
+right_frame = tk.Canvas(root_canvas, width=1000,height=canvas_height)
 
-c.create_window(left_frame_width, 0, anchor=tk.NW, window=rf)
-main_canvas = rf
+root_canvas.create_window(left_frame_width, 0, anchor=tk.NW, window=right_frame)
+main_canvas = right_frame
 
 buttons = []
 for i in range(0, len(layers)):
-    b = tk.Button(lf, text=layers[i].name, width=10, anchor=tk.NW)
-    b.grid(row=i, columnspan=2, sticky=tk.W)
-    buttons.append(b)
+    layer_button = tk.Button(left_frame, text=layers[i].name, width=10, anchor=tk.NW)
+    layer_button.grid(row=i, columnspan=2, sticky=tk.W)
+    buttons.append(layer_button)
 
-def setin(i):
-    inp = layers[i]
+def Layer_Button_Action(i):
+    layer = layers[i]
     for button in buttons:
         button.config(highlightbackground="white")
     buttons[i].config(highlightbackground="red")
 
-    return setInput(inp)
+    return Set_Current_Selected_Layer(layer)
 
 for i in range(0, len(layers)):
-    buttons[i].config(command=lambda i=i: setin(i))
+    buttons[i].config(command=lambda i=i: Layer_Button_Action(i))
 
-def setInput(inp):
-    global layertype
-    layertype = inp
+def Set_Current_Selected_Layer(layer):
+    global selected_layer_type
+    selected_layer_type = layer
 
-list_nodes = []
+all_nodes = []
 node_names = NameCount()
 list_other_widgets = []
-layertype = None
-networkSettings = NetworkSettings()
+selected_layer_type = None
+network_settings = NetworkSettings()
 
-disconnect_button = tk.Button(lf, text='Disconnect', width=10, anchor=tk.W)
+disconnect_button = tk.Button(left_frame, text='Disconnect', width=10, anchor=tk.W)
 disconnect_button.grid(row=len(layers)+len(list_other_widgets), columnspan=2, sticky=tk.W)
 list_other_widgets.append(disconnect_button)
 
-run_button = tk.Button(lf, text='Run', width=10, anchor=tk.W)
-run_button.grid(row=len(layers)+len(list_other_widgets), columnspan=2, sticky=tk.W)
-list_other_widgets.append(run_button)
-def run_network():
-    run_fx()
-run_button.config(command=run_network)
-
-import_button = tk.Button(lf, text='Set Import Path', width=10, anchor=tk.W)
+import_button = tk.Button(left_frame, text='Set Import Path', width=10, anchor=tk.W)
 import_button.grid(row=len(layers)+len(list_other_widgets), columnspan=2, sticky=tk.W)
 list_other_widgets.append(import_button)
-import_button.config(command=networkSettings.setPath)
+import_button.config(command=network_settings.setPath)
 
-b = tk.Button(lf, text='Create Code', width=10, anchor=tk.W)
-b.grid(row=len(layers)+len(list_other_widgets), columnspan=2, sticky=tk.W)
-list_other_widgets.append(b)
-
-def setin2():
-    hasDupes, name = node_names.hasDupes()
-    if hasDupes:
+create_code_button = tk.Button(left_frame, text='Create Code', width=10, anchor=tk.W)
+create_code_button.grid(row=len(layers)+len(list_other_widgets), columnspan=2, sticky=tk.W)
+list_other_widgets.append(create_code_button)
+def Create_And_Run_Code():
+    has_dupes, name = node_names.hasDupes()
+    if has_dupes:
         print("ERROR - Duplicate layer name: " + name)
         return
     for button in buttons:
         button.config(highlightbackground="white")
 
-    all_lines = GenerateCode(list_nodes)
+    all_lines = GenerateCode(all_nodes)
     print("code is: ")
     print(all_lines)
-    run_by_string(all_lines, networkSettings)
+    run_by_string(all_lines, network_settings)
+create_code_button.config(command=lambda: Create_And_Run_Code())
 
-b.config(command=lambda: setin2())
+left_frame_properties = tk.Frame(left_frame, bg="pale green")
+left_frame_properties.grid(row=len(layers)+len(list_other_widgets))
+selected_node = currLayer(left_frame_properties)
 
-lf_properties = tk.Frame(lf, bg="pale green")
-lf_properties.grid(row=len(layers)+len(list_other_widgets))
-currNode = currLayer(lf_properties)
-
-def delete_curr_node(event):
-    if currNode.layer is None:
+def Delete_Current_Node(event):
+    if selected_node.layer is None:
         return
     if root.focus_get().winfo_class() == 'Entry':
         return
-    node_names.removeName(currNode.layer['name']);
-    index = list_nodes.index(currNode.layer)
-    currNode.delete(main_canvas)
-    del(list_nodes[index])
+    node_names.removeName(selected_node.layer['name']);
+    index = all_nodes.index(selected_node.layer)
+    selected_node.delete(main_canvas)
+    del(all_nodes[index])
 
-def disconnect_curr_node():
-    if currNode.layer is None:
+def Disconnect_Current_Node():
+    if selected_node.layer is None:
         return
-    currNode.disconnect(main_canvas)
+    selected_node.disconnect(main_canvas)
 
-disconnect_button.config(command=disconnect_curr_node)
+disconnect_button.config(command=Disconnect_Current_Node)
 
 
-def selectORcreate( event ):
-    global layertype
-    if layertype is None:
+def Select_Or_Create(event):
+    global selected_layer_type
+    if selected_layer_type is None:
         return
     x = event.x
     y = event.y
     selected = None
-    for node in list_nodes:
+    for node in all_nodes:
         if (x - node.x)**2 + (y - node.y)**2 < 25**2:
             selected = node
             break
     if selected:
-        currNode.select(selected, main_canvas, node_names)
+        selected_node.select(selected, main_canvas, node_names)
     else:
-        selected = layer(x, y, main_canvas, layertype, node_names)
-        currNode.select(selected, main_canvas, node_names)
-        list_nodes.append(selected)
+        selected = layer(x, y, main_canvas, selected_layer_type, node_names)
+        selected_node.select(selected, main_canvas, node_names)
+        all_nodes.append(selected)
         node_names.addName(selected['name'])
         
-def move( event ):
-    selected = currNode.layer
+def Move_Node(event):
+    selected = selected_node.layer
     if selected is None:
         return
-    currNode.move(selected, event.x, event.y, main_canvas)
+    selected_node.move(selected, event.x, event.y, main_canvas)
     
-def connect( event ):
-    if currNode.layer is None:
+def Connect_Nodes(event):
+    if selected_node.layer is None:
         return
     x = event.x
     y = event.y
     selected = None
-    for node in list_nodes:
+    for node in all_nodes:
         if (x - node.x)**2 + (y - node.y)**2 < 25**2:
             selected = node
             break
     if selected:
-        selected.connect(currNode.layer, main_canvas)
-        currNode.select(selected, main_canvas, node_names)
+        selected.connect(selected_node.layer, main_canvas)
+        selected_node.select(selected, main_canvas, node_names)
 
-main_canvas.bind( "<Button-1>", selectORcreate)
-main_canvas.bind( "<Button-3>", connect)
-main_canvas.bind( "<B1-Motion>", move)
-root.bind( "<BackSpace>", delete_curr_node)
+main_canvas.bind("<Button-1>", Select_Or_Create)
+main_canvas.bind("<Button-3>", Connect_Nodes)
+main_canvas.bind("<B1-Motion>", Move_Node)
+root.bind("<BackSpace>", Delete_Current_Node)
 
 mainloop()
