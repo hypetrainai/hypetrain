@@ -22,10 +22,10 @@ def run_from_ipython():
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--log_dir', type=str, default='trained_models/withnorm_highlr_fromscratch', help='where to save the models')
+parser.add_argument('--log_dir', type=str, default='trained_models/deepsupervision_firstattempt', help='where to save the models')
 parser.add_argument('--module_name', type=str, default='fftmodel')
-parser.add_argument('--model_name', type=str, default='Generator')
-parser.add_argument('--lr', type=float, default=0.01)
+parser.add_argument('--model_name', type=str, default='GeneratorDeepSupervision')
+parser.add_argument('--lr', type=float, default=0.002)
 parser.add_argument('--batch_size', type=int, default=24)
 parser.add_argument('--train_seqlen', type=int, default=10000, help='sequence length during training')
 
@@ -38,7 +38,7 @@ parser.add_argument('--fmin', type=int, default=0)
 parser.add_argument('--debug', type=bool, default=True, help='Boolean switch for controlling debug code.')
 
 #TENSORBOARD ARGS
-parser.add_argument('--image_summaries', type=bool, default=True, help='Enable image summaries on tensorboard?')
+parser.add_argument('--image_summaries', type=bool, default=False, help='Enable image summaries on tensorboard?')
 
 
 if run_from_ipython():

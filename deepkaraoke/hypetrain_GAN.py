@@ -24,8 +24,8 @@ from fftmodel import Discriminator as disc
 from tensorboardX import SummaryWriter
 
 batch_size = 64
-train_dataset = dataloader.KaraokeDataLoader('data/train.pkl.gz', batch_size = batch_size)
-test_dataset = dataloader.KaraokeDataLoader('data/test.pkl.gz', batch_size = batch_size)
+train_dataset = dataloader.KaraokeDataLoader('data/16k_LARGE/train.pkl.gz', batch_size = batch_size)
+test_dataset = dataloader.KaraokeDataLoader('data/16k_LARGE/test.pkl.gz', batch_size = batch_size)
 
 NNModel = getattr(importlib.import_module(FLAGS.module_name), FLAGS.model_name)
 model_D = disc()
@@ -34,14 +34,28 @@ optimizer = optim.Adam(model.parameters(), lr = FLAGS.lr)
 optimizer_disc = optim.Adam(model_D.parameters(), lr = 0.0025*FLAGS.lr)
 
 
-model_state = torch.load('trained_models/withnorm_cont_v2/model_8000.pt')
-disc_state = torch.load('trained_models/withnorm_cont_v2/model_disc_8000.pt')
+#model_state = torch.load('trained_models/withnorm_cont_v2/model_8000.pt')
+#disc_state = torch.load('trained_models/withnorm_cont_v2/model_disc_8000.pt')
 
 #model.load_state_dict(model_state['state_dict'])
 #optimizer.load_state_dict(model_state['optimizer'])
 
 #model_D.load_state_dict(disc_state['state_dict'])
 #optimizer_disc.load_state_dict(disc_state['optimizer'])
+
+def get_aux_weights(step, num_aux = 5, step_between = 2500):
+    final = torch.zeros([num_aux]).float()
+    if step < step_between:
+        final[0] = 1.0
+    else:
+        number = step//step_between
+        if number >= num_aux-1:
+            final[num_aux-1] = 1.0
+        else:
+            percentage = float(step - number*step_between)/step_between
+            final[number] = percentage
+            final[number-1] = 1-percentage
+    return final.cuda()
 
 start_time = time.time()
 for step in range(1, 100000):
@@ -51,6 +65,11 @@ for step in range(1, 100000):
     GLOBAL.current_step = step
 
     prediction = model.forward(data)
+    aux_weights = get_aux_weights(step)
+    
+    if FLAGS.model_name == 'GeneratorDeepSupervision':
+        aux_weights = get_aux_weights(step)
+        prediction = torch.sum(torch.cat([(aux_weights[i]*prediction[i]).unsqueeze(0) for i in range(len(prediction))],0),0)
     loss = model.loss(prediction, data)
     GLOBAL.summary_writer.add_scalar('loss_train/total', loss, step)
 
@@ -81,6 +100,8 @@ for step in range(1, 100000):
         data = train_dataset.get_random_batch(20000)
         data = model.preprocess(data)
         prediction = model.forward(data)
+        if FLAGS.model_name == 'GeneratorDeepSupervision':
+            prediction = torch.sum(torch.cat([(aux_weights[i]*prediction[i]).unsqueeze(0) for i in range(len(prediction))],0),0)
         #GLOBAL.summary_writer.add_scalar('loss_train/total', loss, step)
 
         GAN_pred = model_D.forward(prediction)
@@ -110,6 +131,8 @@ for step in range(1, 100000):
             data = test_dataset.get_random_batch(20000)
             data = model.preprocess(data)
             prediction = model.forward(data)
+            if FLAGS.model_name == 'GeneratorDeepSupervision':
+                prediction = torch.sum(torch.cat([(aux_weights[i]*prediction[i]).unsqueeze(0) for i in range(len(prediction))],0),0)
             loss = model.loss(prediction, data)
             print('Oh no! Your test loss is %.3f at step %d' % (loss, step))
             GLOBAL.summary_writer.add_scalar('loss_test/total', loss, step)
@@ -119,6 +142,8 @@ for step in range(1, 100000):
                 # data = dataset.get_random_batch(500000, batch_size=1)
                 data = [dataset.get_single_segment(extract_idx=0, start_value=2000000, sample_length=200000)]
                 prediction = model.predict(model.preprocess(data))
+                if FLAGS.model_name == 'GeneratorDeepSupervision':
+                    prediction = torch.sum(torch.cat([(aux_weights[i]*prediction[i]).unsqueeze(0) for i in range(len(prediction))],0),0)
                 GLOBAL.summary_writer.add_audio(prefix + '/predicted', prediction, step, sample_rate=FLAGS.sample_rate)
                 GLOBAL.summary_writer.add_audio(prefix + '/gt_onvocal', data[0].data[0], step, sample_rate=FLAGS.sample_rate)
                 GLOBAL.summary_writer.add_audio(prefix + '/gt_offvocal', data[0].data[1], step, sample_rate=FLAGS.sample_rate)
