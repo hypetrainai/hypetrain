@@ -13,7 +13,7 @@ _N_CHANNELS = 8
 assert _N_CHANNELS % 8 == 0
 _CONV_LAYERS = 8
 _CONV_CHANNELS = 512
-_STD_TRAIN = np.sqrt(0.5)
+_STD_TRAIN = 1.0
 _STD_EVAL = 0.6
 
 
@@ -42,9 +42,9 @@ class AffineCoupling(nn.Module):
         self.channels = channels
         assert self.channels % 2 == 0
         layer_defs = []
-        layer_defs.append(submodules.conv_1d(self.channels // 2, _CONV_CHANNELS, 3, 1, 1, 1, bias=True))
+        layer_defs.append(submodules.conv_1d(self.channels // 2, _CONV_CHANNELS, 3, 1, 1, 1))
         for i in range(_CONV_LAYERS):
-            layer_defs.append(submodules.ResNetModule1d(_CONV_CHANNELS, _CONV_CHANNELS, 3, 1, 1, 2**(1+i), bias=True, bn=False))
+            layer_defs.append(submodules.ResNetModule1d(_CONV_CHANNELS, _CONV_CHANNELS, 3, 1, 1, 2**(1+i)))
         end = submodules.conv_1d(_CONV_CHANNELS, self.channels, 3, 1, 1, 1, bias=True)
         # Initializing last layer to 0 makes the affine coupling layers
         # do nothing at first.  This helps with training stability.
@@ -52,7 +52,7 @@ class AffineCoupling(nn.Module):
         end.bias.data.zero_()
         layer_defs.append(end)
         self.model = nn.Sequential(*layer_defs)
-        self.cond_proj = submodules.conv_1d(self.channels, self.channels // 2, 1, 1, 0, 1, bias=True)
+        self.cond_proj = submodules.conv_1d(self.channels, self.channels // 2, 1, 1, 0, 1)
 
     def forward(self, conditioning, x, reverse=False):
         conditioning = self.cond_proj(conditioning)
@@ -70,7 +70,7 @@ class Model(nn.Module):
         super(Model, self).__init__()
         self.conv = nn.ModuleList()
         self.coupling = nn.ModuleList()
-        self.emit_layers = [4, 8]
+        self.emit_layers = []
         self.emit_channels = _N_CHANNELS // 4
         assert self.emit_channels % 2 == 0
         remaining_channels = _N_CHANNELS
@@ -96,17 +96,19 @@ class Model(nn.Module):
                     conditioning = conditioning[:, self.emit_channels:, :]
                 out = self.conv[i].forward(x)
                 total_conv_loss += -x.size(2) * torch.logdet(self.conv[i].weight)
-                with torch.no_grad():
-                    pred = self.conv[i].forward(out, reverse=True)
-                    diff = np.amax(np.abs((x - pred).detach().cpu().numpy()))
-                    GLOBAL.summary_writer.add_scalar('reverse/conv_%d' % i, diff, GLOBAL.current_step)
+                if FLAGS.debug:
+                  with torch.no_grad():
+                      pred = self.conv[i].forward(out, reverse=True)
+                      diff = np.amax(np.abs((x - pred).detach().cpu().numpy()))
+                      GLOBAL.summary_writer.add_scalar('reverse/conv_%d' % i, diff, GLOBAL.current_step)
                 x = out
                 out, coupling_loss = self.coupling[i].forward(conditioning, x)
                 total_coupling_loss += coupling_loss
-                with torch.no_grad():
-                    pred, _ = self.coupling[i].forward(conditioning, out, reverse=True)
-                    diff = np.amax(np.abs((x - pred).detach().cpu().numpy()))
-                    GLOBAL.summary_writer.add_scalar('reverse/coupling_%d' % i, diff, GLOBAL.current_step)
+                if FLAGS.debug:
+                  with torch.no_grad():
+                      pred, _ = self.coupling[i].forward(conditioning, out, reverse=True)
+                      diff = np.amax(np.abs((x - pred).detach().cpu().numpy()))
+                      GLOBAL.summary_writer.add_scalar('reverse/coupling_%d' % i, diff, GLOBAL.current_step)
                 x = out
         else:
             remaining_channels = _N_CHANNELS - len(self.emit_layers) * self.emit_channels
@@ -118,7 +120,6 @@ class Model(nn.Module):
             for i in reversed(range(_NUM_FLOWS)):
                 x, _ = self.coupling[i].forward(conditioning, x, reverse=True)
                 x = self.conv[i].forward(x, reverse=True)
-                # TODO: this is buggy and doesn't work.
                 if i in self.emit_layers:
                     x = torch.cat([x_remaining[:, -self.emit_channels:, :], x], dim=1)
                     x_remaining = x_remaining[:, :-self.emit_channels, :]
@@ -156,6 +157,11 @@ class Generator(Network):
         if self.training and not reverse:
             GLOBAL.summary_writer.add_scalar('loss_train/conv', total_conv_loss, GLOBAL.current_step)
             GLOBAL.summary_writer.add_scalar('loss_train/coupling', total_coupling_loss, GLOBAL.current_step)
+            if FLAGS.debug:
+              with torch.no_grad():
+                pred, _, _ = self.model.forward(torch.Tensor(data[0]).cuda(), x, reverse=True)
+                diff = np.amax(np.abs(data[1] - pred.detach().cpu().numpy()))
+                GLOBAL.summary_writer.add_scalar('reverse/all', diff, GLOBAL.current_step)
         loss = total_conv_loss + total_coupling_loss
         loss += torch.sum(x * x) / (2 * _STD_TRAIN * _STD_TRAIN)
         loss /= x.size(0) * x.size(1)
