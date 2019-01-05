@@ -42,9 +42,9 @@ class AffineCoupling(nn.Module):
         self.channels = channels
         assert self.channels % 2 == 0
         layer_defs = []
-        layer_defs.append(submodules.conv_1d(self.channels // 2, _CONV_CHANNELS, 3, 1, 1, 1, bias=True, wn=True))
+        layer_defs.append(submodules.conv_1d(self.channels // 2, _CONV_CHANNELS, 3, 1, 1, 1, bias=True))
         for i in range(_CONV_LAYERS):
-            layer_defs.append(submodules.ResNetModule1d(_CONV_CHANNELS, _CONV_CHANNELS, 3, 1, 1, 2**(1+i), bias=True, bn=False, wn=True))
+            layer_defs.append(submodules.ResNetModule1d(_CONV_CHANNELS, _CONV_CHANNELS, 3, 1, 1, 2**(1+i), bias=True, bn=False))
         end = submodules.conv_1d(_CONV_CHANNELS, self.channels, 3, 1, 1, 1, bias=True)
         # Initializing last layer to 0 makes the affine coupling layers
         # do nothing at first.  This helps with training stability.
@@ -52,7 +52,7 @@ class AffineCoupling(nn.Module):
         end.bias.data.zero_()
         layer_defs.append(end)
         self.model = nn.Sequential(*layer_defs)
-        self.cond_proj = submodules.conv_1d(self.channels, self.channels // 2, 1, 1, 0, 1, bias=True, wn=True)
+        self.cond_proj = submodules.conv_1d(self.channels, self.channels // 2, 1, 1, 0, 1, bias=True)
 
     def forward(self, conditioning, x, reverse=False):
         conditioning = self.cond_proj(conditioning)
