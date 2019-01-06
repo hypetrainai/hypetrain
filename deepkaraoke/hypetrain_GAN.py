@@ -32,6 +32,7 @@ model_D = disc()
 model = NNModel()
 optimizer = optim.Adam(model.parameters(), lr = FLAGS.lr)
 optimizer_disc = optim.Adam(model_D.parameters(), lr = 0.0025*FLAGS.lr)
+aux_weights = None
 
 
 #model_state = torch.load('trained_models/withnorm_cont_v2/model_8000.pt')
@@ -141,9 +142,10 @@ for step in range(1, 100000):
                 torch.cuda.empty_cache()
                 # data = dataset.get_random_batch(500000, batch_size=1)
                 data = [dataset.get_single_segment(extract_idx=0, start_value=2000000, sample_length=200000)]
-                prediction = model.predict(model.preprocess(data))
-                if FLAGS.model_name == 'GeneratorDeepSupervision':
-                    prediction = torch.sum(torch.cat([(aux_weights[i]*prediction[i]).unsqueeze(0) for i in range(len(prediction))],0),0)
+                
+                prediction = model.predict(model.preprocess(data), aux_weights = aux_weights)
+                #if FLAGS.model_name == 'GeneratorDeepSupervision':
+                #    prediction = torch.sum(torch.cat([(aux_weights[i]*prediction[i]).unsqueeze(0) for i in range(len(prediction))],0),0)
                 GLOBAL.summary_writer.add_audio(prefix + '/predicted', prediction, step, sample_rate=FLAGS.sample_rate)
                 GLOBAL.summary_writer.add_audio(prefix + '/gt_onvocal', data[0].data[0], step, sample_rate=FLAGS.sample_rate)
                 GLOBAL.summary_writer.add_audio(prefix + '/gt_offvocal', data[0].data[1], step, sample_rate=FLAGS.sample_rate)

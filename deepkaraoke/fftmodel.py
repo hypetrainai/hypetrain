@@ -198,8 +198,10 @@ class GeneratorDeepSupervision(Network):
                           (predicted_imag - gt_imag)**2)
         return loss
 
-    def predict(self, data, summary_prefix=''):
+    def predict(self, data, summary_prefix='', aux_weights = None):
         prediction = self.forward(data)
+        if FLAGS.model_name == 'GeneratorDeepSupervision':
+            prediction = torch.sum(torch.cat([(aux_weights[i]*prediction[i]).unsqueeze(0) for i in range(len(prediction))],0),0)
         prediction = prediction.detach().cpu().numpy()
         assert prediction.shape[0] == 1
 
