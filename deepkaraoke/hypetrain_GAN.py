@@ -24,8 +24,12 @@ from fftmodel import Discriminator as disc
 from tensorboardX import SummaryWriter
 
 batch_size = 64
-train_dataset = dataloader.KaraokeDataLoader('data/16k_LARGE/train.pkl.gz', batch_size = batch_size)
-test_dataset = dataloader.KaraokeDataLoader('data/16k_LARGE/test.pkl.gz', batch_size = batch_size)
+train_dataset = dataloader.KaraokeDataLoader(
+    os.path.join(FLAGS.data_dir, 'train.pkl.gz'),
+    batch_size = batch_size)
+test_dataset = dataloader.KaraokeDataLoader(
+    os.path.join(FLAGS.data_dir, 'test.pkl.gz'),
+    batch_size = batch_size)
 
 NNModel = getattr(importlib.import_module(FLAGS.module_name), FLAGS.model_name)
 model_D = disc()
@@ -67,7 +71,7 @@ for step in range(1, 100000):
 
     prediction = model.forward(data)
     aux_weights = get_aux_weights(step)
-    
+
     if FLAGS.model_name == 'GeneratorDeepSupervision':
         aux_weights = get_aux_weights(step)
         prediction = torch.sum(torch.cat([(aux_weights[i]*prediction[i]).unsqueeze(0) for i in range(len(prediction))],0),0)
@@ -142,7 +146,7 @@ for step in range(1, 100000):
                 torch.cuda.empty_cache()
                 # data = dataset.get_random_batch(500000, batch_size=1)
                 data = [dataset.get_single_segment(extract_idx=0, start_value=2000000, sample_length=200000)]
-                
+
                 prediction = model.predict(model.preprocess(data), aux_weights = aux_weights)
                 #if FLAGS.model_name == 'GeneratorDeepSupervision':
                 #    prediction = torch.sum(torch.cat([(aux_weights[i]*prediction[i]).unsqueeze(0) for i in range(len(prediction))],0),0)
@@ -165,7 +169,9 @@ for step in range(1, 100000):
             'optimizer': optimizer_disc.state_dict()
         }
         torch.save(model_state, FLAGS.log_dir + '/model_%d.pt' % step)
+        torch.save(model_state, FLAGS.log_dir + '/model_latest.pt')
         torch.save(disc_model_state, FLAGS.log_dir + '/model_disc_%d.pt' % step)
+        torch.save(disc_model_state, FLAGS.log_dir + '/model_disc_latest.pt')
 
     if step%10000 == 0:
         for param_group in optimizer.param_groups:

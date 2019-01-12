@@ -177,10 +177,10 @@ class Generator(Network):
         # split into chunks to fit into memory.
         chunk_size = 32000
         assert chunk_size % _N_CHANNELS == 0
-        prediction = np.zeros([1, 0])
+        prediction = np.zeros([0])
         for i in range(0, data[0].shape[1], chunk_size):
             end = min(data[0].shape[1], i + chunk_size)
             data_i = [data[0][:, i:end], data[1][:, i:end]]
-            prediction_i = self.forward(data_i, reverse=True)[0].detach().cpu().numpy()
-            prediction = np.concatenate((prediction, prediction_i), axis=1)
+            prediction_i = self.forward(data_i, reverse=True)[0][0].detach().cpu().numpy()
+            prediction = np.concatenate((prediction, prediction_i))
         return prediction

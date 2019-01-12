@@ -21,8 +21,12 @@ import utils
 import dataloader
 from GLOBALS import FLAGS, GLOBAL
 
-train_dataset = dataloader.KaraokeDataLoader('data/train.pkl.gz', batch_size = FLAGS.batch_size)
-test_dataset = dataloader.KaraokeDataLoader('data/test.pkl.gz', batch_size = FLAGS.batch_size)
+train_dataset = dataloader.KaraokeDataLoader(
+    os.path.join(FLAGS.data_dir, 'train.pkl.gz'),
+    batch_size = FLAGS.batch_size)
+test_dataset = dataloader.KaraokeDataLoader(
+    os.path.join(FLAGS.data_dir, 'test.pkl.gz'),
+    batch_size = FLAGS.batch_size)
 
 NNModel = getattr(importlib.import_module(FLAGS.module_name), FLAGS.model_name)
 model = NNModel()
@@ -82,6 +86,7 @@ for step in range(1, 100000):
             'optimizer': optimizer.state_dict()
         }
         torch.save(model_state, FLAGS.log_dir + '/model_%d.pt' % step)
+        torch.save(model_state, FLAGS.log_dir + '/model_latest.pt')
         print('Uploading Prediction!')
 
     if step == 100:
