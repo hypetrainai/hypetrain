@@ -56,16 +56,16 @@ class AffineCoupling(nn.Module):
         end.bias.data.zero_()
         layer_defs.append(end)
         self.model = nn.Sequential(*layer_defs)
-        self.cond_proj = submodules.conv_1d(self.channels, self.channels // 2)
+        self.cond_proj = submodules.conv_1d(_N_CHANNELS, self.channels // 2)
 
     def forward(self, conditioning, x, reverse=False):
         conditioning = self.cond_proj(conditioning)
         a, b = torch.split(x, self.channels // 2, dim=1)
         log_s, t = torch.split(self.model.forward(a + conditioning), self.channels // 2, dim=1)
-        if reverse:
-            b = (b - t) / torch.exp(log_s)
-        else:
+        if not reverse:
             b = torch.exp(log_s) * b + t
+        else:
+            b = (b - t) / torch.exp(log_s)
         return torch.cat((a, b), dim=1), torch.sum(-log_s)
 
 
@@ -74,7 +74,7 @@ class Model(nn.Module):
         super(Model, self).__init__()
         self.conv = nn.ModuleList()
         self.coupling = nn.ModuleList()
-        self.emit_layers = []
+        self.emit_layers = [4, 8]
         self.emit_channels = _N_CHANNELS // 4
         assert self.emit_channels % 2 == 0
         remaining_channels = _N_CHANNELS
@@ -97,7 +97,6 @@ class Model(nn.Module):
                 if i in self.emit_layers:
                     outputs.append(x[:, :self.emit_channels, :])
                     x = x[:, self.emit_channels:, :]
-                    conditioning = conditioning[:, self.emit_channels:, :]
                 # TODO: enable 1x1 conv
                 x = torch.cat([x[:, x.size(1) // 2:, :], x[:, :x.size(1) // 2, :]], dim=1)
                 # out = self.conv[i].forward(x)
@@ -121,8 +120,6 @@ class Model(nn.Module):
             assert remaining_channels > 0
             x_remaining = x[:, :-remaining_channels, :]
             x = x[:, -remaining_channels:, :]
-            cond_remaining = conditioning[:, :-remaining_channels, :]
-            conditioning = conditioning[:, -remaining_channels:, :]
             for i in reversed(range(_NUM_FLOWS)):
                 x, _ = self.coupling[i].forward(conditioning, x, reverse=True)
                 # TODO: enable 1x1 conv
@@ -131,8 +128,6 @@ class Model(nn.Module):
                 if i in self.emit_layers:
                     x = torch.cat([x_remaining[:, -self.emit_channels:, :], x], dim=1)
                     x_remaining = x_remaining[:, :-self.emit_channels, :]
-                    conditioning = torch.cat([conditioning[:, -self.emit_channels:, :], conditioning], dim=1)
-                    cond_remaining = cond_remaining[:, :-self.emit_channels, :]
         outputs.append(x)
 
         outputs = torch.cat(outputs, dim=1)
@@ -196,4 +191,5 @@ class Generator(Network):
             prediction = np.concatenate((prediction, prediction_i[i - start:chunk_end - start]))
         # since we predicted off_vocal - on_vocal, add on_vocal to get off_vocal.
         prediction += data[0][0]
+        prediction = np.clip(prediction, -1.0, 1.0)
         return prediction
