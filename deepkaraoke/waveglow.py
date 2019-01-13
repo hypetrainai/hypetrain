@@ -42,17 +42,21 @@ class AffineCoupling(nn.Module):
         self.channels = channels
         assert self.channels % 2 == 0
         layer_defs = []
-        layer_defs.append(submodules.conv_1d(self.channels // 2, _CONV_CHANNELS, 3, 1, 1, 1))
+        layer_defs.append(submodules.conv_1d(self.channels // 2, _CONV_CHANNELS))
         for i in range(_CONV_LAYERS):
-            layer_defs.append(submodules.ResNetModule1d(_CONV_CHANNELS, _CONV_CHANNELS, 3, 1, 1, 2**(1+i)))
-        end = submodules.conv_1d(_CONV_CHANNELS, self.channels, 3, 1, 1, 1, bias=True)
+            layer_defs.append(submodules.ResNetModule1d(_CONV_CHANNELS,
+                                                        _CONV_CHANNELS,
+                                                        kernel_size=3,
+                                                        pad=1,
+                                                        dilation=2**(1+i)))
+        end = submodules.conv_1d(_CONV_CHANNELS, self.channels, bias=True)
         # Initializing last layer to 0 makes the affine coupling layers
         # do nothing at first.  This helps with training stability.
         end.weight.data.zero_()
         end.bias.data.zero_()
         layer_defs.append(end)
         self.model = nn.Sequential(*layer_defs)
-        self.cond_proj = submodules.conv_1d(self.channels, self.channels // 2, 1, 1, 0, 1)
+        self.cond_proj = submodules.conv_1d(self.channels, self.channels // 2)
 
     def forward(self, conditioning, x, reverse=False):
         conditioning = self.cond_proj(conditioning)
@@ -94,14 +98,16 @@ class Model(nn.Module):
                     outputs.append(x[:, :self.emit_channels, :])
                     x = x[:, self.emit_channels:, :]
                     conditioning = conditioning[:, self.emit_channels:, :]
-                out = self.conv[i].forward(x)
-                total_conv_loss += -x.size(2) * torch.logdet(self.conv[i].weight)
-                if FLAGS.debug:
-                  with torch.no_grad():
-                      pred = self.conv[i].forward(out, reverse=True)
-                      diff = np.amax(np.abs((x - pred).detach().cpu().numpy()))
-                      GLOBAL.summary_writer.add_scalar('reverse/conv_%d' % i, diff, GLOBAL.current_step)
-                x = out
+                # TODO: enable 1x1 conv
+                x = torch.cat([x[:, x.size(1) // 2:, :], x[:, :x.size(1) // 2, :]], dim=1)
+                # out = self.conv[i].forward(x)
+                # total_conv_loss += -x.size(1) * x.size(2) * torch.logdet(self.conv[i].weight)
+                # if FLAGS.debug:
+                #   with torch.no_grad():
+                #       pred = self.conv[i].forward(out, reverse=True)
+                #       diff = np.amax(np.abs((x - pred).detach().cpu().numpy()))
+                #       GLOBAL.summary_writer.add_scalar('reverse/conv_%d' % i, diff, GLOBAL.current_step)
+                # x = out
                 out, coupling_loss = self.coupling[i].forward(conditioning, x)
                 total_coupling_loss += coupling_loss
                 if FLAGS.debug:
@@ -119,7 +125,9 @@ class Model(nn.Module):
             conditioning = conditioning[:, -remaining_channels:, :]
             for i in reversed(range(_NUM_FLOWS)):
                 x, _ = self.coupling[i].forward(conditioning, x, reverse=True)
-                x = self.conv[i].forward(x, reverse=True)
+                # TODO: enable 1x1 conv
+                x = torch.cat([x[:, x.size(1) // 2:, :], x[:, :x.size(1) // 2, :]], dim=1)
+                # x = self.conv[i].forward(x, reverse=True)
                 if i in self.emit_layers:
                     x = torch.cat([x_remaining[:, -self.emit_channels:, :], x], dim=1)
                     x_remaining = x_remaining[:, :-self.emit_channels, :]
@@ -149,7 +157,7 @@ class Generator(Network):
             pad_size = (_N_CHANNELS - on_vocal.shape[1] % _N_CHANNELS) % _N_CHANNELS
             on_vocal = np.pad(on_vocal, [(0, 0), (0, pad_size)], 'constant')
             off_vocal = np.pad(off_vocal, [(0, 0), (0, pad_size)], 'constant')
-        return on_vocal, off_vocal
+        return on_vocal, off_vocal - on_vocal
 
     def forward(self, data, reverse=False):
         x, total_conv_loss, total_coupling_loss = (
@@ -175,12 +183,17 @@ class Generator(Network):
         # replace gt off_vocal data with vector randomly sampled from prior.
         data = (data[0], np.random.normal(0.0, _STD_EVAL, data[0].shape))
         # split into chunks to fit into memory.
-        chunk_size = 32000
-        assert chunk_size % _N_CHANNELS == 0
+        chunk_size = 16000
+        context_size = 4000
+        assert (chunk_size + 2 * context_size) % _N_CHANNELS == 0
         prediction = np.zeros([0])
         for i in range(0, data[0].shape[1], chunk_size):
-            end = min(data[0].shape[1], i + chunk_size)
-            data_i = [data[0][:, i:end], data[1][:, i:end]]
+            start = max(0, i - context_size)
+            chunk_end = min(data[0].shape[1], i + chunk_size)
+            end = min(data[0].shape[1], chunk_end + context_size)
+            data_i = [data[0][:, start:end], data[1][:, start:end]]
             prediction_i = self.forward(data_i, reverse=True)[0][0].detach().cpu().numpy()
-            prediction = np.concatenate((prediction, prediction_i))
+            prediction = np.concatenate((prediction, prediction_i[i - start:chunk_end - start]))
+        # since we predicted off_vocal - on_vocal, add on_vocal to get off_vocal.
+        prediction += data[0][0]
         return prediction
