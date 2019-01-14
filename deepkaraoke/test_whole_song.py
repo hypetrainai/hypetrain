@@ -13,6 +13,7 @@ import pickle as pkl
 import struct
 import torch
 import wave
+import utils
 
 def WriteWave(data, filename):
     tensor = np.clip(data, -1.0, 1.0)
@@ -32,8 +33,7 @@ if __name__ == '__main__':
     NNModel = getattr(importlib.import_module(FLAGS.module_name), FLAGS.model_name)
     model = NNModel()
     model = model.cuda()
-    model_state = torch.load(os.path.join(FLAGS.log_dir, 'model_%s.pt' % FLAGS.checkpoint))
-    model.load_state_dict(model_state['state_dict'])
+    utils.LoadModel(model)
     model.eval()
 
     dataset = dataloader.KaraokeDataLoader(os.path.join(FLAGS.data_dir, 'test.pkl.gz'), batch_size = 1)

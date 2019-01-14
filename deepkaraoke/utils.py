@@ -1,9 +1,37 @@
+import torch
+import os
 import librosa
 import librosa.display
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from GLOBALS import FLAGS
+
+
+def SaveModel(step, model, optimizer, ckpt_prefix='model'):
+    print('Saving model!')
+    model_state = {
+        'step': step,
+        'state_dict': model.state_dict(),
+        'optimizer': optimizer.state_dict()
+    }
+    torch.save(model_state, FLAGS.log_dir + '/%s_%d.pt' % (ckpt_prefix, step))
+    torch.save(model_state, FLAGS.log_dir + '/%s_latest.pt' % ckpt_prefix)
+    print('Model saved!')
+
+
+def LoadModel(model, optimizer=None, ckpt_prefix='model'):
+    try:
+        filename = os.path.join(FLAGS.log_dir, '%s_%s.pt' % (ckpt_prefix, FLAGS.checkpoint))
+        print('Restoring from %s' % filename)
+        model_state = torch.load(filename)
+    except FileNotFoundError:
+        input('Could not find checkpoint to restore! Press enter to continue from scratch.')
+        return 0
+    model.load_state_dict(model_state['state_dict'])
+    if optimizer:
+        optimizer.load_state_dict(model_state['optimizer'])
+    return model_state['step']
 
 
 def Convert16BitToFloat(*data):

@@ -30,13 +30,15 @@ test_dataset = dataloader.KaraokeDataLoader(
 
 NNModel = getattr(importlib.import_module(FLAGS.module_name), FLAGS.model_name)
 model = NNModel()
-current_lr = FLAGS.lr / 10
-optimizer = optim.Adam(model.parameters(), lr = current_lr)
+start_step = 0
+optimizer = optim.Adam(model.parameters(), lr = FLAGS.lr)
+if FLAGS.resume:
+    start_step = utils.LoadModel(model, optimizer)
+assert len(optimizer.param_groups) == 1
 
 start_time = time.time()
 last_step = 0
-for step in range(1, 100000):
-
+for step in range(start_step + 1, FLAGS.max_steps):
     GLOBAL.current_step = step
 
     data = train_dataset.get_random_batch(FLAGS.train_seqlen)
@@ -44,7 +46,7 @@ for step in range(1, 100000):
     prediction = model.forward(data)
     loss = model.loss(prediction, data)
     GLOBAL.summary_writer.add_scalar('loss_train/total', loss, step)
-
+    GLOBAL.summary_writer.add_scalar('lr', optimizer.param_groups[0]['lr'], step)
     loss.backward()
 
     optimizer.step()
@@ -79,25 +81,10 @@ for step in range(1, 100000):
         model.train()
 
     if step%2500 == 0:
-        print('Saving model!')
-        model_state = {
-            'step': step,
-            'state_dict': model.state_dict(),
-            'optimizer': optimizer.state_dict()
-        }
-        torch.save(model_state, FLAGS.log_dir + '/model_%d.pt' % step)
-        torch.save(model_state, FLAGS.log_dir + '/model_latest.pt')
-        print('Uploading Prediction!')
-
-    if step == 100:
-        current_lr = FLAGS.lr
+        utils.SaveModel(step, model, optimizer)
 
     if step%25000 == 0:
-        current_lr *= 0.2
-
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = current_lr
-    GLOBAL.summary_writer.add_scalar('lr', current_lr, step)
+        optimizer.param_groups[0]['lr'] *= 0.2
 
     if step%100 == 0:
         start_time = time.time()

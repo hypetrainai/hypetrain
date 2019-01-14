@@ -32,21 +32,17 @@ test_dataset = dataloader.KaraokeDataLoader(
     batch_size = batch_size)
 
 NNModel = getattr(importlib.import_module(FLAGS.module_name), FLAGS.model_name)
-model_D = disc()
 model = NNModel()
+model_D = disc()
 optimizer = optim.Adam(model.parameters(), lr = FLAGS.lr)
 optimizer_disc = optim.Adam(model_D.parameters(), lr = 0.0025*FLAGS.lr)
+start_step = 0
+if FLAGS.resume:
+    start_step = utils.LoadModel(model, optimizer)
+    utils.LoadModel(model_D, optimizer_disc, 'model_disc')
+assert len(optimizer.param_groups) == 1
+assert len(optimizer_disc.param_groups) == 1
 aux_weights = None
-
-
-#model_state = torch.load('trained_models/withnorm_cont_v2/model_8000.pt')
-#disc_state = torch.load('trained_models/withnorm_cont_v2/model_disc_8000.pt')
-
-#model.load_state_dict(model_state['state_dict'])
-#optimizer.load_state_dict(model_state['optimizer'])
-
-#model_D.load_state_dict(disc_state['state_dict'])
-#optimizer_disc.load_state_dict(disc_state['optimizer'])
 
 def get_aux_weights(step, num_aux = 5, step_between = 2500):
     final = torch.zeros([num_aux]).float()
@@ -63,7 +59,7 @@ def get_aux_weights(step, num_aux = 5, step_between = 2500):
     return final.cuda()
 
 start_time = time.time()
-for step in range(1, 100000):
+for step in range(start_step + 1, FLAGS.max_step):
     data = train_dataset.get_random_batch(20000)
     data = model.preprocess(data)
 
@@ -92,7 +88,6 @@ for step in range(1, 100000):
     GLOBAL.summary_writer.add_scalar('loss_train/GAN_gen_loss', GAN_loss, step)
 
     total_loss = loss + 0.002*GAN_loss
-
     total_loss.backward()
 
     optimizer.step()
@@ -122,6 +117,9 @@ for step in range(1, 100000):
         optimizer_disc.zero_grad()
         optimizer.zero_grad()
     GLOBAL.summary_writer.add_scalar('loss_train/disc_loss', GAN_loss_disc, step)
+
+    GLOBAL.summary_writer.add_scalar('lr/gen', optimizer.param_groups[0]['lr'], step)
+    GLOBAL.summary_writer.add_scalar('lr/disc', optimizer_disc.param_groups[0]['lr'], step)
 
     if step%25 == 0:
         print('Oh no! Your training loss is %.3f at step %d' % (loss, step))
@@ -157,25 +155,12 @@ for step in range(1, 100000):
         model.train()
 
     if step%2000 == 0:
-        print('Saving model!')
-        model_state = {
-            'step': step,
-            'state_dict': model.state_dict(),
-            'optimizer': optimizer.state_dict()
-        }
-        disc_model_state = {
-            'step': step,
-            'state_dict': model_D.state_dict(),
-            'optimizer': optimizer_disc.state_dict()
-        }
-        torch.save(model_state, FLAGS.log_dir + '/model_%d.pt' % step)
-        torch.save(model_state, FLAGS.log_dir + '/model_latest.pt')
-        torch.save(disc_model_state, FLAGS.log_dir + '/model_disc_%d.pt' % step)
-        torch.save(disc_model_state, FLAGS.log_dir + '/model_disc_latest.pt')
+        utils.SaveModel(step, model, optimizer)
+        utils.SaveModel(step, model_D, optimizer_disc, 'model_disc')
 
     if step%10000 == 0:
-        for param_group in optimizer.param_groups:
-            param_group['lr'] *= 0.2
+        optimizer.param_groups[0]['lr'] *= 0.2
+        optimizer_disc.param_groups[0]['lr'] *= 0.2
 
     if step%100 == 0:
         start_time = time.time()
