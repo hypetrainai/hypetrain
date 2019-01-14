@@ -151,6 +151,10 @@ for step in range(start_step + 1, FLAGS.max_step):
                 GLOBAL.summary_writer.add_audio(prefix + '/predicted', prediction, step, sample_rate=FLAGS.sample_rate)
                 GLOBAL.summary_writer.add_audio(prefix + '/gt_onvocal', data[0].data[0], step, sample_rate=FLAGS.sample_rate)
                 GLOBAL.summary_writer.add_audio(prefix + '/gt_offvocal', data[0].data[1], step, sample_rate=FLAGS.sample_rate)
+                GLOBAL.summary_writer.add_audio(prefix + '/gt_vocal_diff',
+                                                data[0].data[0] - data[0].data[1],
+                                                step,
+                                                sample_rate=FLAGS.sample_rate)
         torch.cuda.empty_cache()
         model.train()
 
