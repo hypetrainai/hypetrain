@@ -155,6 +155,40 @@ class ResNetAux(nn.Module):
         outputs.append(aux_4)
         
         return outputs
+    
+class ResNetAuxGeneral(nn.Module):
+    
+    def __init__(self, output_layer_list):
+        super(ResNetAux, self).__init__()
+        n_fft, fft_channels, _ = utils.NFFT()
+        # TODO: Use mel.
+        # input_channels = FLAGS.n_mels + fft_channels
+        input_channels = 2 * fft_channels
+        layer_defs_0 = []
+        self.output_layer_list = output_layer_list
+        
+        self.first_layer = nn.Conv1d(input_channels, 256, 1, 1)
+        self.first_relu = nn.ReLU()
+        for i in range(50):
+            exec('self.layer_%d = submodules.ResNetModule1d(256, 256, 3, 1, 1, 1)'%i)
+        for i in range(len(self.output_layer_list)):    
+            exec('self.aux_%d = nn.Conv1d(256, input_channels, 1, 1)'%i)
+                 
+    
+    def forward(self, x):
+        out = self.first_layer(x)
+        out = self.first_relu(out)
+        out = self.branch_0(out)
+        
+        current_layer = 0
+        outputs = []
+        
+        for i in range(len(self.output_layer_list)):
+            for j in range(current_layer, self.output_layer_list[i]):
+                exec('out = self.layer_%d(out)'%j)
+                exec('outputs.append(self.aux_%d(out))'%i)
+        
+        return outputs
         
     
 class GeneratorDeepSupervision(Network):
