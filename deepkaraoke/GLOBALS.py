@@ -38,7 +38,6 @@ class _ModuleWrapper(ModuleType):
 
         parser = argparse.ArgumentParser()
 
-<<<<<<< Updated upstream
         parser.add_argument('--log_dir', type=str, default='trained_models/deepsupervision_firstattempt', help='where to save the models')
         parser.add_argument('--resume', type=bool, default=True, help='resume training from checkpoint')
         parser.add_argument('--checkpoint', type=str, default='latest', help='suffix for checkpoint file to restore from')
@@ -49,14 +48,7 @@ class _ModuleWrapper(ModuleType):
         parser.add_argument('--batch_size', type=int, default=24)
         parser.add_argument('--train_seqlen', type=int, default=10000, help='sequence length during training')
         parser.add_argument('--max_steps', type=int, default=1000000, help='number of iterations to train for')
-=======
-parser.add_argument('--log_dir', type=str, default='trained_models/deepsupervision_secondattempt', help='where to save the models')
-parser.add_argument('--module_name', type=str, default='fftmodel')
-parser.add_argument('--model_name', type=str, default='GeneratorDeepSupervision')
-parser.add_argument('--lr', type=float, default=0.002)
-parser.add_argument('--batch_size', type=int, default=24)
-parser.add_argument('--train_seqlen', type=int, default=10000, help='sequence length during training')
->>>>>>> Stashed changes
+
 
         parser.add_argument('--sample_rate', type=int, default=16000)
         parser.add_argument('--hop_length_ms', type=int, default=10)
