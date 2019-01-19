@@ -49,7 +49,6 @@ class _ModuleWrapper(ModuleType):
         parser.add_argument('--train_seqlen', type=int, default=10000, help='sequence length during training')
         parser.add_argument('--max_steps', type=int, default=1000000, help='number of iterations to train for')
 
-
         parser.add_argument('--sample_rate', type=int, default=16000)
         parser.add_argument('--hop_length_ms', type=int, default=10)
         parser.add_argument('--window_length_ms', type=int, default=40)
