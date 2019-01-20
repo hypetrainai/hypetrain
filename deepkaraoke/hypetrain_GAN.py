@@ -44,7 +44,7 @@ assert len(optimizer.param_groups) == 1
 assert len(optimizer_disc.param_groups) == 1
 aux_weights = None
 
-def get_aux_weights(step, num_aux = 5, step_between = 2500):
+def get_aux_weights(step, num_aux = 5, step_between = 1000):
     final = torch.zeros([num_aux]).float()
     if step < step_between:
         final[0] = 1.0
@@ -59,17 +59,17 @@ def get_aux_weights(step, num_aux = 5, step_between = 2500):
     return final.cuda()
 
 start_time = time.time()
-for step in range(start_step + 1, FLAGS.max_step):
+for step in range(start_step + 1, FLAGS.max_steps):
     data = train_dataset.get_random_batch(20000)
     data = model.preprocess(data)
 
     GLOBAL.current_step = step
 
     prediction = model.forward(data)
-    aux_weights = get_aux_weights(step)
+    aux_weights = get_aux_weights(step, num_aux = len(prediction))
 
     if FLAGS.model_name == 'GeneratorDeepSupervision':
-        aux_weights = get_aux_weights(step)
+        aux_weights = get_aux_weights(step, num_aux = len(prediction))
         prediction = torch.sum(torch.cat([(aux_weights[i]*prediction[i]).unsqueeze(0) for i in range(len(prediction))],0),0)
     loss = model.loss(prediction, data)
     GLOBAL.summary_writer.add_scalar('loss_train/total', loss, step)
@@ -125,7 +125,7 @@ for step in range(start_step + 1, FLAGS.max_step):
         print('Oh no! Your training loss is %.3f at step %d' % (loss, step))
         GLOBAL.summary_writer.add_scalar('steps/s', 25.0 / (time.time() - start_time), step)
 
-    if step%1000 == 0:
+    if step%1000 == 0 or step==1:
         print('Evaluating model!')
 
         model.eval()

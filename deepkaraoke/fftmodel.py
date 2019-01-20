@@ -158,8 +158,8 @@ class ResNetAux(nn.Module):
     
 class ResNetAuxGeneral(nn.Module):
     
-    def __init__(self, output_layer_list):
-        super(ResNetAux, self).__init__()
+    def __init__(self, output_layer_list = [10,15,20,25,30,35,40,45,50]):
+        super(ResNetAuxGeneral, self).__init__()
         n_fft, fft_channels, _ = utils.NFFT()
         # TODO: Use mel.
         # input_channels = FLAGS.n_mels + fft_channels
@@ -178,7 +178,7 @@ class ResNetAuxGeneral(nn.Module):
     def forward(self, x):
         out = self.first_layer(x)
         out = self.first_relu(out)
-        out = self.branch_0(out)
+        #Wout = self.branch_0(out)
         
         current_layer = 0
         outputs = []
@@ -186,7 +186,7 @@ class ResNetAuxGeneral(nn.Module):
         for i in range(len(self.output_layer_list)):
             for j in range(current_layer, self.output_layer_list[i]):
                 exec('out = self.layer_%d(out)'%j)
-                exec('outputs.append(self.aux_%d(out))'%i)
+            exec('outputs.append(self.aux_%d(out))'%i)
         
         return outputs
         
@@ -194,7 +194,7 @@ class ResNetAuxGeneral(nn.Module):
 class GeneratorDeepSupervision(Network):
 
     def BuildModel(self):
-        return ResNetAux()
+        return ResNetAuxGeneral()
 
     def preprocess(self, data):
         ret = {
@@ -228,8 +228,8 @@ class GeneratorDeepSupervision(Network):
         predicted_imag = prediction[:, -fft_channels:]
         gt_real = torch.Tensor(np.real(data['offvocal_stft'])).cuda()
         gt_imag = torch.Tensor(np.imag(data['offvocal_stft'])).cuda()
-        loss = torch.mean((predicted_real - gt_real)**2 +
-                          (predicted_imag - gt_imag)**2)
+        loss = torch.mean(torch.abs(predicted_real - gt_real) +
+                          torch.abs(predicted_imag - gt_imag))
         return loss
 
     def predict(self, data, summary_prefix='', aux_weights = None):
