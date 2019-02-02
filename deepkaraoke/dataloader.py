@@ -1,6 +1,6 @@
 import collections
 import numpy as np
-import pickle as pkl
+import pickle
 import utils
 
 DataItem = collections.namedtuple('DataItem',
@@ -19,7 +19,7 @@ class KaraokeDataLoader(object):
         self.sample_length = sample_length
 
         with open(data_file, 'rb') as file:
-            self.data = pkl.load(file)
+            self.data = pickle.load(file, encoding='latin1')
             self.N = len(self.data)
             self.song_lengths = {k: len(d[0]) for k, d in self.data.items()}
 
