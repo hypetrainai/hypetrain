@@ -25,8 +25,6 @@ class KaraokeDataLoader(object):
 
             # Normalize data.
             for k, (on_vocal, off_vocal) in self.data.items():
-                on_vocal = utils.Convert16BitToFloat(on_vocal)
-                off_vocal = utils.Convert16BitToFloat(off_vocal)
                 norm = np.amax([np.abs(on_vocal), np.abs(off_vocal)])
                 self.data[k] = (on_vocal / norm, off_vocal / norm)
 

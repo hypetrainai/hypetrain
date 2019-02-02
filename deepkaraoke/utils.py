@@ -34,16 +34,6 @@ def LoadModel(model, optimizer=None, ckpt_prefix='model'):
     return model_state['step']
 
 
-def Convert16BitToFloat(*data):
-    ret = [d / 2**15 for d in data]
-    return ret[0] if len(ret) == 1 else ret
-
-
-def ConvertFloatTo16Bit(*data):
-    ret = [d * 2**15 for d in data]
-    return ret[0] if len(ret) == 1 else ret
-
-
 def MillisecondsToSamples(length_ms):
     return int(length_ms / 1000 * FLAGS.sample_rate)
 
