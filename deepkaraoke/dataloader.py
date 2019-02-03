@@ -1,6 +1,6 @@
 import collections
 import numpy as np
-import pickle as pkl
+import pickle
 import utils
 
 DataItem = collections.namedtuple('DataItem',
@@ -19,14 +19,12 @@ class KaraokeDataLoader(object):
         self.sample_length = sample_length
 
         with open(data_file, 'rb') as file:
-            self.data = pkl.load(file)
+            self.data = pickle.load(file, encoding='latin1')
             self.N = len(self.data)
             self.song_lengths = {k: len(d[0]) for k, d in self.data.items()}
 
             # Normalize data.
             for k, (on_vocal, off_vocal) in self.data.items():
-                on_vocal = utils.Convert16BitToFloat(on_vocal)
-                off_vocal = utils.Convert16BitToFloat(off_vocal)
                 norm = np.amax([np.abs(on_vocal), np.abs(off_vocal)])
                 self.data[k] = (on_vocal / norm, off_vocal / norm)
 

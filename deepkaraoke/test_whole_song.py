@@ -12,21 +12,12 @@ import os
 import pickle as pkl
 import struct
 import torch
-import wave
+import scipy.io.wavfile
 import utils
 
 def WriteWave(data, filename):
-    tensor = np.clip(data, -1.0, 1.0)
-    tensor_list = [int(32767.0 * x) for x in tensor]
-    wave_writer = wave.open(filename, 'wb')
-    wave_writer.setnchannels(1)
-    wave_writer.setsampwidth(2)
-    wave_writer.setframerate(FLAGS.sample_rate)
-    tensor_enc = b''
-    bytelist = [struct.pack('<h',v) for v in tensor_list]
-    tensor_enc = tensor_enc.join(bytelist)
-    wave_writer.writeframes(tensor_enc)
-    wave_writer.close()
+    tensor = np.clip(data, -1.0, 1.0).astype(np.float32)
+    scipy.io.wavfile.write(filename, FLAGS.sample_rate, tensor)
 
 
 if __name__ == '__main__':
