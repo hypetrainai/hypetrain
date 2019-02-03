@@ -8,7 +8,7 @@ from network import Network
 import utils
 from GLOBALS import FLAGS, GLOBAL
 
-_NUM_FLOWS = 12
+_NUM_FLOWS = 6
 _N_CHANNELS = 8
 assert _N_CHANNELS % 8 == 0
 _CONV_LAYERS = 8
@@ -74,7 +74,7 @@ class Model(nn.Module):
         super(Model, self).__init__()
         self.conv = nn.ModuleList()
         self.coupling = nn.ModuleList()
-        self.emit_layers = [4, 8]
+        self.emit_layers = []
         self.emit_channels = _N_CHANNELS // 4
         assert self.emit_channels % 2 == 0
         remaining_channels = _N_CHANNELS
@@ -97,16 +97,14 @@ class Model(nn.Module):
                 if i in self.emit_layers:
                     outputs.append(x[:, :self.emit_channels, :])
                     x = x[:, self.emit_channels:, :]
-                # TODO: enable 1x1 conv
-                x = torch.cat([x[:, x.size(1) // 2:, :], x[:, :x.size(1) // 2, :]], dim=1)
-                # out = self.conv[i].forward(x)
-                # total_conv_loss += -x.size(1) * x.size(2) * torch.logdet(self.conv[i].weight)
-                # if FLAGS.debug:
-                #   with torch.no_grad():
-                #       pred = self.conv[i].forward(out, reverse=True)
-                #       diff = np.amax(np.abs((x - pred).detach().cpu().numpy()))
-                #       GLOBAL.summary_writer.add_scalar('reverse/conv_%d' % i, diff, GLOBAL.current_step)
-                # x = out
+                out = self.conv[i].forward(x)
+                total_conv_loss += -x.size(1) * x.size(2) * torch.logdet(self.conv[i].weight)
+                if FLAGS.debug:
+                  with torch.no_grad():
+                      pred = self.conv[i].forward(out, reverse=True)
+                      diff = np.amax(np.abs((x - pred).detach().cpu().numpy()))
+                      GLOBAL.summary_writer.add_scalar('reverse/conv_%d' % i, diff, GLOBAL.current_step)
+                x = out
                 out, coupling_loss = self.coupling[i].forward(conditioning, x)
                 total_coupling_loss += coupling_loss
                 if FLAGS.debug:
@@ -122,9 +120,7 @@ class Model(nn.Module):
             x = x[:, -remaining_channels:, :]
             for i in reversed(range(_NUM_FLOWS)):
                 x, _ = self.coupling[i].forward(conditioning, x, reverse=True)
-                # TODO: enable 1x1 conv
-                x = torch.cat([x[:, x.size(1) // 2:, :], x[:, :x.size(1) // 2, :]], dim=1)
-                # x = self.conv[i].forward(x, reverse=True)
+                x = self.conv[i].forward(x, reverse=True)
                 if i in self.emit_layers:
                     x = torch.cat([x_remaining[:, -self.emit_channels:, :], x], dim=1)
                     x_remaining = x_remaining[:, :-self.emit_channels, :]

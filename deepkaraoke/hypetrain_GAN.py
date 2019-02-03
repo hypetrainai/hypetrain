@@ -90,6 +90,8 @@ for step in range(start_step + 1, FLAGS.max_steps):
     total_loss = loss + 0.002*GAN_loss
     total_loss.backward()
 
+    if FLAGS.clip_grad_norm > 0:
+      torch.nn.utils.clip_grad_norm_(model.parameters(), FLAGS.clip_grad_norm)
     optimizer.step()
     optimizer.zero_grad()
     optimizer_disc.zero_grad()
@@ -111,8 +113,10 @@ for step in range(start_step + 1, FLAGS.max_steps):
         scores_gt = torch.clamp(F.softmax(GAN_gt, 1), 0.00001, 0.99999)
 
         GAN_loss_disc = torch.mean(torch.log(1.0-scores_pred[:,0]))+torch.mean(torch.log(scores_gt[:,0]))
-
         GAN_loss_disc.backward()
+
+        if FLAGS.clip_grad_norm > 0:
+          torch.nn.utils.clip_grad_norm_(model_D.parameters(), FLAGS.clip_grad_norm)
         optimizer_disc.step()
         optimizer_disc.zero_grad()
         optimizer.zero_grad()

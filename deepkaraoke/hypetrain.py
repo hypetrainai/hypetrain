@@ -49,6 +49,8 @@ for step in range(start_step + 1, FLAGS.max_steps):
     GLOBAL.summary_writer.add_scalar('lr', optimizer.param_groups[0]['lr'], step)
     loss.backward()
 
+    if FLAGS.clip_grad_norm > 0:
+      torch.nn.utils.clip_grad_norm_(model.parameters(), FLAGS.clip_grad_norm)
     optimizer.step()
     optimizer.zero_grad()
 
