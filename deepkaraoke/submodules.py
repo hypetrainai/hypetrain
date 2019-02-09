@@ -13,7 +13,7 @@ def conv_1d(in_planes, out_planes, kernel_size=1, stride=1, pad=0, dilation=1, t
                         out_channels=out_planes,
                         kernel_size=kernel_size,
                         stride=stride,
-                        padding=dilation if dilation > 1 else pad,
+                        padding=((kernel_size - 1) * dilation) // 2 if dilation > 1 else pad,
                         dilation=dilation,
                         bias=bias)
     else:
