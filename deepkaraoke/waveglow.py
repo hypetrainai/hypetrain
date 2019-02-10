@@ -8,11 +8,11 @@ from network import Network
 import utils
 from GLOBALS import FLAGS, GLOBAL
 
-_NUM_FLOWS = 6
+_NUM_FLOWS = 12
 _N_CHANNELS = 8
 assert _N_CHANNELS % 8 == 0
-_CONV_LAYERS = 8
-_CONV_CHANNELS = 512
+_COUPLING_LAYERS = 8
+_COUPLING_CHANNELS = 256
 _STD_TRAIN = 1.0
 _STD_EVAL = 0.6
 
@@ -41,27 +41,36 @@ class AffineCoupling(nn.Module):
         super(AffineCoupling, self).__init__()
         self.channels = channels
         assert self.channels % 2 == 0
-        layer_defs = []
-        layer_defs.append(submodules.conv_1d(self.channels // 2, _CONV_CHANNELS))
-        for i in range(_CONV_LAYERS):
-            layer_defs.append(submodules.ResNetModule1d(_CONV_CHANNELS,
-                                                        _CONV_CHANNELS,
-                                                        kernel_size=3,
-                                                        pad=1,
-                                                        dilation=2**(1+i)))
-        end = submodules.conv_1d(_CONV_CHANNELS, self.channels, bias=True)
+        self.start = submodules.conv_1d(self.channels // 2, _COUPLING_CHANNELS)
+        self.cond_proj = submodules.conv_1d(self.channels, _COUPLING_CHANNELS)
+        self.in_layers = nn.ModuleList()
+        self.cond_layers = nn.ModuleList()
+        self.res_layers = nn.ModuleList()
+        for i in range(_COUPLING_LAYERS):
+            self.in_layers.append(submodules.conv_1d(_COUPLING_CHANNELS, 2 * _COUPLING_CHANNELS, kernel_size=3, pad=1, dilation=2**i))
+            self.cond_layers.append(submodules.conv_1d(_COUPLING_CHANNELS, 2 * _COUPLING_CHANNELS, kernel_size=3, pad=1, dilation=2**i))
+            self.res_layers.append(submodules.conv_1d(_COUPLING_CHANNELS, 2 * _COUPLING_CHANNELS))
+        self.end = submodules.conv_1d(_COUPLING_CHANNELS, self.channels, bias=True)
         # Initializing last layer to 0 makes the affine coupling layers
         # do nothing at first.  This helps with training stability.
-        end.weight.data.zero_()
-        end.bias.data.zero_()
-        layer_defs.append(end)
-        self.model = nn.Sequential(*layer_defs)
-        self.cond_proj = submodules.conv_1d(_N_CHANNELS, self.channels // 2)
+        self.end.weight.data.zero_()
+        self.end.bias.data.zero_()
 
     def forward(self, conditioning, x, reverse=False):
-        conditioning = self.cond_proj(conditioning)
         a, b = torch.split(x, self.channels // 2, dim=1)
-        log_s, t = torch.split(self.model.forward(a + conditioning), self.channels // 2, dim=1)
+        conditioning = self.cond_proj(conditioning)
+        input = self.start(a)
+        output = torch.zeros_like(input)
+        for i in range(_COUPLING_LAYERS):
+            in_act = self.in_layers[i](input) + self.cond_layers[i](conditioning)
+            res = torch.tanh(in_act[:, :_COUPLING_CHANNELS, :]) * torch.sigmoid(in_act[:, _COUPLING_CHANNELS:, :])
+            res = self.res_layers[i](res)
+            input = input + res[:, :_COUPLING_CHANNELS, :]
+            output = output + res[:, _COUPLING_CHANNELS:, :]
+        output = self.end(output)
+
+        log_s, t = torch.split(output, self.channels // 2, dim=1)
+        log_s = torch.clamp(log_s, -2, 2)
         if not reverse:
             b = torch.exp(log_s) * b + t
         else:
@@ -134,7 +143,14 @@ class Model(nn.Module):
 class Generator(Network):
 
     def BuildModel(self):
-        return Model()
+        model = Model()
+
+        def init_weights(m):
+            if isinstance(m, nn.Conv2d):
+                torch.nn.init.xavier(m.weight.data)
+
+        model.apply(init_weights)
+        return model
 
     def preprocess(self, data):
         on_vocal = np.stack([d.data[0] for d in data])
