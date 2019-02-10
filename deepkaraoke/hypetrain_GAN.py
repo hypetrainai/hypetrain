@@ -14,7 +14,6 @@ import scipy.io.wavfile as wav
 import matplotlib
 import matplotlib.pyplot as plt
 import gzip
-import pickle as pkl
 from collections import OrderedDict
 import importlib
 import utils
@@ -25,10 +24,10 @@ from tensorboardX import SummaryWriter
 
 batch_size = 64
 train_dataset = dataloader.KaraokeDataLoader(
-    os.path.join(FLAGS.data_dir, 'train.pkl.gz'),
+    os.path.join(FLAGS.data_dir, 'train'),
     batch_size = batch_size)
 test_dataset = dataloader.KaraokeDataLoader(
-    os.path.join(FLAGS.data_dir, 'test.pkl.gz'),
+    os.path.join(FLAGS.data_dir, 'test'),
     batch_size = batch_size)
 
 NNModel = getattr(importlib.import_module(FLAGS.module_name), FLAGS.model_name)
@@ -153,12 +152,9 @@ for step in range(start_step + 1, FLAGS.max_steps):
                 #if FLAGS.model_name == 'GeneratorDeepSupervision':
                 #    prediction = torch.sum(torch.cat([(aux_weights[i]*prediction[i]).unsqueeze(0) for i in range(len(prediction))],0),0)
                 GLOBAL.summary_writer.add_audio(prefix + '/predicted', prediction, step, sample_rate=FLAGS.sample_rate)
-                GLOBAL.summary_writer.add_audio(prefix + '/gt_onvocal', data[0].data[0], step, sample_rate=FLAGS.sample_rate)
-                GLOBAL.summary_writer.add_audio(prefix + '/gt_offvocal', data[0].data[1], step, sample_rate=FLAGS.sample_rate)
-                GLOBAL.summary_writer.add_audio(prefix + '/gt_vocal_diff',
-                                                data[0].data[0] - data[0].data[1],
-                                                step,
-                                                sample_rate=FLAGS.sample_rate)
+                GLOBAL.summary_writer.add_audio(prefix + '/gt_onvocal', data[0][0] + data[0][1], step, sample_rate=FLAGS.sample_rate)
+                GLOBAL.summary_writer.add_audio(prefix + '/gt_offvocal', data[0][0], step, sample_rate=FLAGS.sample_rate)
+                GLOBAL.summary_writer.add_audio(prefix + '/gt_vocal_diff', data[0][1], step, sample_rate=FLAGS.sample_rate)
         torch.cuda.empty_cache()
         model.train()
 

@@ -1,37 +1,55 @@
 import collections
+import glob
 import numpy as np
-import pickle
+import os
+import struct
 import utils
-
-DataItem = collections.namedtuple('DataItem',
-                                  ['name', 'start_offset', 'length', 'data'])
+import wave
+from GLOBALS import FLAGS
 
 
 class KaraokeDataLoader(object):
+    """Dataloader for karaoke task.
+
+    Args:
+        data_dir: a directory that contains .wav files. Each wav file should
+                  be int16 PCM and have 2 channels [instruments, vocals].
+        batch_size: output batch size.
+        ignore_percentage: the area on either end of the song to ignore.
+    """
+
     def __init__(self,
-                 data_file,
+                 data_dir,
                  batch_size=24,
-                 ignore_percentage=0.05,
-                 sample_length=7056):
+                 ignore_percentage=0.05):
         self.batch_size = batch_size
-        # ignore_percentage defines the area on either end of the song which we want to ignore.
         self.ignore_percentage = ignore_percentage
-        self.sample_length = sample_length
 
-        with open(data_file, 'rb') as file:
-            self.data = pickle.load(file, encoding='latin1')
-            self.N = len(self.data)
-            self.song_lengths = {k: len(d[0]) for k, d in self.data.items()}
+        self.filenames = glob.glob(os.path.join(data_dir, '*.wav'))
+        self.N = len(self.filenames)
+        self.song_lengths = {}
+        for filename in self.filenames:
+            f = wave.open(filename, 'r')
+            assert f.getnchannels() == 2, filename  # instruments, vocals
+            assert f.getsampwidth() == 2, filename  # int16 data
+            assert f.getframerate() == FLAGS.sample_rate, filename
+            self.song_lengths[filename] = f.getnframes()
+            f.close()
 
-            # Normalize data.
-            for k, (on_vocal, off_vocal) in self.data.items():
-                norm = np.amax([np.abs(on_vocal), np.abs(off_vocal)])
-                self.data[k] = (on_vocal / norm, off_vocal / norm)
+    def extract_data(self, filename, start_index, sample_length):
+        f = wave.open(filename, 'r')
+        f.setpos(start_index)
+        data = struct.unpack('%ih' % (sample_length * 2), f.readframes(sample_length))
+        f.close()
+        # Stereo data is interleaved.
+        data = np.reshape(np.array(data), (-1, 2))
+        # Convert to float.
+        data = (data / 32768.).astype(np.float32)
+        return data[:, 0], data[:, 1]
 
-    def get_random_batch(self, sample_length=None, batch_size=None):
-        sample_length = sample_length or self.sample_length
+    def get_random_batch(self, sample_length, batch_size=None):
         batch_size = batch_size or self.batch_size
-        names = np.random.choice(list(self.data.keys()), batch_size)
+        names = np.random.choice(self.filenames, batch_size)
         lengths = np.array([self.song_lengths[name] for name in names])
         if sample_length == -1:
             starts = [0] * batch_size
@@ -44,25 +62,14 @@ class KaraokeDataLoader(object):
                 self.ignore_percentage * lengths + start_offsets).astype(int)
             sample_lengths = [sample_length] * batch_size
         return [
-            DataItem(
-                name=name,
-                start_offset=start,
-                length=length,
-                data=(self.data[name][0][start:start + length],
-                      self.data[name][1][start:start + length]))
-            for name, start, length in list(
-                zip(names, starts, sample_lengths))
+            self.extract_data(name, start, length)
+            for name, start, length in
+            zip(names, starts, sample_lengths)
         ]
 
-    def get_single_segment(self, extract_idx=0, start_value=3000000, sample_length=200000):
-
-        #print(sample_length)
-        name = list(self.data.keys())[extract_idx]
-        sample_length = sample_length or len(self.data[name][0])
-        return DataItem(
-            name=name,
-            start_offset=start_value,
-            length=sample_length,
-            data=(self.data[name][0][start_value:start_value + sample_length],
-                  self.data[name][1][start_value:start_value + sample_length]))
+    def get_single_segment(self, extract_idx=0, start_index=3000000, sample_length=200000):
+        name = self.filenames[extract_idx]
+        if sample_length == -1:
+            sample_length = self.song_lengths[name]
+        return self.extract_data(name, start_index, sample_length)
 

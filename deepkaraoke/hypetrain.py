@@ -14,7 +14,6 @@ import scipy.io.wavfile as wav
 import matplotlib
 import matplotlib.pyplot as plt
 import gzip
-import pickle as pkl
 from collections import OrderedDict
 import importlib
 import utils
@@ -22,10 +21,10 @@ import dataloader
 from GLOBALS import FLAGS, GLOBAL
 
 train_dataset = dataloader.KaraokeDataLoader(
-    os.path.join(FLAGS.data_dir, 'train.pkl.gz'),
+    os.path.join(FLAGS.data_dir, 'train'),
     batch_size = FLAGS.batch_size)
 test_dataset = dataloader.KaraokeDataLoader(
-    os.path.join(FLAGS.data_dir, 'test.pkl.gz'),
+    os.path.join(FLAGS.data_dir, 'test'),
     batch_size = FLAGS.batch_size)
 
 NNModel = getattr(importlib.import_module(FLAGS.module_name), FLAGS.model_name)
@@ -77,12 +76,9 @@ for step in range(start_step + 1, FLAGS.max_steps):
                 # data = [dataset.get_single_segment(extract_idx=0, start_value=3000000, sample_length=200000)]
                 prediction = model.predict(model.preprocess(data), prefix)
                 GLOBAL.summary_writer.add_audio(prefix + '/predicted', prediction, step, sample_rate=FLAGS.sample_rate)
-                GLOBAL.summary_writer.add_audio(prefix + '/gt_onvocal', data[0].data[0], step, sample_rate=FLAGS.sample_rate)
-                GLOBAL.summary_writer.add_audio(prefix + '/gt_offvocal', data[0].data[1], step, sample_rate=FLAGS.sample_rate)
-                GLOBAL.summary_writer.add_audio(prefix + '/gt_vocal_diff',
-                                                data[0].data[0] - data[0].data[1],
-                                                step,
-                                                sample_rate=FLAGS.sample_rate)
+                GLOBAL.summary_writer.add_audio(prefix + '/gt_onvocal', data[0][0] + data[0][1], step, sample_rate=FLAGS.sample_rate)
+                GLOBAL.summary_writer.add_audio(prefix + '/gt_offvocal', data[0][0], step, sample_rate=FLAGS.sample_rate)
+                GLOBAL.summary_writer.add_audio(prefix + '/gt_vocal_diff', data[0][1], step, sample_rate=FLAGS.sample_rate)
         torch.cuda.empty_cache()
         model.train()
 

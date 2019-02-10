@@ -28,13 +28,12 @@ class Generator(Network):
             'offvocal_stft': [],
             'offvocal_mel': [],
         }
-        for d in data:
-            data_vocal = d.data[0]
-            stft_vocal = utils.STFT(data_vocal)
-            data_offvocal = d.data[1]
-            stft_offvocal = utils.STFT(data_offvocal)
-            ret['vocal_stft'].append(stft_vocal)
-            ret['vocal_mel'].append(utils.MelSpectrogram(stft_vocal))
+        for data_instrumental, data_vocal in data:
+            data_onvocal = data_instrumental + data_vocal
+            stft_onvocal = utils.STFT(data_onvocal)
+            stft_offvocal = utils.STFT(data_instrumental)
+            ret['vocal_stft'].append(stft_onvocal)
+            ret['vocal_mel'].append(utils.MelSpectrogram(stft_onvocal))
             ret['offvocal_stft'].append(stft_offvocal)
             ret['offvocal_mel'].append(utils.MelSpectrogram(stft_offvocal))
         for k, v in ret.items():
@@ -89,7 +88,7 @@ class Generator(Network):
         return result
 
 class ResNetAux(nn.Module):
-    
+
     def __init__(self):
         super(ResNetAux, self).__init__()
         n_fft, fft_channels, _ = utils.NFFT()
@@ -97,27 +96,27 @@ class ResNetAux(nn.Module):
         # input_channels = FLAGS.n_mels + fft_channels
         input_channels = 2 * fft_channels
         layer_defs_0 = []
-        
+
         self.first_layer = nn.Conv1d(input_channels, 256, 1, 1)
         for i in range(10):
             layer_defs_0.append(submodules.ResNetModule1d(256, 256, 3, 1, 1, 1))
-        
+
         layer_defs_1 = []
         for i in range(10):
             layer_defs_1.append(submodules.ResNetModule1d(256, 256, 3, 1, 1, 1))
-            
+
         layer_defs_2 = []
         for i in range(10):
             layer_defs_2.append(submodules.ResNetModule1d(256, 256, 3, 1, 1, 1))
-            
+
         layer_defs_3 = []
         for i in range(10):
             layer_defs_3.append(submodules.ResNetModule1d(256, 256, 3, 1, 1, 1))
-            
+
         layer_defs_4 = []
         for i in range(10):
             layer_defs_4.append(submodules.ResNetModule1d(256, 256, 3, 1, 1, 1))
-            
+
         self.branch_0 = nn.Sequential(*layer_defs_0)
         self.branch_1 = nn.Sequential(*layer_defs_1)
         self.branch_2 = nn.Sequential(*layer_defs_2)
@@ -128,36 +127,36 @@ class ResNetAux(nn.Module):
         self.aux_2 = nn.Conv1d(256, input_channels, 1, 1)
         self.aux_3 = nn.Conv1d(256, input_channels, 1, 1)
         self.aux_4 = nn.Conv1d(256, input_channels, 1, 1)
-    
+
     def forward(self, x):
         out = self.first_layer(x)
         out = self.branch_0(out)
-        
+
         outputs = []
-        
+
         aux_0 = self.aux_0(out)
         outputs.append(aux_0)
-        
+
         out = self.branch_1(out)
         aux_1 = self.aux_1(out)
         outputs.append(aux_1)
-        
+
         out = self.branch_1(out)
         aux_2 = self.aux_1(out)
         outputs.append(aux_2)
-        
+
         out = self.branch_1(out)
         aux_3 = self.aux_1(out)
         outputs.append(aux_3)
-        
+
         out = self.branch_1(out)
         aux_4 = self.aux_1(out)
         outputs.append(aux_4)
-        
+
         return outputs
-    
+
 class ResNetAuxGeneral(nn.Module):
-    
+
     def __init__(self, output_layer_list = [10,15,20,25,30,35,40,45,50]):
         super(ResNetAuxGeneral, self).__init__()
         n_fft, fft_channels, _ = utils.NFFT()
@@ -166,31 +165,31 @@ class ResNetAuxGeneral(nn.Module):
         input_channels = 2 * fft_channels
         layer_defs_0 = []
         self.output_layer_list = output_layer_list
-        
+
         self.first_layer = nn.Conv1d(input_channels, 256, 1, 1)
         self.first_relu = nn.ReLU()
         for i in range(50):
             exec('self.layer_%d = submodules.ResNetModule1d(256, 256, 3, 1, 1, 1)'%i)
-        for i in range(len(self.output_layer_list)):    
+        for i in range(len(self.output_layer_list)):
             exec('self.aux_%d = nn.Conv1d(256, input_channels, 1, 1)'%i)
-                 
-    
+
+
     def forward(self, x):
         out = self.first_layer(x)
         out = self.first_relu(out)
         #Wout = self.branch_0(out)
-        
+
         current_layer = 0
         outputs = []
-        
+
         for i in range(len(self.output_layer_list)):
             for j in range(current_layer, self.output_layer_list[i]):
                 exec('out = self.layer_%d(out)'%j)
             exec('outputs.append(self.aux_%d(out))'%i)
-        
+
         return outputs
-        
-    
+
+
 class GeneratorDeepSupervision(Network):
 
     def BuildModel(self):
@@ -203,13 +202,12 @@ class GeneratorDeepSupervision(Network):
             'offvocal_stft': [],
             'offvocal_mel': [],
         }
-        for d in data:
-            data_vocal = d.data[0]
-            stft_vocal = utils.STFT(data_vocal)
-            data_offvocal = d.data[1]
-            stft_offvocal = utils.STFT(data_offvocal)
-            ret['vocal_stft'].append(stft_vocal)
-            ret['vocal_mel'].append(utils.MelSpectrogram(stft_vocal))
+        for data_instrumental, data_vocal in data:
+            data_onvocal = data_instrumental + data_vocal
+            stft_onvocal = utils.STFT(data_onvocal)
+            stft_offvocal = utils.STFT(data_instrumental)
+            ret['vocal_stft'].append(stft_onvocal)
+            ret['vocal_mel'].append(utils.MelSpectrogram(stft_onvocal))
             ret['offvocal_stft'].append(stft_offvocal)
             ret['offvocal_mel'].append(utils.MelSpectrogram(stft_offvocal))
         for k, v in ret.items():
@@ -403,7 +401,7 @@ class Discriminator(Network):
         return criterion(input, labels)
 
     def forward(self, data):
-        
+
         if type(data) is dict:
             vocal_stacked = np.concatenate(
                 (np.real(data['offvocal_stft']),

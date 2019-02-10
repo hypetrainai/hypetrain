@@ -1,7 +1,7 @@
 # coding: utf-8
 # Defining new flags needs to come first before any other imports.
 import GLOBALS
-GLOBALS.parser.add_argument('--idx', type=int, default=0, help='Index from test.pkl.gz to use.')
+GLOBALS.parser.add_argument('--idx', type=int, default=0, help='Index from test to use.')
 GLOBALS.parser.add_argument('--output', type=str, default='outputs/test', help='Output prefix')
 FLAGS = GLOBALS.FLAGS
 
@@ -9,7 +9,6 @@ import dataloader
 import importlib
 import numpy as np
 import os
-import pickle as pkl
 import struct
 import torch
 import scipy.io.wavfile
@@ -27,7 +26,7 @@ if __name__ == '__main__':
     utils.LoadModel(model)
     model.eval()
 
-    dataset = dataloader.KaraokeDataLoader(os.path.join(FLAGS.data_dir, 'test.pkl.gz'), batch_size = 1)
+    dataset = dataloader.KaraokeDataLoader(os.path.join(FLAGS.data_dir, 'test'), batch_size = 1)
     song_data = [dataset.get_single_segment(extract_idx = FLAGS.idx, start_value = 0, sample_length = 0)]
     data_in = model.preprocess(song_data)
     with torch.no_grad():

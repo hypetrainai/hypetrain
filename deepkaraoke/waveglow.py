@@ -153,18 +153,19 @@ class Generator(Network):
         return model
 
     def preprocess(self, data):
-        on_vocal = np.stack([d.data[0] for d in data])
-        off_vocal = np.stack([d.data[1] for d in data])
-        assert on_vocal.shape == off_vocal.shape
-        assert len(on_vocal.shape) == 2
+        data_instrumental, data_vocal = zip(*data)
+        instrumental = np.stack(data_instrumental)
+        vocal = np.stack(data_vocal)
+        assert instrumental.shape == vocal.shape
+        assert len(vocal.shape) == 2
         if self.training:
-            assert on_vocal.shape[1] % _N_CHANNELS == 0
+            assert vocal.shape[1] % _N_CHANNELS == 0
         else:
             # Pad to multiple of _N_CHANNELS.
-            pad_size = (_N_CHANNELS - on_vocal.shape[1] % _N_CHANNELS) % _N_CHANNELS
-            on_vocal = np.pad(on_vocal, [(0, 0), (0, pad_size)], 'constant')
-            off_vocal = np.pad(off_vocal, [(0, 0), (0, pad_size)], 'constant')
-        return on_vocal, off_vocal - on_vocal
+            pad_size = (_N_CHANNELS - vocal.shape[1] % _N_CHANNELS) % _N_CHANNELS
+            instrumental = np.pad(instrumental, [(0, 0), (0, pad_size)], 'constant')
+            vocal = np.pad(vocal, [(0, 0), (0, pad_size)], 'constant')
+        return instrumental + vocal, vocal
 
     def forward(self, data, reverse=False):
         x, total_conv_loss, total_coupling_loss = (
@@ -201,7 +202,7 @@ class Generator(Network):
             data_i = [data[0][:, start:end], data[1][:, start:end]]
             prediction_i = self.forward(data_i, reverse=True)[0][0].detach().cpu().numpy()
             prediction = np.concatenate((prediction, prediction_i[i - start:chunk_end - start]))
-        # since we predicted off_vocal - on_vocal, add on_vocal to get off_vocal.
-        prediction += data[0][0]
+        # since we predicted vocals only, do some math to get off_vocal.
+        prediction = data[0] - prediction
         prediction = np.clip(prediction, -1.0, 1.0)
         return prediction
