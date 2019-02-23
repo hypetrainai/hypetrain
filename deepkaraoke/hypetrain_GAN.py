@@ -146,9 +146,10 @@ for step in range(start_step + 1, FLAGS.max_steps):
             for dataset, prefix in [(train_dataset, 'eval_train'), (test_dataset, 'eval_test')]:
                 torch.cuda.empty_cache()
                 # data = dataset.get_random_batch(500000, batch_size=1)
-                data = [dataset.get_single_segment(extract_idx=0, start_value=500000, sample_length=200000)]
+                data = [dataset.get_single_segment(extract_idx=0, start_index=500000, sample_length=200000)]
 
-                prediction = model.predict(model.preprocess(data), aux_weights = aux_weights)
+                #prediction = model.predict(model.preprocess(data), aux_weights = aux_weights)
+                prediction = model.predict(model.preprocess(data))
                 #if FLAGS.model_name == 'GeneratorDeepSupervision':
                 #    prediction = torch.sum(torch.cat([(aux_weights[i]*prediction[i]).unsqueeze(0) for i in range(len(prediction))],0),0)
                 GLOBAL.summary_writer.add_audio(prefix + '/predicted', prediction, step, sample_rate=FLAGS.sample_rate)

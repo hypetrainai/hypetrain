@@ -73,6 +73,7 @@ def NFFT():
 
 
 def STFT(waveform):
+    waveform = np.ascontiguousarray(waveform)
     n_fft, _, window_length = NFFT()
     return librosa.core.stft(
         waveform,
