@@ -42,7 +42,7 @@ class AffineCoupling(nn.Module):
         self.channels = channels
         assert self.channels % 2 == 0
         self.start = submodules.conv_1d(self.channels // 2, _COUPLING_CHANNELS)
-        self.cond_proj = submodules.conv_1d(self.channels, _COUPLING_CHANNELS)
+        self.cond_proj = submodules.conv_1d(_N_CHANNELS, _COUPLING_CHANNELS)
         self.in_layers = nn.ModuleList()
         self.cond_layers = nn.ModuleList()
         self.res_layers = nn.ModuleList()
@@ -83,7 +83,7 @@ class Model(nn.Module):
         super(Model, self).__init__()
         self.conv = nn.ModuleList()
         self.coupling = nn.ModuleList()
-        self.emit_layers = []
+        self.emit_layers = [4, 8]
         self.emit_channels = _N_CHANNELS // 4
         assert self.emit_channels % 2 == 0
         remaining_channels = _N_CHANNELS
@@ -170,17 +170,17 @@ class Generator(Network):
     def forward(self, data, reverse=False):
         x, total_conv_loss, total_coupling_loss = (
             self.model.forward(torch.Tensor(data[0]).cuda(), torch.Tensor(data[1]).cuda(), reverse))
+        dist_loss = torch.sum(x * x) / (2 * _STD_TRAIN * _STD_TRAIN)
         if self.training and not reverse:
             GLOBAL.summary_writer.add_scalar('loss_train/conv', total_conv_loss, GLOBAL.current_step)
             GLOBAL.summary_writer.add_scalar('loss_train/coupling', total_coupling_loss, GLOBAL.current_step)
+            GLOBAL.summary_writer.add_scalar('loss_train/distribution', dist_loss, GLOBAL.current_step)
             if FLAGS.debug:
               with torch.no_grad():
                 pred, _, _ = self.model.forward(torch.Tensor(data[0]).cuda(), x, reverse=True)
                 diff = np.amax(np.abs(data[1] - pred.detach().cpu().numpy()))
                 GLOBAL.summary_writer.add_scalar('reverse/all', diff, GLOBAL.current_step)
-        loss = total_conv_loss + total_coupling_loss
-        loss += torch.sum(x * x) / (2 * _STD_TRAIN * _STD_TRAIN)
-        loss /= x.size(0) * x.size(1)
+        loss = (total_conv_loss + total_coupling_loss + dist_loss) / (x.size(0) * x.size(1))
         return x, loss
 
     def loss(self, prediction, data):
@@ -203,6 +203,6 @@ class Generator(Network):
             prediction_i = self.forward(data_i, reverse=True)[0][0].detach().cpu().numpy()
             prediction = np.concatenate((prediction, prediction_i[i - start:chunk_end - start]))
         # since we predicted vocals only, do some math to get off_vocal.
-        prediction = data[0] - prediction
+        # prediction = data[0] - prediction
         prediction = np.clip(prediction, -1.0, 1.0)
         return prediction
