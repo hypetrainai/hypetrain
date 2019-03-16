@@ -59,7 +59,7 @@ class KaraokeDataLoader(object):
                 (1 - 2 * self.ignore_percentage) * lengths - sample_length)
             start_offsets = np.random.rand(batch_size) * max_start_offsets
             starts = (
-                self.ignore_percentage * lengths + start_offsets).astype(int)
+                np.floor(self.ignore_percentage * lengths) + np.floor(start_offsets)).astype(int)
             sample_lengths = [sample_length] * batch_size
         return [
             self.extract_data(name, start, length)

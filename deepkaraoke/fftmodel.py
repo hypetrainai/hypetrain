@@ -7,44 +7,56 @@ import utils
 from GLOBALS import FLAGS, GLOBAL
 
 
+_CONV_CHANNELS = 256
+
+
 class Generator(Network):
 
     def BuildModel(self):
         n_fft, fft_channels, _ = utils.NFFT()
         # TODO: Use mel.
-        # input_channels = FLAGS.n_mels + fft_channels
-        input_channels = 2 * fft_channels
+        input_channels = 2 * fft_channels  # Input real + imag
+        # output_channels = FLAGS.n_mels + fft_channels  # Predict mel magnitude + phase
+        output_channels = 2 * fft_channels  # Predict real + imag
         layer_defs = []
-        layer_defs.append(nn.Conv1d(input_channels, 256, 1, 1))
+        layer_defs.append(submodules.conv_1d(input_channels, _CONV_CHANNELS))
         for i in range(50):
-            layer_defs.append(submodules.ResNetModule1d(256, 256, 3, 1, 1, 1))
-        layer_defs.append(nn.Conv1d(256, input_channels, 1, 1))
+            layer_defs.append(submodules.ResNetModule1d(_CONV_CHANNELS, _CONV_CHANNELS, kernel_size=3, pad=1))
+        layer_defs.append(submodules.conv_1d(_CONV_CHANNELS, output_channels))
         return nn.Sequential(*layer_defs)
 
     def preprocess(self, data):
         ret = {
-            'vocal_stft': [],
-            'vocal_mel': [],
+            'onvocal_waveform': [],
+            'onvocal_stft': [],
+            'onvocal_mel': [],
+            'offvocal_waveform': [],
             'offvocal_stft': [],
             'offvocal_mel': [],
+            'vocal_stft': [],
         }
         for data_instrumental, data_vocal in data:
             data_onvocal = data_instrumental + data_vocal
             stft_onvocal = utils.STFT(data_onvocal)
             stft_offvocal = utils.STFT(data_instrumental)
-            ret['vocal_stft'].append(stft_onvocal)
-            ret['vocal_mel'].append(utils.MelSpectrogram(stft_onvocal))
+            ret['onvocal_stft'].append(stft_onvocal)
+            ret['onvocal_mel'].append(utils.MelSpectrogram(stft_onvocal))
             ret['offvocal_stft'].append(stft_offvocal)
             ret['offvocal_mel'].append(utils.MelSpectrogram(stft_offvocal))
+            ret['vocal_stft'].append(utils.STFT(data_onvocal - data_instrumental))
+            hop_length = utils.MillisecondsToSamples(FLAGS.hop_length_ms)
+            waveform_len = stft_onvocal.shape[1] * hop_length
+            ret['onvocal_waveform'].append(data_onvocal[:waveform_len])
+            ret['offvocal_waveform'].append(data_instrumental[:waveform_len])
         for k, v in ret.items():
           ret[k] = np.stack(v)
         return ret
 
     def forward(self, data):
-        vocal_stacked = np.concatenate(
-            (np.real(data['vocal_stft']), np.imag(data['vocal_stft'])), axis=1)
-        vocal_stacked = torch.Tensor(vocal_stacked).cuda()
-        return self.model.forward(vocal_stacked)
+        onvocal_stacked = np.concatenate(
+            (np.real(data['onvocal_stft']), np.imag(data['onvocal_stft'])), axis=1)
+        onvocal_stacked = torch.Tensor(onvocal_stacked).cuda()
+        return self.model.forward(onvocal_stacked)
 
     def loss(self, prediction, data):
         n_fft, fft_channels, _ = utils.NFFT()
@@ -54,10 +66,8 @@ class Generator(Network):
         gt_imag = torch.Tensor(np.imag(data['offvocal_stft'])).cuda()
         #loss = torch.mean((predicted_real - gt_real)**2 +
         #                  (predicted_imag - gt_imag)**2)
-        
         mag = torch.sqrt(gt_real**2+gt_imag**2)
         phase = torch.atan2(gt_imag,gt_real)
-        
         loss = torch.mean((predicted_real - mag)**2 +
                           (predicted_imag - phase)**2)
         return loss
@@ -70,15 +80,13 @@ class Generator(Network):
         n_fft, fft_channels, _ = utils.NFFT()
         predicted_mag = prediction[0, :-fft_channels]
         predicted_phase = prediction[0, -fft_channels:]
-        
         predicted_real = predicted_mag*np.cos(predicted_phase)
         predicted_imag = predicted_mag*np.sin(predicted_phase)
-        
         predicted_mel = np.sqrt(predicted_real**2 + predicted_imag**2)
         if FLAGS.image_summaries:
             GLOBAL.summary_writer.add_image(
-                summary_prefix + '/gt_mel_onvocal',
-                utils.PlotSpectrogram('gt onvocal', np.abs(data['vocal_stft'][0])),
+                summary_prefix + '/gt_mel_vocal',
+                utils.PlotSpectrogram('gt vocal', np.abs(data['vocal_stft'][0])),
                 GLOBAL.current_step)
             GLOBAL.summary_writer.add_image(
                 summary_prefix + '/gt_mel_offvocal',
@@ -90,9 +98,10 @@ class Generator(Network):
                 utils.PlotSpectrogram('predicted', predicted_mel),
                 GLOBAL.current_step)
 
-        #predicted_magnitude = predicted_mel
-        # predicted_magnitude = utils.InverseMelSpectrogram(predicted_mel)
-        #predicted_stft = predicted_magnitude * np.exp(1j * np.angle(data['offvocal_stft'][0]))
+        # predicted_magnitude = predicted_mel
+        # # TODO: Use mel.
+        # #predicted_magnitude = utils.InverseMelSpectrogram(predicted_mel)
+        # predicted_stft = predicted_magnitude * np.exp(1j * np.angle(data['vocal_stft'][0]))
         predicted_stft = predicted_real + 1j * predicted_imag
         result = utils.InverseSTFT(predicted_stft)
         return result
@@ -142,26 +151,26 @@ class GeneratorAutoencoder(Network):
         predicted_vocal_imag = prediction[:, fft_channels:2*fft_channels]
         predicted_offvocal_real = prediction[:, 2*fft_channels:-fft_channels]
         predicted_offvocal_imag = prediction[:,-fft_channels: ]
-        
+
         gt_offvocal_real = torch.Tensor(np.real(data['offvocal_stft'])).cuda()
         gt_offvocal_imag = torch.Tensor(np.imag(data['offvocal_stft'])).cuda()
         gt_vocal_real = torch.Tensor(np.real(data['vocal_stft'])).cuda()
         gt_vocal_imag = torch.Tensor(np.imag(data['vocal_stft'])).cuda()
         #loss = torch.mean((predicted_real - gt_real)**2 +
         #                  (predicted_imag - gt_imag)**2)
-        
+
         mag_vocal = torch.sqrt(gt_vocal_real**2+gt_vocal_imag**2)
         phase_vocal = torch.atan2(gt_vocal_imag,gt_vocal_real)
-        
+
         mag_offvocal = torch.sqrt(gt_offvocal_real**2+gt_offvocal_imag**2)
         phase_offvocal = torch.atan2(gt_offvocal_imag,gt_offvocal_real)
-        
+
         loss_vocal = torch.mean((predicted_vocal_real - mag_vocal)**2 +
                           (predicted_vocal_imag - phase_vocal)**2)
-        
+
         loss_offvocal = torch.mean((predicted_offvocal_real - mag_offvocal)**2 +
                           (predicted_offvocal_imag - phase_offvocal)**2)
-        
+
         return loss_vocal+loss_offvocal
 
     def predict(self, data, summary_prefix=''):
@@ -172,10 +181,10 @@ class GeneratorAutoencoder(Network):
         n_fft, fft_channels, _ = utils.NFFT()
         predicted_mag = prediction[0, 2*fft_channels:-fft_channels]
         predicted_phase = prediction[0, -fft_channels:]
-        
+
         predicted_real = predicted_mag*np.cos(predicted_phase)
         predicted_imag = predicted_mag*np.sin(predicted_phase)
-        
+
         predicted_mel = np.sqrt(predicted_real**2 + predicted_imag**2)
         if FLAGS.image_summaries:
             GLOBAL.summary_writer.add_image(
@@ -197,7 +206,7 @@ class GeneratorAutoencoder(Network):
         #predicted_stft = predicted_magnitude * np.exp(1j * np.angle(data['offvocal_stft'][0]))
         predicted_stft = predicted_real + 1j * predicted_imag
         result = utils.InverseSTFT(predicted_stft)
-        return result    
+        return result
 
 class ResNetAux(nn.Module):
 
