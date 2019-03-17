@@ -77,12 +77,18 @@ class Model(nn.Module):
         mixed_emb2 = mixed_emb2 / torch.norm(mixed_emb2, dim=1, keepdim=True)
         vocal_emb1, vocal_emb2, _ = self._encoder.forward(vocal)
         if self.training:
-          GLOBAL.summary_writer.add_histogram('train/instr_emb1_norm', torch.norm(instr_emb1, dim=1).clone().cpu().data.numpy(), GLOBAL.current_step)
-          GLOBAL.summary_writer.add_histogram('train/instr_emb2_norm', torch.norm(instr_emb2, dim=1).clone().cpu().data.numpy(), GLOBAL.current_step)
-          GLOBAL.summary_writer.add_histogram('train/mixed_emb1_norm', torch.norm(mixed_emb1, dim=1).clone().cpu().data.numpy(), GLOBAL.current_step)
-          GLOBAL.summary_writer.add_histogram('train/mixed_emb2_norm', torch.norm(mixed_emb2, dim=1).clone().cpu().data.numpy(), GLOBAL.current_step)
-          GLOBAL.summary_writer.add_histogram('train/vocal_emb1_norm', torch.norm(vocal_emb1, dim=1).clone().cpu().data.numpy(), GLOBAL.current_step)
-          GLOBAL.summary_writer.add_histogram('train/vocal_emb2_norm', torch.norm(vocal_emb2, dim=1).clone().cpu().data.numpy(), GLOBAL.current_step)
+          GLOBAL.summary_writer.add_scalar('train/instr_emb1_norm',
+                                           torch.mean(torch.norm(instr_emb1, dim=1)), GLOBAL.current_step)
+          GLOBAL.summary_writer.add_scalar('train/instr_emb2_norm',
+                                           torch.mean(torch.norm(instr_emb2, dim=1)), GLOBAL.current_step)
+          GLOBAL.summary_writer.add_scalar('train/mixed_emb1_norm',
+                                           torch.mean(torch.norm(mixed_emb1, dim=1)), GLOBAL.current_step)
+          GLOBAL.summary_writer.add_scalar('train/mixed_emb2_norm',
+                                           torch.mean(torch.norm(mixed_emb2, dim=1)), GLOBAL.current_step)
+          GLOBAL.summary_writer.add_scalar('train/vocal_emb1_norm',
+                                           torch.mean(torch.norm(vocal_emb1, dim=1)), GLOBAL.current_step)
+          GLOBAL.summary_writer.add_scalar('train/vocal_emb2_norm',
+                                           torch.mean(torch.norm(vocal_emb2, dim=1)), GLOBAL.current_step)
 
         emb_loss = torch.mean((instr_emb1 - mixed_emb1) ** 2 + (vocal_emb2 - mixed_emb2) ** 2)
         emb_norm_loss = torch.mean(instr_emb2 ** 2 + vocal_emb1 ** 2)
