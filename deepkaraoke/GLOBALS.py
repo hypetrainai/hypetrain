@@ -58,8 +58,11 @@ class _ModuleWrapper(ModuleType):
 
         parser.add_argument('--debug', type=bool, default=True, help='Boolean switch for controlling debug code.')
 
-        #TENSORBOARD ARGS
+        # TENSORBOARD ARGS
         parser.add_argument('--image_summaries', type=bool, default=False, help='Enable image summaries on tensorboard?')
+
+        # For splitter.py
+        parser.add_argument('--add_unet_connections', type=bool, default=False, help='Add UNet connections.')
 
         self.parser = parser
         self._FLAGS = None

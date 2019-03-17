@@ -23,7 +23,8 @@ class Encoder(nn.Module):
         self._layers = nn.ModuleList()
         self._layers.append(submodules.conv_1d(_EMB_REDUCTION_FACTOR, _CONV_CHANNELS))
         for i in range(_CONV_LAYERS):
-            self._layers.append(submodules.ResNetModule1d(_CONV_CHANNELS, _CONV_CHANNELS, kernel_size=3, pad=1, dilation=2**(i % _CONV_DILATION_CYCLE)))
+            self._layers.append(submodules.ResNetModule1d(
+                _CONV_CHANNELS, _CONV_CHANNELS, kernel_size=3, pad=1, dilation=2**(i % _CONV_DILATION_CYCLE), bn=False))
         self._output = submodules.conv_1d(_CONV_CHANNELS, 2 * _EMB_DIM)
 
     def forward(self, x):
@@ -44,13 +45,16 @@ class Decoder(nn.Module):
         self._input = submodules.conv_1d(_EMB_DIM, _CONV_CHANNELS)
         self._layers = nn.ModuleList()
         for i in range(_CONV_LAYERS):
-            self._layers.append(submodules.ResNetModule1d(_CONV_CHANNELS, _CONV_CHANNELS, kernel_size=3, pad=1, dilation=2**(i % _CONV_DILATION_CYCLE)))
+            self._layers.append(submodules.ResNetModule1d(
+                _CONV_CHANNELS, _CONV_CHANNELS, kernel_size=3, pad=1, dilation=2**(i % _CONV_DILATION_CYCLE), bn=False))
         self._layers.append(submodules.conv_1d(_CONV_CHANNELS, _EMB_REDUCTION_FACTOR))
 
     def forward(self, x, encoder_layer_outs):
         x = self._input.forward(x)
         for layer, encoder_layer_out in zip(self._layers, reversed(encoder_layer_outs)):
-            x = layer.forward(x + encoder_layer_out)
+            if FLAGS.add_unet_connections:
+                x += encoder_layer_out
+            x = layer.forward(x)
         x = x.view([x.size(0), -1])
         x = torch.clamp(x, -1.0, 1.0)
         return x
@@ -68,19 +72,31 @@ class Model(nn.Module):
         # emb1 is pushed to have only instrumental information and emb2 vocals.
         instr_emb1, instr_emb2, _ = self._encoder.forward(instr)
         mixed_emb1, mixed_emb2, encoder_layer_outs = self._encoder.forward(instr + vocal)
+        # Normalize mixed_embs to prevent the network from reducing all norms to 0.
+        mixed_emb1 = mixed_emb1 / torch.norm(mixed_emb1, dim=1, keepdim=True)
+        mixed_emb2 = mixed_emb2 / torch.norm(mixed_emb2, dim=1, keepdim=True)
         vocal_emb1, vocal_emb2, _ = self._encoder.forward(vocal)
+        if self.training:
+          GLOBAL.summary_writer.add_histogram('train/instr_emb1_norm', torch.norm(instr_emb1, dim=1).clone().cpu().data.numpy(), GLOBAL.current_step)
+          GLOBAL.summary_writer.add_histogram('train/instr_emb2_norm', torch.norm(instr_emb2, dim=1).clone().cpu().data.numpy(), GLOBAL.current_step)
+          GLOBAL.summary_writer.add_histogram('train/mixed_emb1_norm', torch.norm(mixed_emb1, dim=1).clone().cpu().data.numpy(), GLOBAL.current_step)
+          GLOBAL.summary_writer.add_histogram('train/mixed_emb2_norm', torch.norm(mixed_emb2, dim=1).clone().cpu().data.numpy(), GLOBAL.current_step)
+          GLOBAL.summary_writer.add_histogram('train/vocal_emb1_norm', torch.norm(vocal_emb1, dim=1).clone().cpu().data.numpy(), GLOBAL.current_step)
+          GLOBAL.summary_writer.add_histogram('train/vocal_emb2_norm', torch.norm(vocal_emb2, dim=1).clone().cpu().data.numpy(), GLOBAL.current_step)
 
         emb_loss = torch.mean((instr_emb1 - mixed_emb1) ** 2 + (vocal_emb2 - mixed_emb2) ** 2)
-        GLOBAL.summary_writer.add_scalar('loss_train/emb_loss', emb_loss, GLOBAL.current_step)
         emb_norm_loss = torch.mean(instr_emb2 ** 2 + vocal_emb1 ** 2)
-        GLOBAL.summary_writer.add_scalar('loss_train/emb_norm_loss', emb_norm_loss, GLOBAL.current_step)
 
         instr_pred = self._instr_decoder.forward(mixed_emb1, encoder_layer_outs)
         instr_loss = torch.mean((instr - instr_pred) ** 2)
-        GLOBAL.summary_writer.add_scalar('loss_train/instr_loss', instr_loss, GLOBAL.current_step)
         vocal_pred = self._vocal_decoder.forward(mixed_emb2, encoder_layer_outs)
         vocal_loss = torch.mean((vocal - vocal_pred) ** 2)
-        GLOBAL.summary_writer.add_scalar('loss_train/vocal_loss', vocal_loss, GLOBAL.current_step)
+
+        if self.training:
+          GLOBAL.summary_writer.add_scalar('loss_train/emb_loss', emb_loss, GLOBAL.current_step)
+          GLOBAL.summary_writer.add_scalar('loss_train/emb_norm_loss', emb_norm_loss, GLOBAL.current_step)
+          GLOBAL.summary_writer.add_scalar('loss_train/instr_loss', instr_loss, GLOBAL.current_step)
+          GLOBAL.summary_writer.add_scalar('loss_train/vocal_loss', vocal_loss, GLOBAL.current_step)
 
         return vocal_pred, emb_loss + emb_norm_loss + instr_loss + vocal_loss
 
