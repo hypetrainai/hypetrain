@@ -72,9 +72,6 @@ class Model(nn.Module):
         # emb1 is pushed to have only instrumental information and emb2 vocals.
         instr_emb1, instr_emb2, _ = self._encoder.forward(instr)
         mixed_emb1, mixed_emb2, encoder_layer_outs = self._encoder.forward(instr + vocal)
-        # Normalize mixed_embs to prevent the network from reducing all norms to 0.
-        mixed_emb1 = mixed_emb1 / torch.norm(mixed_emb1, dim=1, keepdim=True)
-        mixed_emb2 = mixed_emb2 / torch.norm(mixed_emb2, dim=1, keepdim=True)
         vocal_emb1, vocal_emb2, _ = self._encoder.forward(vocal)
         if self.training:
           GLOBAL.summary_writer.add_scalar('train/instr_emb1_norm',
@@ -92,6 +89,9 @@ class Model(nn.Module):
 
         emb_loss = torch.mean((instr_emb1 - mixed_emb1) ** 2 + (vocal_emb2 - mixed_emb2) ** 2)
         emb_norm_loss = torch.mean(instr_emb2 ** 2 + vocal_emb1 ** 2)
+        # Prevent embedding norms from collapsing towards 0 in minimizing L2.
+        emb_norm_neg_loss = 2 - torch.mean(torch.min(mixed_emb1 ** 2, torch.ones_like(mixed_emb1)) +
+                                           torch.min(mixed_emb2 ** 2, torch.ones_like(mixed_emb2)))
 
         instr_pred = self._instr_decoder.forward(mixed_emb1, encoder_layer_outs)
         instr_loss = torch.mean((instr - instr_pred) ** 2)
@@ -101,10 +101,11 @@ class Model(nn.Module):
         if self.training:
           GLOBAL.summary_writer.add_scalar('loss_train/emb_loss', emb_loss, GLOBAL.current_step)
           GLOBAL.summary_writer.add_scalar('loss_train/emb_norm_loss', emb_norm_loss, GLOBAL.current_step)
+          GLOBAL.summary_writer.add_scalar('loss_train/emb_norm_neg_loss', emb_norm_neg_loss, GLOBAL.current_step)
           GLOBAL.summary_writer.add_scalar('loss_train/instr_loss', instr_loss, GLOBAL.current_step)
           GLOBAL.summary_writer.add_scalar('loss_train/vocal_loss', vocal_loss, GLOBAL.current_step)
 
-        return vocal_pred, emb_loss + emb_norm_loss + instr_loss + vocal_loss
+        return vocal_pred, emb_loss + emb_norm_loss + emb_norm_neg_loss + instr_loss + vocal_loss
 
     def predict(self, mixed):
         overflow = mixed.shape[1] % _EMB_REDUCTION_FACTOR
