@@ -10,7 +10,7 @@ from GLOBALS import FLAGS, GLOBAL
 
 
 _EMB_REDUCTION_FACTOR = 8
-_EMB_DIM = 1024
+_EMB_DIM = 16
 _CONV_CHANNELS = 256
 _CONV_LAYERS = 24
 _CONV_DILATION_CYCLE = 8
@@ -46,7 +46,7 @@ class Decoder(nn.Module):
         self._layers = nn.ModuleList()
         for i in range(_CONV_LAYERS):
             self._layers.append(submodules.ResNetModule1d(
-                _CONV_CHANNELS, _CONV_CHANNELS, kernel_size=3, pad=1, dilation=2**(i % _CONV_DILATION_CYCLE), bn=False))
+                _CONV_CHANNELS, _CONV_CHANNELS, kernel_size=3, pad=1, dilation=2**(i % _CONV_DILATION_CYCLE)))
         self._layers.append(submodules.conv_1d(_CONV_CHANNELS, _EMB_REDUCTION_FACTOR))
 
     def forward(self, x, encoder_layer_outs):
@@ -94,8 +94,10 @@ class Model(nn.Module):
                                            torch.min(mixed_emb2 ** 2, torch.ones_like(mixed_emb2)))
 
         instr_pred = self._instr_decoder.forward(mixed_emb1, encoder_layer_outs)
+        instr_pred = torch.clamp(instr_pred, -1.0, 1.0)
         instr_loss = torch.mean((instr - instr_pred) ** 2)
         vocal_pred = self._vocal_decoder.forward(mixed_emb2, encoder_layer_outs)
+        vocal_pred = torch.clamp(vocal_pred, -1.0, 1.0)
         vocal_loss = torch.mean((vocal - vocal_pred) ** 2)
 
         if self.training:
@@ -152,5 +154,4 @@ class Generator(Network):
             prediction = np.concatenate((prediction, prediction_i[i - start:chunk_end - start]))
         # since we predicted vocals only, do some math to get off_vocal.
         # prediction = data[0] - prediction
-        prediction = np.clip(prediction, -1.0, 1.0)
         return prediction
