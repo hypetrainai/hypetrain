@@ -129,26 +129,28 @@ class Generator(Network):
         vocal = np.stack(data_vocal)
         assert instrumental.shape == vocal.shape
         assert len(vocal.shape) == 2
-        return torch.cat([torch.Tensor(instrumental).cuda().unsqueeze(1), torch.Tensor(vocal).cuda().unsqueeze(1)],1)
+        return torch.stack([torch.Tensor(instrumental).cuda(), torch.Tensor(vocal).cuda()], dim=1)
 
     def forward(self, data):
-        return self.model.forward(data[:,0], data[:,1])
+        return self.model.forward(data[:, 0], data[:, 1])
 
     def loss(self, prediction, data):
         return torch.mean(prediction[1])
 
     def predict(self, data, summary_prefix=''):
-        assert len(data[0].shape) == 2 and data[0].shape[0] == 1
+        assert data.shape[0] == 1  # Batch size 1 in predict.
+        data = data[0]
+        assert len(data.shape) == 2 and data.shape[0] == 2
         # split into chunks to fit into memory.
         chunk_size = 16000
         context_size = 4000
         assert (chunk_size + 2 * context_size) % _EMB_REDUCTION_FACTOR == 0
         prediction = np.zeros([0])
-        for i in range(0, data[0].shape[1], chunk_size):
+        for i in range(0, data.shape[1], chunk_size):
             start = max(0, i - context_size)
-            chunk_end = min(data[0].shape[1], i + chunk_size)
-            end = min(data[0].shape[1], chunk_end + context_size)
-            data_i = data[0][:, start:end] + data[1][:, start:end]  # mixed = instr + vocal
+            chunk_end = min(data.shape[1], i + chunk_size)
+            end = min(data.shape[1], chunk_end + context_size)
+            data_i = torch.unsqueeze(data[0, start:end] + data[1, start:end], 0)  # mixed = instr + vocal
             prediction_i = self.model.module.predict(data_i)[0].detach().cpu().numpy()
             prediction = np.concatenate((prediction, prediction_i[i - start:chunk_end - start]))
         # since we predicted vocals only, do some math to get off_vocal.
