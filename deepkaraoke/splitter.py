@@ -106,7 +106,6 @@ class Model(nn.Module):
           GLOBAL.summary_writer.add_scalar('loss_train/emb_norm_neg_loss', emb_norm_neg_loss, GLOBAL.current_step)
           GLOBAL.summary_writer.add_scalar('loss_train/instr_loss', instr_loss, GLOBAL.current_step)
           GLOBAL.summary_writer.add_scalar('loss_train/vocal_loss', vocal_loss, GLOBAL.current_step)
-
         return vocal_pred, emb_loss + emb_norm_loss + emb_norm_neg_loss + instr_loss + vocal_loss
 
     def predict(self, mixed):
@@ -130,13 +129,13 @@ class Generator(Network):
         vocal = np.stack(data_vocal)
         assert instrumental.shape == vocal.shape
         assert len(vocal.shape) == 2
-        return torch.Tensor(instrumental).cuda(), torch.Tensor(vocal).cuda()
+        return torch.cat([torch.Tensor(instrumental).cuda().unsqueeze(1), torch.Tensor(vocal).cuda().unsqueeze(1)],1)
 
     def forward(self, data):
-        return self.model.forward(*data)
+        return self.model.forward(data[:,0], data[:,1])
 
     def loss(self, prediction, data):
-        return prediction[1]
+        return torch.mean(prediction[1])
 
     def predict(self, data, summary_prefix=''):
         assert len(data[0].shape) == 2 and data[0].shape[0] == 1
