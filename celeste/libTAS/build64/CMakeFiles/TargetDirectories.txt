@@ -1,0 +1,10 @@
+/mnt/z/Dropbox/projects/hypetrain/celeste/libTAS/build_64/CMakeFiles/install/strip.dir
+/mnt/z/Dropbox/projects/hypetrain/celeste/libTAS/build_64/CMakeFiles/install/local.dir
+/mnt/z/Dropbox/projects/hypetrain/celeste/libTAS/build_64/CMakeFiles/install.dir
+/mnt/z/Dropbox/projects/hypetrain/celeste/libTAS/build_64/CMakeFiles/list_install_components.dir
+/mnt/z/Dropbox/projects/hypetrain/celeste/libTAS/build_64/CMakeFiles/tas.dir
+/mnt/z/Dropbox/projects/hypetrain/celeste/libTAS/build_64/CMakeFiles/libTAS.dir
+/mnt/z/Dropbox/projects/hypetrain/celeste/libTAS/build_64/CMakeFiles/edit_cache.dir
+/mnt/z/Dropbox/projects/hypetrain/celeste/libTAS/build_64/CMakeFiles/rebuild_cache.dir
+/mnt/z/Dropbox/projects/hypetrain/celeste/libTAS/build_64/CMakeFiles/tas_automoc.dir
+/mnt/z/Dropbox/projects/hypetrain/celeste/libTAS/build_64/CMakeFiles/libTAS_automoc.dir

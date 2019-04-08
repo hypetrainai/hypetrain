@@ -1,0 +1,1 @@
+set(AM_OLD_COMPILE_SETTINGS "LIBTAS_ENABLE_HUD;LIBTAS_HAS_XF86VMODE;LIBTAS_HAS_XINPUT;LIBTAS_HAS_XRANDR;LIBTAS_INTERIM_COMMIT=\"a91a3cd\";LIBTAS_INTERIM_DATE=\"2019-04-08\" ~~~ /usr/include/SDL2;/usr/include/alsa;/usr/include/x86_64-linux-gnu;/usr/include/freetype2;/usr/include ~~~  ~~~ FALSE ~~~ ")

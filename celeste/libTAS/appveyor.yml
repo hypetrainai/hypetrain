@@ -1,0 +1,19 @@
+version: 1.0.{build}
+branches:
+  only:
+  - master
+skip_tags: true
+image: Ubuntu1804
+install:
+- sh: >-
+    sudo apt update
+
+    sudo apt install --yes $(dpkg-checkbuilddeps 2>&1 | sed 's/dpkg-checkbuilddeps:\serror:\sUnmet build dependencies: //g' | sed 's/[\(][^)]*[\)] //g')
+build_script:
+- sh: sudo dpkg-buildpackage -us -uc -b
+after_build:
+- sh: sudo mv ../libtas*.deb ./
+- sh: for f in libtas*.deb; do mv $f ${f/_amd/~${APPVEYOR_REPO_COMMIT:0:7}_amd}; done;
+artifacts:
+- path: libtas*.deb
+  name: libtas
