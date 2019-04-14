@@ -1,0 +1,3 @@
+[submodule "celeste/libTAS"]
+	path = celeste/libTAS
+	url = git@github.com:hypetrainai/libTAS.git
