@@ -1,1 +1,0 @@
-/usr/bin/c++    -rdynamic CMakeFiles/libTAS.dir/libTAS_autogen/mocs_compilation.cpp.o CMakeFiles/libTAS.dir/src/program/main.cpp.o  -o libTAS -Wl,-rpath,"\$ORIGIN" liblibTAS_lib.a /usr/lib/x86_64-linux-gnu/libQt5Widgets.so.5.7.1 /usr/lib/x86_64-linux-gnu/libQt5Gui.so.5.7.1 /usr/lib/x86_64-linux-gnu/libQt5Core.so.5.7.1 -lpthread -lxcb -lxcb-cursor -lxcb-keysyms -lxcb-xkb -lX11 
