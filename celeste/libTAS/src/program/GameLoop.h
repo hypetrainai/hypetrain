@@ -27,6 +27,23 @@
 #include "MovieFile.h"
 #include <xcb/xcb_keysyms.h>
 
+/* Set the different environment variables, then start the game executable with
+ * our library to be injected using the LD_PRELOAD trick.
+ * Because this function eventually calls execl, it does not return.
+ * So, it is called from a child process using fork().
+ */
+void launchGameThread(
+    const std::string& gamepath,
+    const std::string& libtaspath,
+    const std::string& gameargs = "",
+    int startframe = 0,
+    const std::string& libdir = "",
+    const std::string& rundir = "",
+    int logging_status = SharedConfig::LOGGING_TO_CONSOLE,
+    bool opengl_soft = true,
+    const std::string& llvm_perf = "",
+    bool attach_gdb = false);
+
 class GameLoop : public QObject {
     Q_OBJECT
 public:
@@ -65,13 +82,6 @@ private:
     void initProcessMessages();
 
     bool startFrameMessages();
-
-    /* Set the different environment variables, then start the game executable with
-     * our library to be injected using the LD_PRELOAD trick.
-     * Because this function eventually calls execl, it does not return.
-     * So, it is called from a child process using fork().
-     */
-    void launchGameThread();
 
     uint8_t nextEvent(struct HotKey &hk);
 

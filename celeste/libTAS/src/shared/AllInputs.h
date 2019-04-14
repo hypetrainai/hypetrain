@@ -21,6 +21,7 @@
 #define LIBTAS_ALLINPUTS_H_INCLUDED
 
 #include "SingleInput.h"
+#include "SharedConfig.h"
 
 /* I'm typedef'ing KeySym here because including <X11/X.h> messes up with Qt */
 typedef unsigned long int KeySym;

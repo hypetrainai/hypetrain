@@ -61,6 +61,7 @@ void __attribute__((constructor)) init(void)
 
     initSocketGame();
 
+
     /* Send information to the program */
 
     /* Send game process pid */
@@ -127,6 +128,8 @@ void __attribute__((constructor)) init(void)
 
     /* Initialize sound parameters */
     audiocontext.init();
+
+    printf("LibTAS initialized!\n");
 }
 
 void __attribute__((destructor)) term(void)

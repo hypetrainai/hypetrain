@@ -26,6 +26,7 @@
 #include "AutoSave.h"
 
 #include "../shared/sockethelpers.h"
+#include "../shared/AllInputs.h"
 #include "../shared/SharedConfig.h"
 #include "../shared/messages.h"
 
@@ -50,30 +51,40 @@
 # define personality(pers) ((long)syscall(SYS_personality, pers))
 #endif
 
-GameLoop::GameLoop(Context* c) : context(c), keysyms(xcb_key_symbols_alloc(c->conn), xcb_key_symbols_free) {
-    movie = MovieFile(context);
-}
-
-void GameLoop::launchGameThread()
+void launchGameThread(
+    const std::string& gamepath,
+    const std::string& libtaspath,
+    const std::string& gameargs,
+    int startframe,
+    const std::string& libdir,
+    const std::string& rundir,
+    int logging_status,
+    bool opengl_soft,
+    const std::string& llvm_perf,
+    bool attach_gdb)
 {
+    /* We fork here so that the child process calls the game */
+    if (fork() != 0) return;
     /* Update the LD_LIBRARY_PATH environment variable if the user set one */
-    if (!context->config.libdir.empty()) {
+    /*
+    if (!libdir.empty()) {
         char* oldlibpath = getenv("LD_LIBRARY_PATH");
-        std::string libpath = context->config.libdir;
+        std::string libpath = libdir;
         if (oldlibpath) {
             libpath.append(":");
             libpath.append(oldlibpath);
         }
         setenv("LD_LIBRARY_PATH", libpath.c_str(), 1);
     }
+    */
 
     /* Change the working directory to the user-defined one or game directory */
-    std::string newdir = context->config.rundir;
+    std::string newdir = rundir;
     if (newdir.empty()) {
         /* Get the game directory from path */
-        size_t sep = context->gamepath.find_last_of("/");
+        size_t sep = gamepath.find_last_of("/");
         if (sep != std::string::npos)
-            newdir = context->gamepath.substr(0, sep);
+            newdir = gamepath.substr(0, sep);
         else
             newdir = ""; // Should not happen
     }
@@ -89,8 +100,8 @@ void GameLoop::launchGameThread()
 
     /* Set where stderr of the game is redirected */
     int fd;
-    std::string logfile = context->gamepath + ".log";
-    switch(context->config.sc.logging_status) {
+    std::string logfile = gamepath + ".log";
+    switch(logging_status) {
         case SharedConfig::NO_LOGGING:
             fd = open("/dev/null", O_RDWR, S_IRUSR | S_IWUSR);
             dup2(fd, 2);
@@ -107,20 +118,20 @@ void GameLoop::launchGameThread()
     }
 
     /* Set additional environment variables regarding Mesa configuration */
-    if (context->config.sc.opengl_soft)
+    if (opengl_soft)
         setenv("LIBGL_ALWAYS_SOFTWARE", "1", 1);
     else
         unsetenv("LIBGL_ALWAYS_SOFTWARE");
 
-    if (!context->config.llvm_perf.empty())
-        setenv("LP_PERF", context->config.llvm_perf.c_str(), 1);
+    if (!llvm_perf.empty())
+        setenv("LP_PERF", llvm_perf.c_str(), 1);
     else
         unsetenv("LP_PERF");
 
     /* Tell SDL >= 2.0.2 to let us override functions even if it is statically linked. */
-    setenv("SDL_DYNAMIC_API", context->libtaspath.c_str(), 1);
+    setenv("SDL_DYNAMIC_API", libtaspath.c_str(), 1);
 
-    setenv("LIBTAS_START_FRAME", std::to_string(context->framecount).c_str(), 1);
+    setenv("LIBTAS_START_FRAME", std::to_string(startframe).c_str(), 1);
 
     /* Disable Address Space Layout Randomization for the game, so that ram
      * watch addresses do not change on game restart.
@@ -131,14 +142,14 @@ void GameLoop::launchGameThread()
     /* Build the argument list to be fed to execv */
     std::list<std::string> arg_list;
 
-    if (context->attach_gdb) {
+    if (attach_gdb) {
         arg_list.push_back("/usr/bin/gdb");
         arg_list.push_back("-q");
         arg_list.push_back("-ex");
 
         /* LD_PRELOAD must be set inside a gdb command to be effective */
         std::string ldpreloadstr = "set exec-wrapper env 'LD_PRELOAD=";
-        ldpreloadstr += context->libtaspath;
+        ldpreloadstr += libtaspath;
         ldpreloadstr += "'";
         arg_list.push_back(ldpreloadstr);
 
@@ -163,12 +174,12 @@ void GameLoop::launchGameThread()
     }
     else {
         /* Set the LD_PRELOAD environment variable to inject our lib to the game */
-        setenv("LD_PRELOAD", context->libtaspath.c_str(), 1);
+        // setenv("LD_PRELOAD", libtaspath.c_str(), 1);
     }
-    arg_list.push_back(context->gamepath);
+    arg_list.push_back(gamepath);
 
     /* Parse the game command-line arguments */
-    std::istringstream iss(context->config.gameargs);
+    std::istringstream iss(gameargs);
     std::string arg;
     while (iss >> arg) {
         arg_list.push_back(arg);
@@ -183,7 +194,12 @@ void GameLoop::launchGameThread()
     arg_vect.push_back(NULL);
 
     /* Run the actual game */
+    std::cout << "Launching " << arg_vect[0] << std::endl;
     execv(arg_vect[0], &arg_vect[0]);
+}
+
+GameLoop::GameLoop(Context* c) : context(c), keysyms(xcb_key_symbols_alloc(c->conn), xcb_key_symbols_free) {
+    movie = MovieFile(context);
 }
 
 void GameLoop::start()
@@ -311,11 +327,17 @@ void GameLoop::init()
     /* Remove the file socket */
     removeSocket();
 
-    /* We fork here so that the child process calls the game */
-    int pid = fork();
-    if (pid == 0) {
-        launchGameThread();
-    }
+    launchGameThread(
+        context->gamepath,
+        context->libtaspath,
+        context->config.gameargs,
+        context->framecount,
+        context->config.libdir,
+        context->config.rundir,
+        context->config.sc.logging_status,
+        context->config.sc.opengl_soft,
+        context->config.llvm_perf,
+        context->attach_gdb);
 
     ar_ticks = -1;
     ar_delay = 50;
