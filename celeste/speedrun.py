@@ -17,10 +17,11 @@ def Speedrun():
 
     msg = pylibtas.receiveMessage()
     while msg != pylibtas.MSGB_END_INIT:
-        print('Received message', msg)
-        if msg == pylibtas.MSGB_PID:
-            status, pid = pylibtas.receiveData(SIZE_INT)
-            print('pid:', pid)
+      print('Received message', msg)
+      if msg == pylibtas.MSGB_PID:
+          status, pid = pylibtas.receiveInt()
+          print('pid:', pid)
+      msg = pylibtas.receiveMessage()
 
     pylibtas.sendMessage(pylibtas.MSGN_END_INIT)
 
