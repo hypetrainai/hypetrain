@@ -98,6 +98,83 @@ except __builtin__.Exception:
         pass
     _newclass = 0
 
+MSGB_START_FRAMEBOUNDARY = _pylibtas.MSGB_START_FRAMEBOUNDARY
+MSGN_START_FRAMEBOUNDARY = _pylibtas.MSGN_START_FRAMEBOUNDARY
+MSGB_FRAMECOUNT_TIME = _pylibtas.MSGB_FRAMECOUNT_TIME
+MSGN_ALL_INPUTS = _pylibtas.MSGN_ALL_INPUTS
+MSGN_PREVIEW_INPUTS = _pylibtas.MSGN_PREVIEW_INPUTS
+MSGN_CONFIG = _pylibtas.MSGN_CONFIG
+MSGN_END_FRAMEBOUNDARY = _pylibtas.MSGN_END_FRAMEBOUNDARY
+MSGB_QUIT = _pylibtas.MSGB_QUIT
+MSGN_USERQUIT = _pylibtas.MSGN_USERQUIT
+MSGB_PID = _pylibtas.MSGB_PID
+MSGB_END_INIT = _pylibtas.MSGB_END_INIT
+MSGN_END_INIT = _pylibtas.MSGN_END_INIT
+MSGN_DUMP_FILE = _pylibtas.MSGN_DUMP_FILE
+MSGB_WINDOW_ID = _pylibtas.MSGB_WINDOW_ID
+MSGB_ALERT_MSG = _pylibtas.MSGB_ALERT_MSG
+MSGN_OSD_MSG = _pylibtas.MSGN_OSD_MSG
+MSGN_SAVESTATE = _pylibtas.MSGN_SAVESTATE
+MSGN_LOADSTATE = _pylibtas.MSGN_LOADSTATE
+MSGB_LOADING_SUCCEEDED = _pylibtas.MSGB_LOADING_SUCCEEDED
+MSGN_SAVESTATE_PATH = _pylibtas.MSGN_SAVESTATE_PATH
+MSGN_BASE_SAVESTATE_PATH = _pylibtas.MSGN_BASE_SAVESTATE_PATH
+MSGN_SAVESTATE_INDEX = _pylibtas.MSGN_SAVESTATE_INDEX
+MSGN_BASE_SAVESTATE_INDEX = _pylibtas.MSGN_BASE_SAVESTATE_INDEX
+MSGB_ENCODE_FAILED = _pylibtas.MSGB_ENCODE_FAILED
+MSGN_STOP_ENCODE = _pylibtas.MSGN_STOP_ENCODE
+MSGB_GAMEINFO = _pylibtas.MSGB_GAMEINFO
+MSGN_EXPOSE = _pylibtas.MSGN_EXPOSE
+MSGB_FPS = _pylibtas.MSGB_FPS
+MSGN_RAMWATCH = _pylibtas.MSGN_RAMWATCH
+MSGB_ENCODING_SEGMENT = _pylibtas.MSGB_ENCODING_SEGMENT
+MSGN_ENCODING_SEGMENT = _pylibtas.MSGN_ENCODING_SEGMENT
+MSGB_DO_BACKTRACK_SAVESTATE = _pylibtas.MSGB_DO_BACKTRACK_SAVESTATE
+MSGN_STEAM_USER_DATA_PATH = _pylibtas.MSGN_STEAM_USER_DATA_PATH
+
+def removeSocket() -> "void":
+    return _pylibtas.removeSocket()
+removeSocket = _pylibtas.removeSocket
+
+def initSocketProgram() -> "bool":
+    return _pylibtas.initSocketProgram()
+initSocketProgram = _pylibtas.initSocketProgram
+
+def initSocketGame() -> "bool":
+    return _pylibtas.initSocketGame()
+initSocketGame = _pylibtas.initSocketGame
+
+def closeSocket() -> "void":
+    return _pylibtas.closeSocket()
+closeSocket = _pylibtas.closeSocket
+
+def sendData(elem: 'void const *', size: 'size_t') -> "void":
+    return _pylibtas.sendData(elem, size)
+sendData = _pylibtas.sendData
+
+def sendString(str: 'std::string const &') -> "void":
+    return _pylibtas.sendString(str)
+sendString = _pylibtas.sendString
+
+def sendMessage(message: 'int') -> "void":
+    return _pylibtas.sendMessage(message)
+sendMessage = _pylibtas.sendMessage
+
+def receiveData(elem: 'void *', size: 'size_t') -> "int":
+    return _pylibtas.receiveData(elem, size)
+receiveData = _pylibtas.receiveData
+
+def receiveMessage() -> "int":
+    return _pylibtas.receiveMessage()
+receiveMessage = _pylibtas.receiveMessage
+
+def receiveString() -> "std::string":
+    return _pylibtas.receiveString()
+receiveString = _pylibtas.receiveString
+
+def receiveCString(str: 'char *') -> "void":
+    return _pylibtas.receiveCString(str)
+receiveCString = _pylibtas.receiveCString
 
 def launchGameThread(*args) -> "void":
     return _pylibtas.launchGameThread(*args)
