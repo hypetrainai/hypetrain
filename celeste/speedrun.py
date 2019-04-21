@@ -2,6 +2,40 @@ import os
 import pylibtas
 
 SIZE_INT = 4
+SIZE_FLOAT = 4
+SIZE_UNSIGNED_LONG = 8
+SIZE_TIMESPEC = 16
+SIZE_GAMEINFO_STRUCT = 36
+SIZE_WINDOW_STRUCT = 8
+
+def startFrameMessages():
+  msg = pylibtas.receiveMessage()
+  while msg != pylibtas.MSGB_START_FRAMEBOUNDARY:
+    if msg == pylibtas.MSGB_WINDOW_ID:
+      pylibtas.ignoreData(SIZE_WINDOW_STRUCT)
+    elif msg == pylibtas.MSGB_ALERT_MSG:
+      print(pylibtas.receiveString())
+    elif msg == pylibtas.MSGB_ENCODE_FAILED:
+      return True
+    elif msg == pylibtas.MSGB_FRAMECOUNT_TIME:
+      pylibtas.ignoreData(SIZE_UNSIGNED_LONG)
+      pylibtas.ignoreData(SIZE_TIMESPEC)
+    elif msg == pylibtas.MSGB_GAMEINFO:
+      pylibtas.ignoreData(SIZE_GAME_INFO)
+    elif msg == pylibtas.MSGB_FPS:
+      pylibtas.ignoreData(SIZE_FLOAT)
+      pylibtas.ignoreData(SIZE_FLOAT)
+    elif msg == pylibtas.MSGB_ENCODING_SEGMENT:
+      pylibtas.ignoreData(SIZE_INT)
+    elif msg == pylibtas.MSGB_QUIT:
+      return True
+    if msg == -1:
+      print("The connection to the game was lost.")
+      return True
+    msg = pylibtas.receiveMessage()
+  pylibtas.sendMessage(pylibtas.MSGN_START_FRAMEBOUNDARY);
+  return False
+
 
 def Speedrun():
     print('Hello world!')
@@ -17,20 +51,24 @@ def Speedrun():
 
     msg = pylibtas.receiveMessage()
     while msg != pylibtas.MSGB_END_INIT:
-      print('Received message', msg)
       if msg == pylibtas.MSGB_PID:
-          status, pid = pylibtas.receiveInt()
-          print('pid:', pid)
+        status, pid = pylibtas.receiveInt()
       msg = pylibtas.receiveMessage()
 
     pylibtas.sendMessage(pylibtas.MSGN_CONFIG)
     shared_config = pylibtas.SharedConfig()
-    shared_config.running = False
+    shared_config.running = True
     shared_config.prevent_savefiles = False
     shared_config.main_gettimes_threshold[shared_config.TIMETYPE_CLOCKGETTIME] = 100
     pylibtas.sendSharedConfig(shared_config)
 
+    pylibtas.sendMessage(pylibtas.MSGN_ENCODING_SEGMENT)
+    pylibtas.sendData(0, SIZE_INT)
+
     pylibtas.sendMessage(pylibtas.MSGN_END_INIT)
+
+    while True:
+      quit = startFrameMessages()
 
     os.wait()
     print('Goodbye world!')
