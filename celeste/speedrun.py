@@ -23,6 +23,13 @@ def Speedrun():
           print('pid:', pid)
       msg = pylibtas.receiveMessage()
 
+    pylibtas.sendMessage(pylibtas.MSGN_CONFIG)
+    shared_config = pylibtas.SharedConfig()
+    shared_config.running = False
+    shared_config.prevent_savefiles = False
+    shared_config.main_gettimes_threshold[shared_config.TIMETYPE_CLOCKGETTIME] = 100
+    pylibtas.sendSharedConfig(shared_config)
+
     pylibtas.sendMessage(pylibtas.MSGN_END_INIT)
 
     os.wait()
