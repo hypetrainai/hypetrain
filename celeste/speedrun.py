@@ -42,7 +42,7 @@ def startNextFrame():
 def processFrame():
   ai = pylibtas.AllInputs()
   press = pylibtas.SingleInput()
-  press.type = pylibtas.SingleInput.BUTTON_A
+  press.type = pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_A
   ai.setInput(press, 1)
   return ai
 
