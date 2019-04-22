@@ -21,7 +21,7 @@ def startFrameMessages():
       pylibtas.ignoreData(SIZE_UNSIGNED_LONG)
       pylibtas.ignoreData(SIZE_TIMESPEC)
     elif msg == pylibtas.MSGB_GAMEINFO:
-      pylibtas.ignoreData(SIZE_GAME_INFO)
+      pylibtas.ignoreData(SIZE_GAMEINFO_STRUCT)
     elif msg == pylibtas.MSGB_FPS:
       pylibtas.ignoreData(SIZE_FLOAT)
       pylibtas.ignoreData(SIZE_FLOAT)
@@ -45,8 +45,13 @@ def Speedrun():
         b'libTAS/build64/libtas.so',
         b'',  # gameargs
         0,  # startframe
-        b'CelesteLinux/lib64',
-        os.path.dirname(os.path.abspath(__file__)).encode())
+        b'lib64',
+        os.path.dirname(os.path.abspath(__file__)).encode(),
+        pylibtas.SharedConfig.LOGGING_TO_CONSOLE,
+        True,  # opengl_soft
+        b'',  # llvm_perf
+        False,  # attach_gdb
+    )
     pylibtas.initSocketProgram()
 
     msg = pylibtas.receiveMessage()
@@ -57,9 +62,12 @@ def Speedrun():
 
     pylibtas.sendMessage(pylibtas.MSGN_CONFIG)
     shared_config = pylibtas.SharedConfig()
+    shared_config.initial_framecount = 0
     shared_config.running = True
+    shared_config.incremental_savestates = False
     shared_config.prevent_savefiles = False
-    shared_config.main_gettimes_threshold[shared_config.TIMETYPE_CLOCKGETTIME] = 100
+    shared_config.recycle_threads = False
+    shared_config.main_gettimes_threshold = [-1, -1, -1, 100, -1, -1];
     pylibtas.sendSharedConfig(shared_config)
 
     pylibtas.sendMessage(pylibtas.MSGN_ENCODING_SEGMENT)
@@ -69,8 +77,9 @@ def Speedrun():
 
     while True:
       quit = startFrameMessages()
+      if quit:
+        break
 
-    os.wait()
     print('Goodbye world!')
 
 
