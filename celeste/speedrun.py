@@ -41,15 +41,15 @@ def Speedrun():
     print('Hello world!')
     pylibtas.removeSocket()
     pylibtas.launchGameThread(
-        b'CelesteLinux/Celeste.bin.x86_64',
-        b'libTAS/build64/libtas.so',
-        b'',  # gameargs
+        'CelesteLinux/Celeste.bin.x86_64',
+        'libTAS/build64/libtas.so',
+        '',  # gameargs
         0,  # startframe
-        b'lib64',
-        os.path.dirname(os.path.abspath(__file__)).encode(),
+        'lib64',
+        os.path.dirname(os.path.abspath(__file__)),
         pylibtas.SharedConfig.LOGGING_TO_CONSOLE,
         True,  # opengl_soft
-        b'',  # llvm_perf
+        '',  # llvm_perf
         False,  # attach_gdb
     )
     pylibtas.initSocketProgram()
