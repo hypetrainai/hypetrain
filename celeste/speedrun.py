@@ -52,7 +52,6 @@ def processFrame(prev_inputs):
 
 
 def Speedrun():
-  print('Hello world!')
   pylibtas.removeSocket()
   pylibtas.launchGameThread(
       'CelesteLinux/Celeste.bin.x86_64',

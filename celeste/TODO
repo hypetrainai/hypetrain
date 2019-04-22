@@ -1,5 +1,4 @@
 P0:
-- Message send/recv for frame advance and inputs. In particular the clock_gettime hack needed for Celeste.
 - Get pixel data for current frame.
 - Separate game interaction into a environment module.
 
