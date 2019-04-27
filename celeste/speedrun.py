@@ -96,10 +96,9 @@ def Speedrun():
     assert msg == pylibtas.MSGB_FRAME_DATA
     _, size = pylibtas.receiveInt()
     print(size)
-    #pylibtas.ignoreData(size)
-    _, frame = pylibtas.receiveArray(size)
-    
-    print(frame)
+    for i in range(0, size, 256*1024):
+      _, frame = pylibtas.receiveArray(min(size - i, 256*1024))
+      print(frame)
     ai = processFrame(ai)
     pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)
     pylibtas.sendAllInputs(ai)
