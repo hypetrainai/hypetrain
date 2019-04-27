@@ -92,6 +92,14 @@ def Speedrun():
   ai = pylibtas.AllInputs()
   ai.emptyInputs()
   while startNextFrame():
+    msg = pylibtas.receiveMessage()
+    assert msg == pylibtas.MSGB_FRAME_DATA
+    _, size = pylibtas.receiveInt()
+    print(size)
+    #pylibtas.ignoreData(size)
+    _, frame = pylibtas.receiveArray(size)
+    
+    print(frame)
     ai = processFrame(ai)
     pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)
     pylibtas.sendAllInputs(ai)
