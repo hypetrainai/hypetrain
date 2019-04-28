@@ -1,6 +1,7 @@
 import os
 import signal
 import pylibtas
+import numpy as np
 
 SIZE_INT = 4
 SIZE_FLOAT = 4
@@ -42,7 +43,7 @@ def startNextFrame():
   return True
 
 
-def processFrame(prev_inputs):
+def processFrame(prev_inputs, frame):
   new_inputs = pylibtas.AllInputs()
   new_inputs.emptyInputs()
   a_button = pylibtas.SingleInput()
@@ -93,13 +94,12 @@ def Speedrun():
   ai.emptyInputs()
   while startNextFrame():
     msg = pylibtas.receiveMessage()
-    assert msg == pylibtas.MSGB_FRAME_DATA
+    assert msg == pylibtas.MSGB_FRAME_DATA, msg
     _, size = pylibtas.receiveInt()
-    print(size)
-    for i in range(0, size, 256*1024):
-      _, frame = pylibtas.receiveArray(min(size - i, 256*1024))
-      print(frame)
-    ai = processFrame(ai)
+    _, frame = pylibtas.receiveArray(size)
+    frame = np.reshape(frame, [540, 960, 4])[:, :, :3]
+    
+    ai = processFrame(ai, frame)
     pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)
     pylibtas.sendAllInputs(ai)
     pylibtas.sendMessage(pylibtas.MSGN_END_FRAMEBOUNDARY)
