@@ -1,7 +1,8 @@
 import os
 import signal
-import pylibtas
 import numpy as np
+from PIL import Image
+import pylibtas
 
 SIZE_INT = 4
 SIZE_FLOAT = 4
@@ -12,6 +13,8 @@ SIZE_WINDOW_STRUCT = 8
 
 
 game_pid = -1
+window_width = 1280
+window_height = 720
 
 
 def startNextFrame():
@@ -22,7 +25,7 @@ def startNextFrame():
     elif msg == pylibtas.MSGB_ALERT_MSG:
       print(pylibtas.receiveString())
     elif msg == pylibtas.MSGB_ENCODE_FAILED:
-      return False
+      raise RuntimeError('MSGB_ENCODE_FAILED')
     elif msg == pylibtas.MSGB_FRAMECOUNT_TIME:
       pylibtas.ignoreData(SIZE_UNSIGNED_LONG)
       pylibtas.ignoreData(SIZE_TIMESPEC)
@@ -34,13 +37,11 @@ def startNextFrame():
     elif msg == pylibtas.MSGB_ENCODING_SEGMENT:
       pylibtas.ignoreData(SIZE_INT)
     elif msg == pylibtas.MSGB_QUIT:
-      return False
-    if msg == -1:
-      print("The connection to the game was lost.")
-      return False
+      raise RuntimeError('User Quit.')
+    elif msg == -1:
+      raise RuntimeError('The connection to the game was lost.')
     msg = pylibtas.receiveMessage()
   pylibtas.sendMessage(pylibtas.MSGN_START_FRAMEBOUNDARY)
-  return True
 
 
 def processFrame(prev_inputs, frame):
@@ -73,6 +74,8 @@ def Speedrun():
     if msg == pylibtas.MSGB_PID:
       global game_pid
       _, game_pid = pylibtas.receiveInt()
+    else:
+      raise RuntimeError('Unexpected message %d in init!' % msg)
     msg = pylibtas.receiveMessage()
 
   pylibtas.sendMessage(pylibtas.MSGN_CONFIG)
@@ -92,19 +95,27 @@ def Speedrun():
 
   ai = pylibtas.AllInputs()
   ai.emptyInputs()
-  while startNextFrame():
+  frame_counter = 0
+  while True:
+    startNextFrame()
+    frame_counter += 1
     msg = pylibtas.receiveMessage()
     assert msg == pylibtas.MSGB_FRAME_DATA, msg
+    _, actual_window_width = pylibtas.receiveInt()
+    _, actual_window_height = pylibtas.receiveInt()
+    assert actual_window_width == window_width and actual_window_height == window_height
     _, size = pylibtas.receiveInt()
-    _, frame = pylibtas.receiveArray(size)
-    frame = np.reshape(frame, [540, 960, 4])[:, :, :3]
-    
+    received, frame = pylibtas.receiveArray(size)
+    assert received == size, (size, received)
+
+    frame = np.reshape(frame, [window_height, window_width, 4])[:, :, :3]
+    if frame_counter == 200:
+       Image.fromarray(frame).save('/tmp/celeste.png')
+
     ai = processFrame(ai, frame)
     pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)
     pylibtas.sendAllInputs(ai)
     pylibtas.sendMessage(pylibtas.MSGN_END_FRAMEBOUNDARY)
-
-  os.wait()
 
 
 if __name__ == "__main__":
