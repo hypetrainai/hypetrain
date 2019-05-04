@@ -140,6 +140,11 @@ def Speedrun():
   shared_config.recycle_threads = True
   shared_config.write_savefiles_on_exit = False
   shared_config.main_gettimes_threshold = [-1, -1, -1, 100, -1, -1]
+  shared_config.includeFlags = (
+      pylibtas.LCF_ERROR |
+      pylibtas.LCF_WARNING |
+      pylibtas.LCF_INFO |
+      pylibtas.LCF_CHECKPOINT)
   pylibtas.sendSharedConfig(shared_config)
 
   pylibtas.sendMessage(pylibtas.MSGN_ENCODING_SEGMENT)
