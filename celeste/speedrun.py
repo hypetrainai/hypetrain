@@ -35,16 +35,19 @@ def loadstate(shared_config, index=0):
   pylibtas.sendMessage(pylibtas.MSGN_LOADSTATE)
 
   msg = pylibtas.receiveMessage()
+  print(msg)
   if msg == pylibtas.MSGB_LOADING_SUCCEEDED:
+    
     pylibtas.sendMessage(pylibtas.MSGN_CONFIG)
     pylibtas.sendSharedConfig(shared_config)
 
     msg = pylibtas.receiveMessage()
-
+  
   assert msg == pylibtas.MSGB_FRAMECOUNT_TIME
   pylibtas.ignoreData(SIZE_UNSIGNED_LONG)
   pylibtas.ignoreData(SIZE_TIMESPEC)
 
+    
   pylibtas.sendMessage(pylibtas.MSGN_EXPOSE)
 
 
@@ -83,7 +86,8 @@ button_Dict = {
     'd': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_DOWN,
     'l': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_LEFT,
     'r': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_RIGHT,
-    'rt': pylibtas.SingleInput.IT_CONTROLLER1_AXIS_TRIGGERRIGHT
+    'rt': pylibtas.SingleInput.IT_CONTROLLER1_AXIS_TRIGGERRIGHT,
+    'lt': pylibtas.SingleInput.IT_CONTROLLER1_AXIS_TRIGGERLEFT
 }
 
 def processFrame(prev_inputs, frame, input=None):
@@ -142,9 +146,7 @@ def Speedrun():
   shared_config.main_gettimes_threshold = [-1, -1, -1, 100, -1, -1]
   shared_config.includeFlags = (
       pylibtas.LCF_ERROR |
-      pylibtas.LCF_WARNING |
-      pylibtas.LCF_INFO |
-      pylibtas.LCF_CHECKPOINT)
+      pylibtas.LCF_WARNING )
   pylibtas.sendSharedConfig(shared_config)
 
   pylibtas.sendMessage(pylibtas.MSGN_ENCODING_SEGMENT)
@@ -169,14 +171,19 @@ def Speedrun():
     assert received == size, (size, received)
 
     frame = np.reshape(frame, [window_height, window_width, 4])[:, :, :3]
-    button_input = input('Buttons please! (comma separated)').split(',')
+    #button_input = input('Buttons please! (comma separated)').split(',')
+    if frame_counter%2 == 0:
+        
+        button_input = 'a'
+    else:
+        button_input = 'r'
     ai = processFrame(ai, frame, input = button_input)
 
     if frame_counter == 1:
       initializeSavestates()
-    if frame_counter == 100:
+    if frame_counter == 2000:
       savestate(0)
-    if frame_counter > 100 and frame_counter % 500 == 0:
+    if frame_counter > 2000 and frame_counter % 500 == 0:
       loadstate(shared_config, 0)
 
     pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)
