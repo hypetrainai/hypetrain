@@ -17,6 +17,37 @@ window_width = 960
 window_height = 540
 
 
+def initializeSavestates():
+  pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_PATH)
+  pylibtas.sendString('/tmp/celeste_save')
+
+
+def savestate(index=0):
+  pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_INDEX)
+  pylibtas.sendData(index, SIZE_INT)
+  pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE)
+
+
+# TODO: move these functions all into a class so shared_config can be a class member.
+def loadstate(shared_config, index=0):
+  pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_INDEX)
+  pylibtas.sendData(index, SIZE_INT)
+  pylibtas.sendMessage(pylibtas.MSGN_LOADSTATE)
+
+  msg = pylibtas.receiveMessage()
+  if msg == pylibtas.MSGB_LOADING_SUCCEEDED:
+    pylibtas.sendMessage(pylibtas.MSGN_CONFIG)
+    pylibtas.sendSharedConfig(shared_config)
+
+    msg = pylibtas.receiveMessage()
+
+  assert msg == pylibtas.MSGB_FRAMECOUNT_TIME
+  pylibtas.ignoreData(SIZE_UNSIGNED_LONG)
+  pylibtas.ignoreData(SIZE_TIMESPEC)
+
+  pylibtas.sendMessage(pylibtas.MSGN_EXPOSE)
+
+
 def startNextFrame():
   msg = pylibtas.receiveMessage()
   while msg != pylibtas.MSGB_START_FRAMEBOUNDARY:
@@ -67,14 +98,10 @@ def processFrame(prev_inputs, frame, input=None):
       new_button = pylibtas.SingleInput()
       new_button.type = button_Dict[button]
       buttons_pushed.append(new_button)
-  
+
   for button in buttons_pushed:
       new_inputs.setInput(button, 1)
-    
-  #a_button = pylibtas.SingleInput()
-  #a_button.type = pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_A
-  #new_inputs.setInput(a_button, 1 - prev_inputs.getInput(a_button))
-  #new_inputs.setInput(a_button, 1)
+
   return new_inputs
 
 
@@ -107,8 +134,10 @@ def Speedrun():
   shared_config = pylibtas.SharedConfig()
   shared_config.nb_controllers = 1
   shared_config.incremental_savestates = False
+  shared_config.savestates_in_ram = False
+  shared_config.backtrack_savestate = False
   shared_config.prevent_savefiles = False
-  shared_config.recycle_threads = False
+  shared_config.recycle_threads = True
   shared_config.write_savefiles_on_exit = False
   shared_config.main_gettimes_threshold = [-1, -1, -1, 100, -1, -1]
   pylibtas.sendSharedConfig(shared_config)
@@ -124,6 +153,7 @@ def Speedrun():
   while True:
     startNextFrame()
     frame_counter += 1
+
     msg = pylibtas.receiveMessage()
     assert msg == pylibtas.MSGB_FRAME_DATA, msg
     _, actual_window_width = pylibtas.receiveInt()
@@ -134,86 +164,24 @@ def Speedrun():
     assert received == size, (size, received)
 
     frame = np.reshape(frame, [window_height, window_width, 4])[:, :, :3]
-    if frame_counter == 200:
-       Image.fromarray(frame).save('/tmp/celeste.png')
+    button_input = input('Buttons please! (comma separated)').split(',')
+    ai = processFrame(ai, frame, input = button_input)
 
-    ai = processFrame(ai, frame)
+    if frame_counter == 1:
+      initializeSavestates()
+    if frame_counter == 100:
+      savestate(0)
+    if frame_counter > 100 and frame_counter % 500 == 0:
+      loadstate(shared_config, 0)
+
     pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)
     pylibtas.sendAllInputs(ai)
     pylibtas.sendMessage(pylibtas.MSGN_END_FRAMEBOUNDARY)
 
-    
-def LaunchGame():
-  pylibtas.removeSocket()
-  pylibtas.launchGameThread(
-      'CelesteLinux/Celeste.bin.x86_64',
-      'libTAS/build64/libtas.so',
-      '',  # gameargs
-      0,  # startframe
-      'lib64',
-      os.path.dirname(os.path.abspath(__file__)),
-      pylibtas.SharedConfig.LOGGING_TO_CONSOLE,
-      True,  # opengl_soft
-      '',  # llvm_perf
-      False,  # attach_gdb
-  )
-  pylibtas.initSocketProgram()
-
-  msg = pylibtas.receiveMessage()
-  while msg != pylibtas.MSGB_END_INIT:
-    if msg == pylibtas.MSGB_PID:
-      global game_pid
-      _, game_pid = pylibtas.receiveInt()
-    else:
-      raise RuntimeError('Unexpected message %d in init!' % msg)
-    msg = pylibtas.receiveMessage()
-
-  pylibtas.sendMessage(pylibtas.MSGN_CONFIG)
-  shared_config = pylibtas.SharedConfig()
-  shared_config.nb_controllers = 1
-  shared_config.incremental_savestates = False
-  shared_config.prevent_savefiles = False
-  shared_config.recycle_threads = False
-  shared_config.write_savefiles_on_exit = False
-  shared_config.main_gettimes_threshold = [-1, -1, -1, 100, -1, -1]
-  pylibtas.sendSharedConfig(shared_config)
-
-  pylibtas.sendMessage(pylibtas.MSGN_ENCODING_SEGMENT)
-  pylibtas.sendData(0, SIZE_INT)
-
-  pylibtas.sendMessage(pylibtas.MSGN_END_INIT)
-
-
-
-    
-def AdvanceFrameWithInput():  
-    while True:
-        startNextFrame()
-        msg = pylibtas.receiveMessage()
-        assert msg == pylibtas.MSGB_FRAME_DATA, msg
-        _, actual_window_width = pylibtas.receiveInt()
-        _, actual_window_height = pylibtas.receiveInt()
-        assert actual_window_width == window_width and actual_window_height == window_height
-        _, size = pylibtas.receiveInt()
-        received, frame = pylibtas.receiveArray(size)
-        assert received == size, (size, received)
-
-        frame = np.reshape(frame, [window_height, window_width, 4])[:, :, :3]
-        
-        ai = pylibtas.AllInputs()
-        ai.emptyInputs()
-        button_input = input('Buttons please! (comma separated)').split(',')
-        ai = processFrame(ai, frame, input = button_input)
-        pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)
-        pylibtas.sendAllInputs(ai)
-        pylibtas.sendMessage(pylibtas.MSGN_END_FRAMEBOUNDARY)
-    
 
 if __name__ == "__main__":
   try:
-    #Speedrun()
-    LaunchGame()
-    AdvanceFrameWithInput()
+    Speedrun()
   except:
     if game_pid != -1:
       print('killing game %d' % game_pid)
