@@ -107,6 +107,7 @@ def processFrame(prev_inputs, frame, input=None):
 
 
 def Speedrun():
+  os.system('mkdir -p /tmp/celeste_movies')
   os.system('cp -f 0.celeste ~/.local/share/Celeste/Saves/')
   pylibtas.removeSocket()
   pylibtas.launchGameThread(
