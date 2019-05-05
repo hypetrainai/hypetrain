@@ -4,6 +4,7 @@ import sys
 import numpy as np
 from PIL import Image
 import pylibtas
+import imageio
 
 SIZE_INT = 4
 SIZE_FLOAT = 4
@@ -82,8 +83,8 @@ button_dict = {
     'd': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_DOWN,
     'l': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_LEFT,
     'r': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_RIGHT,
-    'rt': pylibtas.SingleInput.IT_CONTROLLER1_AXIS_TRIGGERRIGHT,
-    'lt': pylibtas.SingleInput.IT_CONTROLLER1_AXIS_TRIGGERLEFT
+    'rt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_RIGHTSHOULDER,
+    'lt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_LEFTSHOULDER
 }
 
 
@@ -160,6 +161,8 @@ def Speedrun():
   ai = pylibtas.AllInputs()
   ai.emptyInputs()
   frame_counter = 0
+  saved_frames = 0
+  start_frame_saving = False
   while True:
     startNextFrame()
 
@@ -173,15 +176,20 @@ def Speedrun():
     assert received == size, (size, received)
 
     frame = np.reshape(frame, [window_height, window_width, 4])[:, :, :3]
-
     if moviefile and frame_counter < moviefile.nbFrames():
       moviefile.getInputs(ai, frame_counter)
     else:
-      # button_input = input('Buttons please! (comma separated)').split(',')
-      if frame_counter % 2 == 0:
-        button_input = 'a'
-      else:
-        button_input = 'r'
+      button_input = input('Buttons please! (comma separated)').split(',')
+      if button_input[-1] == 'sf':
+        start_frame_saving = True
+        button_input = button_input[:-1]
+      if start_frame_saving:
+        imageio.imwrite('frame_%04d.png'%saved_frames, frame)
+        saved_frames += 1
+      #if frame_counter % 2 == 0:
+      #  button_input = 'a'
+      #else:
+      #  button_input = 'r'
       ai = processFrame(ai, frame, input = button_input)
 
     pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)
