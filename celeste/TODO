@@ -7,6 +7,3 @@ P1:
 
 P2:
 - Environment module should be in its own thread and not interact with each other. LibTAS socket files need to be random tempfiles shared through environ rather than hardcoded /tmp/libTAS.socket.
-
-P3:
-- Interactive (recording) mode: record the inputs at each frame and generate a file that can then be provided on the command line to "restore" the game at a given position. Useful for getting through game menus to where you want to be at. Only if save states cannot persist between sessions.
