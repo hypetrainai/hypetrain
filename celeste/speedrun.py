@@ -144,7 +144,7 @@ def Speedrun():
   shared_config.savestates_in_ram = True
   shared_config.backtrack_savestate = False
   shared_config.prevent_savefiles = False
-  shared_config.recycle_threads = True
+  shared_config.recycle_threads = False
   shared_config.write_savefiles_on_exit = False
   shared_config.main_gettimes_threshold = [-1, -1, -1, 100, -1, -1]
   shared_config.includeFlags = (
