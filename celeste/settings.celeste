@@ -1,0 +1,79 @@
+<?xml version="1.0"?>
+<Settings xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Version>1.2.6.1</Version>
+  <Fullscreen>false</Fullscreen>
+  <WindowScale>3</WindowScale>
+  <ViewportPadding>0</ViewportPadding>
+  <VSync>false</VSync>
+  <DisableFlashes>false</DisableFlashes>
+  <DisableScreenShake>true</DisableScreenShake>
+  <Rumble>false</Rumble>
+  <MusicVolume>10</MusicVolume>
+  <SFXVolume>10</SFXVolume>
+  <SpeedrunClock>false</SpeedrunClock>
+  <LastSaveFile>0</LastSaveFile>
+  <Language>english</Language>
+  <Pico8OnMainMenu>false</Pico8OnMainMenu>
+  <SetViewportOnce>false</SetViewportOnce>
+  <VariantsUnlocked>false</VariantsUnlocked>
+  <Left>None</Left>
+  <Right>None</Right>
+  <Down>None</Down>
+  <Up>None</Up>
+  <Grab>
+    <Keys>Z</Keys>
+    <Keys>V</Keys>
+    <Keys>LeftShift</Keys>
+  </Grab>
+  <Jump>
+    <Keys>C</Keys>
+  </Jump>
+  <Dash>
+    <Keys>X</Keys>
+  </Dash>
+  <Talk>
+    <Keys>X</Keys>
+  </Talk>
+  <Pause />
+  <Confirm>
+    <Keys>C</Keys>
+  </Confirm>
+  <Cancel>
+    <Keys>X</Keys>
+  </Cancel>
+  <Journal>
+    <Keys>Tab</Keys>
+  </Journal>
+  <QuickRestart>
+    <Keys>R</Keys>
+  </QuickRestart>
+  <BtnGrab>
+    <Buttons>LeftTrigger</Buttons>
+    <Buttons>RightTrigger</Buttons>
+    <Buttons>LeftShoulder</Buttons>
+    <Buttons>RightShoulder</Buttons>
+  </BtnGrab>
+  <BtnJump>
+    <Buttons>A</Buttons>
+    <Buttons>Y</Buttons>
+  </BtnJump>
+  <BtnDash>
+    <Buttons>X</Buttons>
+    <Buttons>B</Buttons>
+  </BtnDash>
+  <BtnTalk>
+    <Buttons>B</Buttons>
+  </BtnTalk>
+  <BtnAltQuickRestart />
+  <LaunchWithFMODLiveUpdate>false</LaunchWithFMODLiveUpdate>
+  <LaunchInDebugMode>false</LaunchInDebugMode>
+  <!--
+		LaunchWithFMODLiveUpdate:
+			This Enables FMOD Studio Live Update so you can interact with the sounds in real time.
+			Note this will also require access to the private network.
+		
+		LaunchInDebugMode:
+			Debug Mode can destroy save files, crash the game, and do other unwanted behaviour.
+			It is not documented. Use at own risk.
+	-->
+</Settings>
