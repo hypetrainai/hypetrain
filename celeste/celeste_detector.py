@@ -1,3 +1,6 @@
+import numpy as np
+import imageio, scipy, glob, time
+
 celeste_color_dict = {
     'red_hair' : np.array([179, 60, 69]).astype(np.float),
     'blue_hair' : np.array([74, 183, 255]).astype(np.float),
@@ -9,7 +12,7 @@ celeste_color_dict = {
 }
 
 class CelesteDetector():
-    def __init__(self, color_dict, threshold = 10, search_delta_with_prior = 100):
+    def __init__(self, color_dict = celeste_color_dict, threshold = 10, search_delta_with_prior = 100):
         self.colors = color_dict
         self.thres = threshold
         self.sdwp = search_delta_with_prior
@@ -49,6 +52,7 @@ class CelesteDetector():
     def _get_state(self, im, prior_coord):
         if np.sum(self._get_mask(im, self.colors['red_hair'], prior_coord))>0:
             return 0
+        
         if np.sum(self._get_mask(im, self.colors['blue_hair'], prior_coord))>0:
             return 1
         if np.sum(self._get_mask(im, self.colors['blue_hair_2'], prior_coord))>0:

@@ -6,6 +6,10 @@ from PIL import Image
 import pylibtas
 import imageio
 
+from GLOBALS import FLAGS, GLOBAL
+
+from celeste_detector import CelesteDetector
+
 SIZE_INT = 4
 SIZE_FLOAT = 4
 SIZE_UNSIGNED_LONG = 8
@@ -108,9 +112,12 @@ def processFrame(prev_inputs, frame, input=None):
 
 
 def Speedrun():
+  
+  det = CelesteDetector()
+  prior_coord = None
+    
   os.system('mkdir -p /tmp/celeste_movies')
   os.system('cp -f settings.celeste ~/.local/share/Celeste/Saves/')
-  os.system('cp -f 0.celeste ~/.local/share/Celeste/Saves/')
   pylibtas.removeSocket()
   pylibtas.launchGameThread(
       'CelesteLinux/Celeste.bin.x86_64',
@@ -127,10 +134,14 @@ def Speedrun():
   pylibtas.initSocketProgram()
 
   moviefile = None
-  if len(sys.argv) > 1:
+  if FLAGS.movie_file is not None:
     moviefile = pylibtas.MovieFile()
-    if moviefile.loadInputs(sys.argv[1]) != 0:
+    if moviefile.loadInputs(FLAGS.movie_file) != 0:
       raise ValueError('Could not load movie %s' % sys.argv[1])
+  if FLAGS.save_file is not None:
+      savepath = 'savefiles/'+FLAGS.save_file
+      os.system('cp -f %s savefiles/0.celeste'%savepath)
+      os.system('cp -f savefiles/0.celeste ~/.local/share/Celeste/Saves/')
 
   msg = pylibtas.receiveMessage()
   while msg != pylibtas.MSGB_END_INIT:
@@ -182,6 +193,16 @@ def Speedrun():
     if moviefile and frame_counter < moviefile.nbFrames():
       moviefile.getInputs(ai, frame_counter)
     else:
+      
+      y, x, state = det.detect(frame, prior_coord = prior_coord)
+      if y is not None:
+          prior_coord = np.array([y,x]).astype(np.int)
+          print('Character Location: (%f, %f), State: %d'%(y,x,state))
+      else:
+          prior_coord = None
+          print('Character Location: Not Found! State: %d'%(state))
+      
+      
       button_input = input('Buttons please! (comma separated)').split(',')
       if button_input[-1] == 'sf':
         start_frame_saving = True
@@ -189,10 +210,6 @@ def Speedrun():
       if start_frame_saving:
         imageio.imwrite('frame_%04d.png'%saved_frames, frame)
         saved_frames += 1
-      #if frame_counter % 2 == 0:
-      #  button_input = 'a'
-      #else:
-      #  button_input = 'r'
       ai = processFrame(ai, frame, input = button_input)
 
     pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)
