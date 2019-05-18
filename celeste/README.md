@@ -17,11 +17,11 @@ The character position will not be given as input to the network. It will only b
 The state will be a combination of:
 
 * The pixel data for the last n frames.
-* (maybe) some representation of the current input state or history of inputs.
+* (maybe) some representation of the current button press state or history of button presses.
 
 ### Algorithm
 
-We will start with an A2C agent.
+We will start with an A2C agent, with the hope of exploring Q learning in the future.
 
 The reward for an episode is 1 if the agent reaches the target location and 0 otherwise, further scaled inversely by the number of frames used.
 
@@ -29,6 +29,10 @@ The network predicts at each frame a sigmoid for each button, thresholded at 0.5
 
 Questions:
 
+* Is the output parameterization reasonable? Other possibilities:
+** `2^num_buttons` softmax.
+** Encoding direction pairs separately (8 directions) with a softmax over them.
+** Hierarchical prediction model -- predict actions like jump or dash first, then feed it back into the model for prediction directions.
 * Do we do fixed episode length? Or continue until death/target is reached with a cap?
 * Should distance to target be included in the reward? How to weight this value?
 * How to compute the advantage baseline?
