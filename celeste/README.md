@@ -30,9 +30,9 @@ The network predicts at each frame a sigmoid for each button, thresholded at 0.5
 Questions:
 
 * Is the output parameterization reasonable? Other possibilities:
-** `2^num_buttons` softmax.
-** Encoding direction pairs separately (8 directions) with a softmax over them.
-** Hierarchical prediction model -- predict actions like jump or dash first, then feed it back into the model for prediction directions.
+  * `2^num_buttons` softmax.
+  * Encoding direction pairs separately (8 directions) with a softmax over them.
+  * Hierarchical prediction model -- predict actions like jump or dash first, then feed it back into the model for prediction directions.
 * Do we do fixed episode length? Or continue until death/target is reached with a cap?
 * Should distance to target be included in the reward? How to weight this value?
 * How to compute the advantage baseline?
