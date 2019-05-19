@@ -25,7 +25,9 @@ We will start with an A2C agent, with the hope of exploring Q learning in the fu
 
 The reward for an episode is 1 if the agent reaches the target location and 0 otherwise, further scaled inversely by the number of frames used.
 
-The network predicts at each frame a sigmoid for each button, thresholded at 0.5 for pressed/released. 
+The network predicts at each frame a sigmoid for each button.
+Buttons are treated as independent from each other. At training time, an action (state for each button) is sampled, with the final probability being the probability for each button multiplied together.
+At test time, the sigmoid is thresholded at 0.5 for pressed/released.
 
 Questions:
 
