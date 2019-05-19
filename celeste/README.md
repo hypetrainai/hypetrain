@@ -40,3 +40,5 @@ Questions:
 * How to compute the advantage baseline?
 * How is the discount factor determined?
 * Is there a benefit/use for maintaining a replay buffer with A2C?
+* Would it make sense to run the network only once every N frames and predict inputs for the next N frames instead of just the next 1 frame?
+  * Some kind of RNN / temporal dependency so that predictions for frame i still depends on the predictions for frame i-1?
