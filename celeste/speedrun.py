@@ -25,30 +25,28 @@ window_height = 540
 
 def savestate(index=0):
   pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_INDEX)
-  pylibtas.sendData(index, SIZE_INT)
+  pylibtas.sendInt(index)
   pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE)
 
 
 # TODO: move these functions all into a class so shared_config can be a class member.
 def loadstate(shared_config, index=0):
   pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_INDEX)
-  pylibtas.sendData(index, SIZE_INT)
+  pylibtas.sendInt(index)
   pylibtas.sendMessage(pylibtas.MSGN_LOADSTATE)
 
   msg = pylibtas.receiveMessage()
-  print(msg)
   if msg == pylibtas.MSGB_LOADING_SUCCEEDED:
-
     pylibtas.sendMessage(pylibtas.MSGN_CONFIG)
     pylibtas.sendSharedConfig(shared_config)
-
     msg = pylibtas.receiveMessage()
 
   assert msg == pylibtas.MSGB_FRAMECOUNT_TIME
-  pylibtas.ignoreData(SIZE_UNSIGNED_LONG)
+  frame_counter = pylibtas.receiveULong()
   pylibtas.ignoreData(SIZE_TIMESPEC)
 
   pylibtas.sendMessage(pylibtas.MSGN_EXPOSE)
+  return frame_counter
 
 
 def startNextFrame():
@@ -112,12 +110,17 @@ def processFrame(prev_inputs, frame, input=None):
 
 
 def Speedrun():
-  
-  det = CelesteDetector()
-  prior_coord = None
-    
-  os.system('mkdir -p /tmp/celeste_movies')
+  os.system('mkdir -p /tmp/celeste/movies')
   os.system('cp -f settings.celeste ~/.local/share/Celeste/Saves/')
+  moviefile = None
+  if FLAGS.movie_file is not None:
+    moviefile = pylibtas.MovieFile()
+    if moviefile.loadInputs(FLAGS.movie_file) != 0:
+      raise ValueError('Could not load movie %s' % sys.argv[1])
+  if FLAGS.save_file is not None:
+      savepath = 'savefiles/' + FLAGS.save_file
+      os.system('cp -f %s ~/.local/share/Celeste/Saves/' % savepath)
+
   pylibtas.removeSocket()
   pylibtas.launchGameThread(
       'CelesteLinux/Celeste.bin.x86_64',
@@ -133,16 +136,6 @@ def Speedrun():
   )
   pylibtas.initSocketProgram()
 
-  moviefile = None
-  if FLAGS.movie_file is not None:
-    moviefile = pylibtas.MovieFile()
-    if moviefile.loadInputs(FLAGS.movie_file) != 0:
-      raise ValueError('Could not load movie %s' % sys.argv[1])
-  if FLAGS.save_file is not None:
-      savepath = 'savefiles/'+FLAGS.save_file
-      os.system('cp -f %s savefiles/0.celeste'%savepath)
-      os.system('cp -f savefiles/0.celeste ~/.local/share/Celeste/Saves/')
-
   msg = pylibtas.receiveMessage()
   while msg != pylibtas.MSGB_END_INIT:
     if msg == pylibtas.MSGB_PID:
@@ -156,7 +149,7 @@ def Speedrun():
   shared_config = pylibtas.SharedConfig()
   shared_config.nb_controllers = 1
   shared_config.incremental_savestates = False
-  shared_config.savestates_in_ram = True
+  shared_config.savestates_in_ram = False
   shared_config.backtrack_savestate = False
   shared_config.prevent_savefiles = False
   shared_config.recycle_threads = False
@@ -164,13 +157,17 @@ def Speedrun():
   shared_config.main_gettimes_threshold = [-1, -1, -1, 100, -1, -1]
   shared_config.includeFlags = (
     pylibtas.LCF_ERROR |
-    pylibtas.LCF_WARNING)
+    pylibtas.LCF_WARNING |
+    pylibtas.LCF_CHECKPOINT)
   pylibtas.sendSharedConfig(shared_config)
 
   pylibtas.sendMessage(pylibtas.MSGN_ENCODING_SEGMENT)
-  pylibtas.sendData(0, SIZE_INT)
+  pylibtas.sendInt(0)
 
   pylibtas.sendMessage(pylibtas.MSGN_END_INIT)
+
+  det = CelesteDetector()
+  prior_coord = None
 
   ai = pylibtas.AllInputs()
   ai.emptyInputs()
@@ -193,7 +190,6 @@ def Speedrun():
     if moviefile and frame_counter < moviefile.nbFrames():
       moviefile.getInputs(ai, frame_counter)
     else:
-      
       y, x, state = det.detect(frame, prior_coord = prior_coord)
       if y is not None:
           prior_coord = np.array([y,x]).astype(np.int)
@@ -201,16 +197,25 @@ def Speedrun():
       else:
           prior_coord = None
           print('Character Location: Not Found! State: %d'%(state))
-      
-      
-      button_input = input('Buttons please! (comma separated)').split(',')
+
+      if frame_counter == 1000:
+          savestate()
+      if frame_counter == 1500:
+          frame_counter = loadstate()
+
+      # button_input = input('Buttons please! (comma separated)').split(',')
+      button_input = ['r', 'a']
       if button_input[-1] == 'sf':
         start_frame_saving = True
         button_input = button_input[:-1]
       if start_frame_saving:
-        imageio.imwrite('frame_%04d.png'%saved_frames, frame)
+        imageio.imwrite('frame_%04d.png' % saved_frames, frame)
         saved_frames += 1
       ai = processFrame(ai, frame, input = button_input)
+
+    if frame_counter == 0:
+      pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_PATH)
+      pylibtas.sendString('/tmp/celeste/savestate')
 
     pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)
     pylibtas.sendAllInputs(ai)

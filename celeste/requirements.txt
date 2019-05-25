@@ -1,1 +1,4 @@
+imageio
 pillow
+scipy
+tensorboardX
