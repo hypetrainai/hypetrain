@@ -27,6 +27,7 @@ def savestate(index=0):
   pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_INDEX)
   pylibtas.sendInt(index)
   pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE)
+  assert pylibtas.receiveMessage() == pylibtas.MSGB_SAVING_SUCCEEDED
 
 
 # TODO: move these functions all into a class so shared_config can be a class member.
@@ -72,6 +73,8 @@ def startNextFrame():
       raise RuntimeError('User Quit.')
     elif msg == -1:
       raise RuntimeError('The connection to the game was lost.')
+    else:
+      raise RuntimeError('Received unexpected message %s' % pylibtas.MESSAGE_NAMES[msg])
     msg = pylibtas.receiveMessage()
   pylibtas.sendMessage(pylibtas.MSGN_START_FRAMEBOUNDARY)
 
