@@ -23,7 +23,7 @@ window_width = 960
 window_height = 540
 
 
-def savestate(index=0):
+def savestate(index=1):
   pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_INDEX)
   pylibtas.sendInt(index)
   pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE)
@@ -31,7 +31,7 @@ def savestate(index=0):
 
 
 # TODO: move these functions all into a class so shared_config can be a class member.
-def loadstate(shared_config, index=0):
+def loadstate(shared_config, index=1):
   pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_INDEX)
   pylibtas.sendInt(index)
   pylibtas.sendMessage(pylibtas.MSGN_LOADSTATE)
@@ -207,8 +207,10 @@ def Speedrun():
           frame_counter = loadstate()
 
       # button_input = input('Buttons please! (comma separated)').split(',')
-      button_input = ['r', 'a']
-      if button_input[-1] == 'sf':
+      button_input = []
+      if frame_counter % 2 == 0:
+        button_input = ['r', 'a']
+      if button_input and button_input[-1] == 'sf':
         start_frame_saving = True
         button_input = button_input[:-1]
       if start_frame_saving:
