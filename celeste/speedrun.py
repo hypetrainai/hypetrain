@@ -122,7 +122,7 @@ def Speedrun():
       raise ValueError('Could not load movie %s' % sys.argv[1])
   if FLAGS.save_file is not None:
       savepath = 'savefiles/' + FLAGS.save_file
-      os.system('cp -f %s ~/.local/share/Celeste/Saves/' % savepath)
+      os.system('cp -f %s ~/.local/share/Celeste/Saves/0.celeste' % savepath)
 
   pylibtas.removeSocket()
   pylibtas.launchGameThread(
