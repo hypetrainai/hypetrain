@@ -43,7 +43,7 @@ def loadstate(shared_config, index=1):
     msg = pylibtas.receiveMessage()
 
   assert msg == pylibtas.MSGB_FRAMECOUNT_TIME
-  frame_counter = pylibtas.receiveULong()
+  _, frame_counter = pylibtas.receiveULong()
   pylibtas.ignoreData(SIZE_TIMESPEC)
 
   pylibtas.sendMessage(pylibtas.MSGN_EXPOSE)
@@ -151,6 +151,7 @@ def Speedrun():
   pylibtas.sendMessage(pylibtas.MSGN_CONFIG)
   shared_config = pylibtas.SharedConfig()
   shared_config.nb_controllers = 1
+  shared_config.audio_mute = True
   shared_config.incremental_savestates = False
   shared_config.savestates_in_ram = False
   shared_config.backtrack_savestate = False
@@ -203,8 +204,8 @@ def Speedrun():
 
       if frame_counter == 1000:
           savestate()
-      if frame_counter == 1500:
-          frame_counter = loadstate()
+      if frame_counter == 1100:
+          frame_counter = loadstate(shared_config)
 
       # button_input = input('Buttons please! (comma separated)').split(',')
       button_input = []
