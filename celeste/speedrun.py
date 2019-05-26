@@ -203,8 +203,8 @@ def Speedrun():
 
       if frame_counter == 1000:
           savestate()
-      if frame_counter == 1500:
-          frame_counter = loadstate()
+      if frame_counter == 1100:
+          frame_counter = loadstate(shared_config)
 
       # button_input = input('Buttons please! (comma separated)').split(',')
       button_input = []
