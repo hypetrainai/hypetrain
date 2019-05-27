@@ -1,4 +1,5 @@
 import os
+import queue
 import signal
 import sys
 import numpy as np
@@ -21,6 +22,7 @@ SIZE_WINDOW_STRUCT = 8
 game_pid = -1
 window_width = 960
 window_height = 540
+frame_counter = 0
 
 
 def savestate(index=1):
@@ -32,6 +34,7 @@ def savestate(index=1):
 
 # TODO: move these functions all into a class so shared_config can be a class member.
 def loadstate(shared_config, index=1):
+  global frame_counter
   pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_INDEX)
   pylibtas.sendInt(index)
   pylibtas.sendMessage(pylibtas.MSGN_LOADSTATE)
@@ -47,7 +50,6 @@ def loadstate(shared_config, index=1):
   pylibtas.ignoreData(SIZE_TIMESPEC)
 
   pylibtas.sendMessage(pylibtas.MSGN_EXPOSE)
-  return frame_counter
 
 
 def startNextFrame():
@@ -93,26 +95,48 @@ button_dict = {
 }
 
 
-def processFrame(prev_inputs, frame, input=None):
-  new_inputs = pylibtas.AllInputs()
-  new_inputs.emptyInputs()
+det = CelesteDetector()
+prior_coord = None
+start_frame_saving = False
+saved_frames = 0
 
-  buttons_pushed = []
+def processFrame(frame):
+  global prior_coord
+  global start_frame_saving
+  global saved_frames
 
-  for button in input:
-      if button not in button_dict:
-        continue
-      new_button = pylibtas.SingleInput()
-      new_button.type = button_dict[button]
-      buttons_pushed.append(new_button)
+  y, x, state = det.detect(frame, prior_coord = prior_coord)
+  if y is not None:
+    prior_coord = np.array([y,x]).astype(np.int)
+    print('Character Location: (%f, %f), State: %d'%(y,x,state))
+  else:
+    prior_coord = None
+    print('Character Location: Not Found! State: %d'%(state))
 
-  for button in buttons_pushed:
-      new_inputs.setInput(button, 1)
+  if FLAGS.interactive:
+    if frame_counter == 1000:
+      savestate()
+    if frame_counter == 1100:
+      loadstate(shared_config)
 
-  return new_inputs
+    # button_input = input('Buttons please! (comma separated)').split(',')
+    button_input = []
+    if frame_counter % 2 == 0:
+      button_input = ['r', 'a']
+    if button_input and button_input[-1] == 'start_episode':
+      FLAGS.interactive = False
+    if button_input and button_input[-1] == 'sf':
+      start_frame_saving = True
+      button_input = button_input[:-1]
+    if start_frame_saving:
+      imageio.imwrite('frame_%04d.png' % saved_frames, frame)
+      saved_frames += 1
+
+  return [button_input]
 
 
 def Speedrun():
+  global frame_counter
   os.system('mkdir -p /tmp/celeste/movies')
   os.system('cp -f settings.celeste ~/.local/share/Celeste/Saves/')
   moviefile = None
@@ -170,14 +194,7 @@ def Speedrun():
 
   pylibtas.sendMessage(pylibtas.MSGN_END_INIT)
 
-  det = CelesteDetector()
-  prior_coord = None
-
-  ai = pylibtas.AllInputs()
-  ai.emptyInputs()
-  frame_counter = 0
-  saved_frames = 0
-  start_frame_saving = False
+  action_queue = queue.Queue()
   while True:
     startNextFrame()
 
@@ -191,37 +208,26 @@ def Speedrun():
     assert received == size, (size, received)
 
     frame = np.reshape(frame, [window_height, window_width, 4])[:, :, :3]
-    if moviefile and frame_counter < moviefile.nbFrames():
-      moviefile.getInputs(ai, frame_counter)
-    else:
-      y, x, state = det.detect(frame, prior_coord = prior_coord)
-      if y is not None:
-          prior_coord = np.array([y,x]).astype(np.int)
-          print('Character Location: (%f, %f), State: %d'%(y,x,state))
-      else:
-          prior_coord = None
-          print('Character Location: Not Found! State: %d'%(state))
-
-      if frame_counter == 1000:
-          savestate()
-      if frame_counter == 1100:
-          frame_counter = loadstate(shared_config)
-
-      # button_input = input('Buttons please! (comma separated)').split(',')
-      button_input = []
-      if frame_counter % 2 == 0:
-        button_input = ['r', 'a']
-      if button_input and button_input[-1] == 'sf':
-        start_frame_saving = True
-        button_input = button_input[:-1]
-      if start_frame_saving:
-        imageio.imwrite('frame_%04d.png' % saved_frames, frame)
-        saved_frames += 1
-      ai = processFrame(ai, frame, input = button_input)
 
     if frame_counter == 0:
       pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_PATH)
       pylibtas.sendString('/tmp/celeste/savestate')
+
+    ai = pylibtas.AllInputs()
+    ai.emptyInputs()
+    if moviefile and frame_counter < moviefile.nbFrames():
+      moviefile.getInputs(ai, frame_counter)
+    else:
+      if action_queue.empty():
+        for button_inputs in processFrame(frame):
+          action_queue.put(button_inputs)
+      button_input = action_queue.get()
+      for button in button_input:
+        if button not in button_dict:
+          continue
+        si = pylibtas.SingleInput()
+        si.type = button_dict[button]
+        ai.setInput(si, 1)
 
     pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)
     pylibtas.sendAllInputs(ai)
