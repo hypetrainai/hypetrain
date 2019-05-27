@@ -1,4 +1,4 @@
-# Celeste RL
+# Hypetrain Celeste RL
 
 This project attempts to train a RL agent for speedrunning the game [Celeste](http://www.celestegame.com/).
 
