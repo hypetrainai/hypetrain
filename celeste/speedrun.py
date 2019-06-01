@@ -19,6 +19,7 @@ SIZE_GAMEINFO_STRUCT = 36
 SIZE_WINDOW_STRUCT = 8
 
 
+shared_config = None
 game_pid = -1
 window_width = 960
 window_height = 540
@@ -137,6 +138,7 @@ def processFrame(frame):
 
 def Speedrun():
   global frame_counter
+  global shared_config
   os.system('mkdir -p /tmp/celeste/movies')
   os.system('cp -f settings.celeste ~/.local/share/Celeste/Saves/')
   moviefile = None
