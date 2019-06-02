@@ -44,6 +44,14 @@ class _ModuleWrapper(ModuleType):
         parser.add_argument('--save_file', type=str, default='level1_screen4', help='if not empty string, use save file.')
 
         parser.add_argument('--interactive', type=bool, default=True, help='interactive mode (enter buttons on command line)')
+        
+        
+        #actual model arguments now
+        parser.add_argument('--image_height', type=int, default=540)
+        parser.add_argument('--image_width', type=int, default=900)
+        parser.add_argument('--image_channels', type=int, default=3)
+        
+        parser.add_argument('--num_actions', type=int, default=10)
 
         self.parser = parser
         self._FLAGS = None
