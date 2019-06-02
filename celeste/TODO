@@ -2,7 +2,7 @@ P0:
 - Separate game interaction into a environment module.
 
 P1:
-- Celeste position detector & map scroll tracking system.
+- Map scroll tracking system.
 - Baseline model interacting with environment with backprop.
 
 P2:

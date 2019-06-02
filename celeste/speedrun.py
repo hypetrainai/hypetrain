@@ -1,15 +1,15 @@
+import imageio
+import numpy as np
 import os
+from PIL import Image
+import pylibtas
 import queue
 import signal
 import sys
-import numpy as np
-from PIL import Image
-import pylibtas
-import imageio
-
-from GLOBALS import FLAGS, GLOBAL
+import torch.optim as optim
 
 from celeste_detector import CelesteDetector
+from GLOBALS import FLAGS, GLOBAL
 
 SIZE_INT = 4
 SIZE_FLOAT = 4
@@ -34,7 +34,7 @@ def savestate(index=1):
 
 
 # TODO: move these functions all into a class so shared_config can be a class member.
-def loadstate(shared_config, index=1):
+def loadstate(index=1):
   global frame_counter
   pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_INDEX)
   pylibtas.sendInt(index)
@@ -96,44 +96,99 @@ button_dict = {
 }
 
 
-det = CelesteDetector()
-prior_coord = None
-start_frame_saving = False
-saved_frames = 0
+class FrameProcessor(object):
 
-def processFrame(frame):
-  global prior_coord
-  global start_frame_saving
-  global saved_frames
+  def __init__(self):
+    self.det = CelesteDetector()
+    self.prior_coord = None
+    self.start_frame_saving = False
+    self.saved_frames = 0
 
-  y, x, state = det.detect(frame, prior_coord = prior_coord)
-  if y is not None:
-    prior_coord = np.array([y,x]).astype(np.int)
-    print('Character Location: (%f, %f), State: %d'%(y,x,state))
-  else:
-    prior_coord = None
-    print('Character Location: Not Found! State: %d'%(state))
+    self.goal = (0, 0)
 
-  if FLAGS.interactive:
-    if frame_counter == 1000:
-      savestate()
-    if frame_counter == 1100:
-      loadstate(shared_config)
+    self.R = 0
+    self.episode_start = -1
+    self.start_frame = None
+    self.frame_buffer = []
+    self.dist_to_goals = []
 
-    # button_input = input('Buttons please! (comma separated)').split(',')
-    button_input = []
-    if frame_counter % 2 == 0:
-      button_input = ['r', 'a']
-    if button_input and button_input[-1] == 'start_episode':
-      FLAGS.interactive = False
-    if button_input and button_input[-1] == 'sf':
-      start_frame_saving = True
-      button_input = button_input[:-1]
-    if start_frame_saving:
-      imageio.imwrite('frame_%04d.png' % saved_frames, frame)
-      saved_frames += 1
+    self.actor = None
+    self.critic = None
+    self.optimizer = optim.Adam(
+        self.actor.parameters() + self.critic.parameters(), lr=FLAGS.lr)
 
-  return [button_input]
+  def finishEpisode(self):
+    assert self.episode_start >= 0
+    num_frames = frame_counter - self.episode_start
+    for i in reverse(range(num_frames)):
+      self.R += self.dist_to_goals[i]
+      frames = self.frame_buffer[i:i+FLAGS.context_frames]
+      V = self.critic.forward(frames)
+      self.critic.backward((self.R-V)**2)
+      self.actor.forward(frames)
+      self.actor.backward(self.actor.loss(R, V))
+      self.R *= FLAGS.reward_decay_multiplier
+    self.optimizer.step()
+    self.optimizer.zero_grad()
+
+    loadstate()
+    self.R = 0
+    self.frame_buffer = [self.start_frame] * (FLAGS.context_frames - 1)
+
+  def processFrame(frame):
+    y, x, state = self.det.detect(frame, prior_coord=self.prior_coord)
+    if y is not None:
+      self.prior_coord = np.array([y, x]).astype(np.int)
+      print('Character Location: (%f, %f), State: %d' % (y, x, state))
+    else:
+      self.prior_coord = None
+      print('Character Location: Not Found! State: %d' % state)
+
+    if FLAGS.interactive:
+      button_input = input('Buttons please! (comma separated)').split(',')
+      # button_input = []
+      if frame_counter % 2 == 0:
+        button_input = ['r', 'a']
+      if button_input:
+        if button_input == ['save']:
+          savestate()
+        elif button_input == ['load']:
+          loadstate()
+        elif button_input == ['start_episode']:
+          FLAGS.interactive = False
+        if button_input[-1] == 'sf':
+          self.start_frame_saving = True
+          button_input = button_input[:-1]
+      if self.start_frame_saving:
+        imageio.imwrite('frame_%04d.png' % self.saved_frames, frame)
+        self.saved_frames += 1
+
+    if not FLAGS.interactive:
+      if self.episode_start < 0:
+        assert self.prior_coord is not None
+        self.episode_start = frame_counter
+        self.R = 0
+        self.start_frame = frame
+        self.frame_buffer = [self.start_frame] * (FLAGS.context_frames - 1)
+        self.optimizer.zero_grad()
+      self.frame_buffer.append(frame)
+      dist_to_goal = (x - self.goal[0])**2 + (y - self.goal[1])**2
+      self.dist_to_goals.append(dist_to_goal)
+      if self.prior_coord is None:
+        # Assume death
+        self.R -= 100000
+        self.finishEpisode()
+      elif frame_counter - self.episode_start > FLAGS.episode_length:
+        if self.dist_to_goals[-1] < 10**2:
+          self.R += 100000
+        self.finishEpisode()
+      # Whether or not we are resetting the episode, frame_buffer should contain
+      # the right inputs.
+      softmax = self.actor.forward(self.frame_buffer[-FLAGS.context_frames:])
+      action = self.actor.sample(softmax)
+      button_inputs = actions
+
+    return [button_input]
 
 
 def Speedrun():
@@ -147,8 +202,8 @@ def Speedrun():
     if moviefile.loadInputs(FLAGS.movie_file) != 0:
       raise ValueError('Could not load movie %s' % sys.argv[1])
   if FLAGS.save_file is not None:
-      savepath = 'savefiles/' + FLAGS.save_file
-      os.system('cp -f %s ~/.local/share/Celeste/Saves/0.celeste' % savepath)
+    savepath = 'savefiles/' + FLAGS.save_file
+    os.system('cp -f %s ~/.local/share/Celeste/Saves/0.celeste' % savepath)
 
   pylibtas.removeSocket()
   pylibtas.launchGameThread(
@@ -196,6 +251,7 @@ def Speedrun():
 
   pylibtas.sendMessage(pylibtas.MSGN_END_INIT)
 
+  processor = FrameProcessor()
   action_queue = queue.Queue()
   while True:
     startNextFrame()
@@ -221,7 +277,7 @@ def Speedrun():
       moviefile.getInputs(ai, frame_counter)
     else:
       if action_queue.empty():
-        for button_inputs in processFrame(frame):
+        for button_inputs in processor.processFrame(frame):
           action_queue.put(button_inputs)
       button_input = action_queue.get()
       for button in button_input:
