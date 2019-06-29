@@ -9,6 +9,7 @@ import sys
 import torch.optim as optim
 
 from celeste_detector import CelesteDetector
+from model import ResNetIm2Value as Network
 from GLOBALS import FLAGS, GLOBAL
 
 SIZE_INT = 4
@@ -112,8 +113,8 @@ class FrameProcessor(object):
     self.frame_buffer = []
     self.dist_to_goals = []
 
-    self.actor = None
-    self.critic = None
+    self.actor = Network(FLAGS)
+    self.critic = Network(FLAGS, out_dim = 1)
     self.optimizer = optim.Adam(
         self.actor.parameters() + self.critic.parameters(), lr=FLAGS.lr)
 
@@ -147,8 +148,8 @@ class FrameProcessor(object):
     if FLAGS.interactive:
       button_input = input('Buttons please! (comma separated)').split(',')
       # button_input = []
-      if frame_counter % 2 == 0:
-        button_input = ['r', 'a']
+      #if frame_counter % 2 == 0:
+      #  button_input = ['r', 'a']
       if button_input:
         if button_input == ['save']:
           savestate()

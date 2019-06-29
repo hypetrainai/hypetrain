@@ -48,10 +48,10 @@ class _ModuleWrapper(ModuleType):
         
         #actual model arguments now
         parser.add_argument('--image_height', type=int, default=540)
-        parser.add_argument('--image_width', type=int, default=900)
+        parser.add_argument('--image_width', type=int, default=960)
         parser.add_argument('--image_channels', type=int, default=3)
         
-        parser.add_argument('--num_actions', type=int, default=10)
+        parser.add_argument('--num_actions', type=int, default=72)
 
         parser.add_argument('--lr', type=float, default=0.02)
         parser.add_argument('--reward_decay_multiplier', type=int, default=0.95, help='reward function decay multiplier')
