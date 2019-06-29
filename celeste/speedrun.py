@@ -135,7 +135,7 @@ class FrameProcessor(object):
     self.R = 0
     self.frame_buffer = [self.start_frame] * (FLAGS.context_frames - 1)
 
-  def processFrame(frame):
+  def processFrame(self, frame):
     y, x, state = self.det.detect(frame, prior_coord=self.prior_coord)
     if y is not None:
       self.prior_coord = np.array([y, x]).astype(np.int)
