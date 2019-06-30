@@ -43,7 +43,7 @@ class _ModuleWrapper(ModuleType):
         parser.add_argument('--movie_file', type=str, default='movie.ltm', help='if not empty string, load libTAS input movie file')
         parser.add_argument('--save_file', type=str, default='level1_screen4', help='if not empty string, use save file.')
 
-        parser.add_argument('--interactive', type=bool, default=True, help='interactive mode (enter buttons on command line)')
+        parser.add_argument('--interactive', type=bool, default=False, help='interactive mode (enter buttons on command line)')
         
         
         #actual model arguments now

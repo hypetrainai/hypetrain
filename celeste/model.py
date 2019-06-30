@@ -1,7 +1,9 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 import submodules
+from class2button import class2button
 
 class ResNetIm2Value(nn.Module):
     
@@ -61,9 +63,21 @@ class ResNetIm2Value(nn.Module):
     def forward(self, input):
         out = self.operation_stack(input)
         out = out.view(input.shape[0],-1)
-        print(out.shape)
         out = self.operation_stack_linear(out)
+        out = F.softmax(out,1)
         
-        return out
+        sample, sample_mapped = self.sample(out)
+        
+        return out, sample, sample_mapped
+    
+    def sample(self, scores):
+        scores = scores.detach().cpu()
+        dist = torch.distributions.categorical.Categorical(probs = scores)
+        sample = dist.sample()
+        sample_mapped = [class2button[int(sample[i].numpy())] for i in range(len(sample))]
+        
+        return sample, sample_mapped
+
+        
         
         

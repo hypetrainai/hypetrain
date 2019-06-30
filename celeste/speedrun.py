@@ -7,6 +7,7 @@ import queue
 import signal
 import sys
 import torch.optim as optim
+import torch
 
 from celeste_detector import CelesteDetector
 from model import ResNetIm2Value as Network
@@ -113,16 +114,16 @@ class FrameProcessor(object):
     self.frame_buffer = []
     self.dist_to_goals = []
 
-    self.actor = Network(FLAGS)
-    self.critic = Network(FLAGS, out_dim = 1)
+    self.actor = Network(FLAGS).cuda()
+    self.critic = Network(FLAGS, out_dim = 1).cuda()
     self.optimizer = optim.Adam(
-        self.actor.parameters() + self.critic.parameters(), lr=FLAGS.lr)
+        list(self.actor.parameters()) + list(self.critic.parameters()), lr=FLAGS.lr)
 
   def finishEpisode(self):
     assert self.episode_start >= 0
     num_frames = frame_counter - self.episode_start
     for i in reverse(range(num_frames)):
-      self.R += self.dist_to_goals[i]
+      self.R -= self.dist_to_goals[i]
       frames = self.frame_buffer[i:i+FLAGS.context_frames]
       V = self.critic.forward(frames)
       self.critic.backward((self.R-V)**2)
@@ -170,26 +171,31 @@ class FrameProcessor(object):
         self.episode_start = frame_counter
         self.R = 0
         self.start_frame = frame
-        self.frame_buffer = [self.start_frame] * (FLAGS.context_frames - 1)
+        self.frame_buffer = [torch.tensor(self.start_frame).float()] * (FLAGS.context_frames)
+        self.frame_buffer = torch.cat(self.frame_buffer,2).permute(2,0,1).unsqueeze(0)
+        print(self.frame_buffer.shape)
         self.optimizer.zero_grad()
-      self.frame_buffer.append(frame)
+       
+      self.frame_buffer = torch.cat([self.frame_buffer, torch.tensor(frame).float().permute(2,0,1).unsqueeze(0)],1)
       dist_to_goal = (x - self.goal[0])**2 + (y - self.goal[1])**2
       self.dist_to_goals.append(dist_to_goal)
       if self.prior_coord is None:
         # Assume death
         self.R -= 100000
         self.finishEpisode()
+      '''
       elif frame_counter - self.episode_start > FLAGS.episode_length:
         if self.dist_to_goals[-1] < 10**2:
           self.R += 100000
         self.finishEpisode()
       # Whether or not we are resetting the episode, frame_buffer should contain
       # the right inputs.
-      softmax = self.actor.forward(self.frame_buffer[-FLAGS.context_frames:])
-      action = self.actor.sample(softmax)
-      button_inputs = actions
+      '''
+      softmax, idxes, actions = self.actor.forward(self.frame_buffer[:, -FLAGS.image_channels*FLAGS.context_frames:].cuda())
+      #softmax, idxes, actions = self.actor.forward(torch.randn([1, FLAGS.image_channels * FLAGS.context_frames,FLAGS.image_height, FLAGS.image_width]).cuda())
+      button_input = actions
 
-    return [button_input]
+    return button_input
 
 
 def Speedrun():
