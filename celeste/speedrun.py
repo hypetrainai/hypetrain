@@ -148,9 +148,7 @@ class FrameProcessor(object):
 
     if FLAGS.interactive:
       button_input = input('Buttons please! (comma separated)').split(',')
-      # button_input = []
-      #if frame_counter % 2 == 0:
-      #  button_input = ['r', 'a']
+      button_input = []
       if button_input:
         if button_input == ['save']:
           savestate()
@@ -173,9 +171,8 @@ class FrameProcessor(object):
         self.start_frame = frame
         self.frame_buffer = [torch.tensor(self.start_frame).float()] * (FLAGS.context_frames)
         self.frame_buffer = torch.cat(self.frame_buffer,2).permute(2,0,1).unsqueeze(0)
-        print(self.frame_buffer.shape)
         self.optimizer.zero_grad()
-       
+
       self.frame_buffer = torch.cat([self.frame_buffer, torch.tensor(frame).float().permute(2,0,1).unsqueeze(0)],1)
       dist_to_goal = (x - self.goal[0])**2 + (y - self.goal[1])**2
       self.dist_to_goals.append(dist_to_goal)
@@ -191,8 +188,7 @@ class FrameProcessor(object):
       # Whether or not we are resetting the episode, frame_buffer should contain
       # the right inputs.
       '''
-      softmax, idxes, actions = self.actor.forward(self.frame_buffer[:, -FLAGS.image_channels*FLAGS.context_frames:].cuda())
-      #softmax, idxes, actions = self.actor.forward(torch.randn([1, FLAGS.image_channels * FLAGS.context_frames,FLAGS.image_height, FLAGS.image_width]).cuda())
+      softmax, idxs, actions = self.actor.forward(self.frame_buffer[:, -FLAGS.image_channels*FLAGS.context_frames:].cuda())
       button_input = actions
 
     return button_input
@@ -232,6 +228,8 @@ def Speedrun():
     if msg == pylibtas.MSGB_PID:
       global game_pid
       _, game_pid = pylibtas.receiveInt()
+    elif hasattr(pylibtas, 'MSGB_GIT_COMMIT') and msg == pylibtas.MSGB_GIT_COMMIT:
+      _ = pylibtas.receiveString()
     else:
       raise RuntimeError('Unexpected message %d in init!' % msg)
     msg = pylibtas.receiveMessage()
