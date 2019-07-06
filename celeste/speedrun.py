@@ -18,7 +18,6 @@ SIZE_FLOAT = 4
 SIZE_UNSIGNED_LONG = 8
 SIZE_TIMESPEC = 16
 SIZE_GAMEINFO_STRUCT = 36
-SIZE_WINDOW_STRUCT = 8
 
 
 shared_config = None
@@ -59,7 +58,7 @@ def startNextFrame():
   msg = pylibtas.receiveMessage()
   while msg != pylibtas.MSGB_START_FRAMEBOUNDARY:
     if msg == pylibtas.MSGB_WINDOW_ID:
-      pylibtas.ignoreData(SIZE_WINDOW_STRUCT)
+      pylibtas.ignoreData(SIZE_INT)
     elif msg == pylibtas.MSGB_ALERT_MSG:
       print(pylibtas.receiveString())
     elif msg == pylibtas.MSGB_ENCODE_FAILED:
@@ -79,7 +78,7 @@ def startNextFrame():
     elif msg == -1:
       raise RuntimeError('The connection to the game was lost.')
     else:
-      raise RuntimeError('Received unexpected message %s' % pylibtas.MESSAGE_NAMES[msg])
+      raise RuntimeError('Received unexpected message %s(%d)' % (pylibtas.message_name(msg), msg))
     msg = pylibtas.receiveMessage()
   pylibtas.sendMessage(pylibtas.MSGN_START_FRAMEBOUNDARY)
 
