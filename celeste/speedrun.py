@@ -107,10 +107,10 @@ class FrameProcessor(object):
 
     self.goal = (0, 0)
 
-    self.R = 0
     self.episode_start = -1
+    self.R = 0
     self.start_frame = None
-    self.frame_buffer = []
+    self.frame_buffer = None
     self.dist_to_goals = []
 
     self.actor = Network(FLAGS).cuda()
@@ -121,20 +121,23 @@ class FrameProcessor(object):
   def finishEpisode(self):
     assert self.episode_start >= 0
     num_frames = frame_counter - self.episode_start
-    for i in reverse(range(num_frames)):
+    assert len(self.dist_to_goals) == num_frames, (num_frames, len(self.dist_to_goals))
+    assert self.frame_buffer.shape[1] == num_frames + FLAGS.context_frames, (num_frames, self.frame_buffer.shape[1])
+    for i in reversed(range(num_frames)):
       self.R -= self.dist_to_goals[i]
-      frames = self.frame_buffer[i:i+FLAGS.context_frames]
+      frames = self.frame_buffer[:, i:i+FLAGS.context_frames]
+      frames = torch.reshape(frames, [1, -1, FLAGS.image_height, FLAGS.image_width])
       V = self.critic.forward(frames)
-      self.critic.backward((self.R-V)**2)
+      #self.critic.backward((self.R-V)**2)
       self.actor.forward(frames)
-      self.actor.backward(self.actor.loss(R, V))
+      #self.actor.backward(self.actor.loss(R, V))
       self.R *= FLAGS.reward_decay_multiplier
     self.optimizer.step()
     self.optimizer.zero_grad()
 
     loadstate()
-    self.R = 0
-    self.frame_buffer = [self.start_frame] * (FLAGS.context_frames - 1)
+    self.episode_start = -1
+    return self.processFrame(self.start_frame)
 
   def processFrame(self, frame):
     y, x, state = self.det.detect(frame, prior_coord=self.prior_coord)
@@ -163,32 +166,30 @@ class FrameProcessor(object):
         self.saved_frames += 1
 
     if not FLAGS.interactive:
+      cuda_frame = torch.tensor(frame).float().permute(2, 0, 1).unsqueeze(0).cuda()
       if self.episode_start < 0:
+        if self.start_frame is None:
+          savestate()
         assert self.prior_coord is not None
         self.episode_start = frame_counter
         self.R = 0
         self.start_frame = frame
-        self.frame_buffer = [torch.tensor(self.start_frame).float()] * (FLAGS.context_frames)
-        self.frame_buffer = torch.cat(self.frame_buffer,2).permute(2,0,1).unsqueeze(0)
-        self.optimizer.zero_grad()
-
-      self.frame_buffer = torch.cat([self.frame_buffer, torch.tensor(frame).float().permute(2,0,1).unsqueeze(0)],1)
-      dist_to_goal = (x - self.goal[0])**2 + (y - self.goal[1])**2
-      self.dist_to_goals.append(dist_to_goal)
-      if self.prior_coord is None:
-        # Assume death
-        self.R -= 100000
-        self.finishEpisode()
-      '''
-      elif frame_counter - self.episode_start > FLAGS.episode_length:
-        if self.dist_to_goals[-1] < 10**2:
-          self.R += 100000
-        self.finishEpisode()
-      # Whether or not we are resetting the episode, frame_buffer should contain
-      # the right inputs.
-      '''
-      softmax, idxs, actions = self.actor.forward(self.frame_buffer[:, -FLAGS.image_channels*FLAGS.context_frames:].cuda())
-      button_input = actions
+        self.frame_buffer = torch.stack([cuda_frame] * FLAGS.context_frames, 1)
+        self.dist_to_goals = []
+      else:
+        self.frame_buffer = torch.cat([self.frame_buffer, cuda_frame.unsqueeze(1)], 1)
+        if self.prior_coord is None:
+          # Assume death
+          self.dist_to_goals.append(100000)
+          return self.finishEpisode()
+        self.dist_to_goals.append((x - self.goal[0])**2 + (y - self.goal[1])**2)
+        if frame_counter - self.episode_start >= FLAGS.episode_length:
+          if self.dist_to_goals[-1] < 10**2:
+            self.R += 100000
+          return self.finishEpisode()
+      frames = self.frame_buffer[:, -FLAGS.context_frames:]
+      frames = torch.reshape(frames, [1, -1, FLAGS.image_height, FLAGS.image_width])
+      softmax, idxs, button_input = self.actor.forward(frames)
 
     return button_input
 

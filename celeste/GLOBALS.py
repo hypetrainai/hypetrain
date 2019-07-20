@@ -44,18 +44,18 @@ class _ModuleWrapper(ModuleType):
         parser.add_argument('--save_file', type=str, default='level1_screen4', help='if not empty string, use save file.')
 
         parser.add_argument('--interactive', type=bool, default=False, help='interactive mode (enter buttons on command line)')
-        
-        
+
+
         #actual model arguments now
         parser.add_argument('--image_height', type=int, default=540)
         parser.add_argument('--image_width', type=int, default=960)
         parser.add_argument('--image_channels', type=int, default=3)
-        
+
         parser.add_argument('--num_actions', type=int, default=72)
 
         parser.add_argument('--lr', type=float, default=0.02)
         parser.add_argument('--reward_decay_multiplier', type=int, default=0.95, help='reward function decay multiplier')
-        parser.add_argument('--episode_length', type=int, default=1000, help='episode length')
+        parser.add_argument('--episode_length', type=int, default=100, help='episode length')
         parser.add_argument('--context_frames', type=int, default=30, help='number of frames passed to the network')
 
         self.parser = parser
