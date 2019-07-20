@@ -77,6 +77,9 @@ class ResNetIm2Value(nn.Module):
         sample_mapped = [class2button[int(sample[i].numpy())] for i in range(len(sample))]
         
         return sample, sample_mapped
+    
+    def policyloss(self, score_of_taken_action, advantage):
+        return torch.log(score_of_taken_action)*advantage
 
         
         
