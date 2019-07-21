@@ -16,6 +16,8 @@ class CelesteDetector():
         self.colors = color_dict
         self.thres = threshold
         self.sdwp = search_delta_with_prior
+        self.death_clock_init = 10
+        self.death_clock = self.death_clock_init
         if self.sdwp%2 == 1:
             self.sdwp += 1
         
@@ -23,25 +25,30 @@ class CelesteDetector():
         #state 0 is red hair
         #state 1 is blue hair
         #state 2 is other (probably white hair)
+        #state 3 is death clock initiated
         #state -1 is no detection
         col = self.colors['blue_shirt']
         
         
         mask = self._get_mask(im, col, prior_coord = prior_coord)
         if np.sum(mask) == 0 and prior_coord is not None:
-            prior_coord = None
-            mask = self._get_mask(im, col, prior_coord = prior_coord)
+            mask = self._get_mask(im, col, prior_coord = None)
         if np.sum(mask) == 0:
+                self.death_clock -= 1
                 if return_state:
-                    return (None, None, -1)
+                    if self.death_clock > 0:
+                        return (prior_coord[0], prior_coord[1], 3)
+                    else:
+                        return (None, None, -1)
                 return (None, None)
-            
+        self.death_clock = self.death_clock_init    
         y,x = self._COM_coordinates(mask)
         if prior_coord is not None:
-                miny = np.maximum(0,prior_coord[0]-self.sdwp//2)
-                minx = np.maximum(0,prior_coord[1]-self.sdwp//2)
-                y += miny
-                x += minx
+            miny = np.maximum(0,prior_coord[0]-self.sdwp//2)
+            minx = np.maximum(0,prior_coord[1]-self.sdwp//2)
+            y += miny
+            x += minx
+        print(y,x)
         if return_state:
             state = self._get_state(im, prior_coord)
             

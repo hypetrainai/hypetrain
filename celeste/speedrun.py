@@ -173,6 +173,7 @@ class FrameProcessor(object):
 
     # Start next episode.
     loadstate()
+    self.prior_coord = None
     self.episode_start = -1
     self.episode_number += 1
     if self.episode_number % FLAGS.save_every == 0:
