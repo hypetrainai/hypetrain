@@ -48,7 +48,6 @@ class CelesteDetector():
             minx = np.maximum(0,prior_coord[1]-self.sdwp//2)
             y += miny
             x += minx
-        print(y,x)
         if return_state:
             state = self._get_state(im, prior_coord)
             
