@@ -167,7 +167,7 @@ class FrameProcessor(object):
       last_V *= FLAGS.reward_decay_multiplier
       A = R + last_V - V
       scores = self.actor.forward(frames)
-      (torch.log(scores[0, self.sampled_action[i]]) * A).backward()
+      (-1.0*torch.log(scores[0, self.sampled_action[i]]) * A).backward()
       R *= FLAGS.reward_decay_multiplier
     self.optimizer_actor.step()
 

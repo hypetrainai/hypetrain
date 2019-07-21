@@ -60,7 +60,7 @@ class _ModuleWrapper(ModuleType):
 
         parser.add_argument('--lr', type=float, default=0.0002)
         parser.add_argument('--reward_decay_multiplier', type=int, default=0.95, help='reward function decay multiplier')
-        parser.add_argument('--episode_length', type=int, default=100, help='episode length')
+        parser.add_argument('--episode_length', type=int, default=250, help='episode length')
         parser.add_argument('--context_frames', type=int, default=30, help='number of frames passed to the network')
 
         self.parser = parser
