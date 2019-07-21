@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import submodules
-from class2button import class2button
 
 class ResNetIm2Value(nn.Module):
     
@@ -50,10 +49,6 @@ class ResNetIm2Value(nn.Module):
         #layer_defs_linear.append(nn.BatchNorm1d(256))
         layer_defs_linear.append(nn.ReLU())
         layer_defs_linear.append(nn.Linear(256, self.num_actions))
-                          
-        
-        
-        #WARNING NOT DONE - NEED TO CODE UP LINEAR LAYERS
         
         
         #layer_defs.append(submodules.conv(_CONV_CHANNELS, output_channels))
@@ -66,21 +61,11 @@ class ResNetIm2Value(nn.Module):
         out = self.operation_stack_linear(out)
         out = F.softmax(out,1)
         
-        sample, sample_mapped = self.sample(out)
-        
-        return out, sample, sample_mapped
+        return out
     
-    def sample(self, scores):
-        scores = scores.detach().cpu()
-        dist = torch.distributions.categorical.Categorical(probs = scores)
-        sample = dist.sample()
-        sample_mapped = [class2button[int(sample[i].numpy())] for i in range(len(sample))]
-        
-        return sample, sample_mapped
-    
-    def policyloss(self, score_of_taken_action, advantage):
-        return torch.log(score_of_taken_action)*advantage
 
-        
-        
+    
+    
+ 
+
         

@@ -8,10 +8,12 @@ import signal
 import sys
 import torch.optim as optim
 import torch
+import torch.nn as nn
 
 from celeste_detector import CelesteDetector
 from model import ResNetIm2Value as Network
 from GLOBALS import FLAGS, GLOBAL
+from class2button import class2button
 
 SIZE_INT = 4
 SIZE_FLOAT = 4
@@ -25,6 +27,7 @@ game_pid = -1
 window_width = 960
 window_height = 540
 frame_counter = 0
+
 
 
 def savestate(index=1):
@@ -96,6 +99,16 @@ button_dict = {
     'lt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_LEFTSHOULDER
 }
 
+def sample_action(scores):
+    scores = scores.detach().cpu()
+    dist = torch.distributions.categorical.Categorical(probs = scores)
+    sample = dist.sample()
+    sample_mapped = [class2button[int(sample[i].numpy())] for i in range(len(sample))]
+
+    return sample, sample_mapped        
+
+def policyloss(score_of_taken_action, advantage):
+    return torch.log(score_of_taken_action)*advantage
 
 class FrameProcessor(object):
 
@@ -104,39 +117,80 @@ class FrameProcessor(object):
     self.prior_coord = None
     self.start_frame_saving = False
     self.saved_frames = 0
+    
+    self.episode_number = 0
 
-    self.goal = (0, 0)
+    self.goal = (440, 730)
 
     self.episode_start = -1
     self.R = 0
     self.start_frame = None
     self.frame_buffer = None
     self.dist_to_goals = []
+    self.sampled_action = []
 
-    self.actor = Network(FLAGS).cuda()
-    self.critic = Network(FLAGS, out_dim = 1).cuda()
-    self.optimizer = optim.Adam(
-        list(self.actor.parameters()) + list(self.critic.parameters()), lr=FLAGS.lr)
+    self.actor = nn.DataParallel(Network(FLAGS).cuda())
+    self.critic = nn.DataParallel(Network(FLAGS, out_dim = 1).cuda())
+    self.optimizer_actor = optim.Adam(
+        list(self.actor.parameters()), lr=FLAGS.lr)
+    self.optimizer_critic = optim.Adam(
+        list(self.critic.parameters()), lr=FLAGS.lr)
+    
+    if not os.path.isdir(FLAGS.log_dir):
+        os.path.makedirs(FLAGS.log_dir)
+    
+    
+    if FLAGS.pretrained_model_path:
+        print('Loading pretrained model from %s'%FLAGS.pretrained_model_path)
+        self.actor.load_state_dict(torch.load(FLAGS.pretrained_model_path + '/celeste_model_actor_%s.pt'%FLAGS.pretrained_suffix))
+        self.critic.load_state_dict(torch.load(FLAGS.pretrained_model_path + '/celeste_model_critic_%s.pt'%FLAGS.pretrained_suffix))
+        print('Done!')
+    
+  
 
   def finishEpisode(self):
     assert self.episode_start >= 0
     num_frames = frame_counter - self.episode_start
     assert len(self.dist_to_goals) == num_frames, (num_frames, len(self.dist_to_goals))
+    assert len(self.sampled_action) == num_frames, (num_frames, len(self.sampled_action))
     assert self.frame_buffer.shape[1] == num_frames + FLAGS.context_frames, (num_frames, self.frame_buffer.shape[1])
+    last_V = None
+    actor_loss = 0
     for i in reversed(range(num_frames)):
-      self.R -= self.dist_to_goals[i]
       frames = self.frame_buffer[:, i:i+FLAGS.context_frames]
       frames = torch.reshape(frames, [1, -1, FLAGS.image_height, FLAGS.image_width])
       V = self.critic.forward(frames)
-      #self.critic.backward((self.R-V)**2)
-      self.actor.forward(frames)
-      #self.actor.backward(self.actor.loss(R, V))
+      if not last_V:
+            last_V = V.detach()
+            continue 
+      self.R -= np.sqrt(self.dist_to_goals[i])
+      ((self.R-V)**2).backward(retain_graph = True)
+        
+      self.optimizer_critic.step()
+      self.optimizer_critic.zero_grad()
+            
+      last_V *= FLAGS.reward_decay_multiplier
+      A = self.R + last_V - V
+      scores = self.actor.forward(frames)
+      actor_loss = policyloss(scores[0,self.sampled_action[i]],A)
+      actor_loss.backward()
       self.R *= FLAGS.reward_decay_multiplier
-    self.optimizer.step()
-    self.optimizer.zero_grad()
+    self.optimizer_actor.step()
+    self.optimizer_actor.zero_grad()
+    self.optimizer_critic.zero_grad()
+    
 
     loadstate()
     self.episode_start = -1
+    if self.episode_number % FLAGS.save_every == 0:
+        model_dir_actor = FLAGS.log_dir + '/celeste_model_actor_%d.pt'%self.episode_number
+        model_dir_critic = FLAGS.log_dir + '/celeste_model_critic_%d.pt'%self.episode_number 
+        torch.save(self.actor.state_dict(), model_dir_actor)
+        torch.save(self.critic.state_dict(), model_dir_critic)
+        torch.save(self.actor.state_dict(), FLAGS.log_dir + '/celeste_model_actor_latest.pt')
+        torch.save(self.critic.state_dict(), FLAGS.log_dir + '/celeste_model_critic_latest.pt')
+    self.episode_number += 1
+    
     return self.processFrame(self.start_frame)
 
   def processFrame(self, frame):
@@ -176,20 +230,24 @@ class FrameProcessor(object):
         self.start_frame = frame
         self.frame_buffer = torch.stack([cuda_frame] * FLAGS.context_frames, 1)
         self.dist_to_goals = []
+        self.sampled_action = []
       else:
         self.frame_buffer = torch.cat([self.frame_buffer, cuda_frame.unsqueeze(1)], 1)
         if self.prior_coord is None:
           # Assume death
           self.dist_to_goals.append(100000)
           return self.finishEpisode()
-        self.dist_to_goals.append((x - self.goal[0])**2 + (y - self.goal[1])**2)
+        self.dist_to_goals.append((x - self.goal[1])**2 + (y - self.goal[0])**2)
         if frame_counter - self.episode_start >= FLAGS.episode_length:
           if self.dist_to_goals[-1] < 10**2:
             self.R += 100000
           return self.finishEpisode()
       frames = self.frame_buffer[:, -FLAGS.context_frames:]
       frames = torch.reshape(frames, [1, -1, FLAGS.image_height, FLAGS.image_width])
-      softmax, idxs, button_input = self.actor.forward(frames)
+      softmax = self.actor.forward(frames)
+      idx, button_input = sample_action(softmax)
+      self.sampled_action.append(idx)
+
 
     return button_input
 
@@ -239,7 +297,7 @@ def Speedrun():
   shared_config.nb_controllers = 1
   shared_config.audio_mute = True
   shared_config.incremental_savestates = False
-  shared_config.savestates_in_ram = False
+  shared_config.savestates_in_ram = True
   shared_config.backtrack_savestate = False
   shared_config.prevent_savefiles = False
   shared_config.recycle_threads = False
