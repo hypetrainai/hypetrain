@@ -24,10 +24,7 @@ SIZE_GAMEINFO_STRUCT = 36
 
 shared_config = None
 game_pid = -1
-window_width = 960
-window_height = 540
 frame_counter = 0
-
 
 
 def savestate(index=1):
@@ -53,7 +50,6 @@ def loadstate(index=1):
   assert msg == pylibtas.MSGB_FRAMECOUNT_TIME
   _, frame_counter = pylibtas.receiveULong()
   pylibtas.ignoreData(SIZE_TIMESPEC)
-
   pylibtas.sendMessage(pylibtas.MSGN_EXPOSE)
 
 
@@ -99,16 +95,14 @@ button_dict = {
     'lt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_LEFTSHOULDER
 }
 
+
 def sample_action(scores):
     scores = scores.detach().cpu()
-    dist = torch.distributions.categorical.Categorical(probs = scores)
+    dist = torch.distributions.categorical.Categorical(probs=scores)
     sample = dist.sample()
     sample_mapped = [class2button[int(sample[i].numpy())] for i in range(len(sample))]
+    return sample, sample_mapped
 
-    return sample, sample_mapped        
-
-def policyloss(score_of_taken_action, advantage):
-    return torch.log(score_of_taken_action)*advantage
 
 class FrameProcessor(object):
 
@@ -117,36 +111,31 @@ class FrameProcessor(object):
     self.prior_coord = None
     self.start_frame_saving = False
     self.saved_frames = 0
-    
-    self.episode_number = 0
 
     self.goal = (440, 730)
 
+    self.episode_number = 0
     self.episode_start = -1
-    self.R = 0
     self.start_frame = None
     self.frame_buffer = None
     self.dist_to_goals = []
     self.sampled_action = []
 
     self.actor = nn.DataParallel(Network(FLAGS).cuda())
-    self.critic = nn.DataParallel(Network(FLAGS, out_dim = 1).cuda())
-    self.optimizer_actor = optim.Adam(
-        list(self.actor.parameters()), lr=FLAGS.lr)
-    self.optimizer_critic = optim.Adam(
-        list(self.critic.parameters()), lr=FLAGS.lr)
-    
+    self.critic = nn.DataParallel(Network(FLAGS, out_dim=1).cuda())
+    self.optimizer_actor = optim.Adam(list(self.actor.parameters()), lr=FLAGS.lr)
+    self.optimizer_critic = optim.Adam(list(self.critic.parameters()), lr=FLAGS.lr)
+
     if not os.path.isdir(FLAGS.log_dir):
         os.path.makedirs(FLAGS.log_dir)
-    
-    
+
     if FLAGS.pretrained_model_path:
-        print('Loading pretrained model from %s'%FLAGS.pretrained_model_path)
-        self.actor.load_state_dict(torch.load(FLAGS.pretrained_model_path + '/celeste_model_actor_%s.pt'%FLAGS.pretrained_suffix))
-        self.critic.load_state_dict(torch.load(FLAGS.pretrained_model_path + '/celeste_model_critic_%s.pt'%FLAGS.pretrained_suffix))
+        print('Loading pretrained model from %s' % FLAGS.pretrained_model_path)
+        self.actor.load_state_dict(torch.load(
+            FLAGS.pretrained_model_path + '/celeste_model_actor_%s.pt' % FLAGS.pretrained_suffix))
+        self.critic.load_state_dict(torch.load(
+            FLAGS.pretrained_model_path + '/celeste_model_critic_%s.pt' % FLAGS.pretrained_suffix))
         print('Done!')
-    
-  
 
   def finishEpisode(self):
     assert self.episode_start >= 0
@@ -154,43 +143,45 @@ class FrameProcessor(object):
     assert len(self.dist_to_goals) == num_frames, (num_frames, len(self.dist_to_goals))
     assert len(self.sampled_action) == num_frames, (num_frames, len(self.sampled_action))
     assert self.frame_buffer.shape[1] == num_frames + FLAGS.context_frames, (num_frames, self.frame_buffer.shape[1])
+
+    R = 0
+    if self.dist_to_goals[-1] < 10**2:
+      R = 100000
+
     last_V = None
-    actor_loss = 0
+    self.optimizer_actor.zero_grad()
     for i in reversed(range(num_frames)):
       frames = self.frame_buffer[:, i:i+FLAGS.context_frames]
       frames = torch.reshape(frames, [1, -1, FLAGS.image_height, FLAGS.image_width])
       V = self.critic.forward(frames)
       if not last_V:
-            last_V = V.detach()
-            continue 
-      self.R -= np.sqrt(self.dist_to_goals[i])
-      ((self.R-V)**2).backward(retain_graph = True)
-        
-      self.optimizer_critic.step()
-      self.optimizer_critic.zero_grad()
-            
-      last_V *= FLAGS.reward_decay_multiplier
-      A = self.R + last_V - V
-      scores = self.actor.forward(frames)
-      actor_loss = policyloss(scores[0,self.sampled_action[i]],A)
-      actor_loss.backward()
-      self.R *= FLAGS.reward_decay_multiplier
-    self.optimizer_actor.step()
-    self.optimizer_actor.zero_grad()
-    self.optimizer_critic.zero_grad()
-    
+        last_V = V.detach()
+        continue
 
+      R -= np.sqrt(self.dist_to_goals[i])
+
+      self.optimizer_critic.zero_grad()
+      ((R - V)**2).backward(retain_graph=True)
+      self.optimizer_critic.step()
+
+      last_V *= FLAGS.reward_decay_multiplier
+      A = R + last_V - V
+      scores = self.actor.forward(frames)
+      (torch.log(scores[0, self.sampled_action[i]]) * A).backward()
+      R *= FLAGS.reward_decay_multiplier
+    self.optimizer_actor.step()
+
+    # Start next episode.
     loadstate()
     self.episode_start = -1
+    self.episode_number += 1
     if self.episode_number % FLAGS.save_every == 0:
-        model_dir_actor = FLAGS.log_dir + '/celeste_model_actor_%d.pt'%self.episode_number
-        model_dir_critic = FLAGS.log_dir + '/celeste_model_critic_%d.pt'%self.episode_number 
+        model_dir_actor = FLAGS.log_dir + '/celeste_model_actor_%d.pt' % self.episode_number
+        model_dir_critic = FLAGS.log_dir + '/celeste_model_critic_%d.pt' % self.episode_number
         torch.save(self.actor.state_dict(), model_dir_actor)
         torch.save(self.critic.state_dict(), model_dir_critic)
         torch.save(self.actor.state_dict(), FLAGS.log_dir + '/celeste_model_actor_latest.pt')
         torch.save(self.critic.state_dict(), FLAGS.log_dir + '/celeste_model_critic_latest.pt')
-    self.episode_number += 1
-    
     return self.processFrame(self.start_frame)
 
   def processFrame(self, frame):
@@ -226,7 +217,6 @@ class FrameProcessor(object):
           savestate()
         assert self.prior_coord is not None
         self.episode_start = frame_counter
-        self.R = 0
         self.start_frame = frame
         self.frame_buffer = torch.stack([cuda_frame] * FLAGS.context_frames, 1)
         self.dist_to_goals = []
@@ -235,19 +225,17 @@ class FrameProcessor(object):
         self.frame_buffer = torch.cat([self.frame_buffer, cuda_frame.unsqueeze(1)], 1)
         if self.prior_coord is None:
           # Assume death
-          self.dist_to_goals.append(100000)
+          self.dist_to_goals.append(10000000)
           return self.finishEpisode()
-        self.dist_to_goals.append((x - self.goal[1])**2 + (y - self.goal[0])**2)
+        else:
+          self.dist_to_goals.append((x - self.goal[1])**2 + (y - self.goal[0])**2)
         if frame_counter - self.episode_start >= FLAGS.episode_length:
-          if self.dist_to_goals[-1] < 10**2:
-            self.R += 100000
           return self.finishEpisode()
       frames = self.frame_buffer[:, -FLAGS.context_frames:]
       frames = torch.reshape(frames, [1, -1, FLAGS.image_height, FLAGS.image_width])
       softmax = self.actor.forward(frames)
       idx, button_input = sample_action(softmax)
       self.sampled_action.append(idx)
-
 
     return button_input
 
@@ -323,12 +311,12 @@ def Speedrun():
     assert msg == pylibtas.MSGB_FRAME_DATA, msg
     _, actual_window_width = pylibtas.receiveInt()
     _, actual_window_height = pylibtas.receiveInt()
-    assert actual_window_width == window_width and actual_window_height == window_height
+    assert actual_window_width == FLAGS.image_width and actual_window_height == FLAGS.image_height
     _, size = pylibtas.receiveInt()
     received, frame = pylibtas.receiveArray(size)
     assert received == size, (size, received)
 
-    frame = np.reshape(frame, [window_height, window_width, 4])[:, :, :3]
+    frame = np.reshape(frame, [FLAGS.image_height, FLAGS.image_width, 4])[:, :, :3]
 
     if frame_counter == 0:
       pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_PATH)
