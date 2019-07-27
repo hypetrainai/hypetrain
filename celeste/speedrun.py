@@ -1,20 +1,21 @@
 import imageio
+import matplotlib.pyplot as plt
 import numpy as np
 import os
 from PIL import Image
-import matplotlib.pyplot as plt
 import pylibtas
 import queue
 import signal
+import subprocess
 import sys
 import torch.optim as optim
 import torch
 import torch.nn as nn
 
-from celeste_detector import CelesteDetector
-from model import ResNetIm2Value as Network
 from GLOBALS import FLAGS, GLOBAL
+from celeste_detector import CelesteDetector
 from class2button import class2button
+from model import ResNetIm2Value as Network
 
 SIZE_INT = 4
 SIZE_FLOAT = 4
@@ -380,6 +381,8 @@ def Speedrun():
 
 
 if __name__ == "__main__":
+  subprocess.Popen(['tensorboard', '--logdir', FLAGS.log_dir])
+
   try:
     Speedrun()
   except:

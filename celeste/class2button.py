@@ -25,7 +25,7 @@ class2button = {}
 
 for action_key in action_button_dict:
     for dpad_key in dpad_button_dict:
-        final_key = action_key*9+dpad_key
+        final_key = action_key * 9 + dpad_key
         if dpad_button_dict[dpad_key][0] == '':
             final_value = action_button_dict[action_key]
         elif action_button_dict[action_key][0] == '':
