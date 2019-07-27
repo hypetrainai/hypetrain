@@ -2,6 +2,7 @@ import imageio
 import numpy as np
 import os
 from PIL import Image
+import matplotlib.pyplot as plt
 import pylibtas
 import queue
 import signal
@@ -96,10 +97,9 @@ button_dict = {
 }
 
 
-def sample_action(scores):
-    scores = scores.detach().cpu()
-    dist = torch.distributions.categorical.Categorical(probs=scores)
-    sample = dist.sample()
+def sample_action(softmax):
+    softmax = softmax.detach().cpu()
+    sample = torch.distributions.categorical.Categorical(probs=softmax).sample()
     sample_mapped = [class2button[int(sample[i].numpy())] for i in range(len(sample))]
     return sample, sample_mapped
 
@@ -121,8 +121,14 @@ class FrameProcessor(object):
     self.dist_to_goals = []
     self.sampled_action = []
 
-    self.actor = nn.DataParallel(Network(FLAGS).cuda())
-    self.critic = nn.DataParallel(Network(FLAGS, out_dim=1).cuda())
+    fake_inputs = torch.zeros(1, FLAGS.image_channels * FLAGS.context_frames,
+                              FLAGS.image_height, FLAGS.image_width)
+    self.actor = Network(FLAGS)
+    GLOBAL.summary_writer.add_graph(self.actor, fake_inputs, verbose=True)
+    self.actor = nn.DataParallel(self.actor.cuda())
+    self.critic = Network(FLAGS, out_dim=1)
+    GLOBAL.summary_writer.add_graph(self.critic, fake_inputs, verbose=True)
+    self.critic = nn.DataParallel(self.critic.cuda())
     self.optimizer_actor = optim.Adam(list(self.actor.parameters()), lr=FLAGS.lr)
     self.optimizer_critic = optim.Adam(list(self.critic.parameters()), lr=FLAGS.lr)
 
@@ -144,32 +150,60 @@ class FrameProcessor(object):
     assert len(self.sampled_action) == num_frames, (num_frames, len(self.sampled_action))
     assert self.frame_buffer.shape[1] == num_frames + FLAGS.context_frames, (num_frames, self.frame_buffer.shape[1])
 
+    GLOBAL.summary_writer.add_scalar('episode_length', num_frames, self.episode_number)
+    GLOBAL.summary_writer.add_scalar('final_dist_to_goal', self.dist_to_goals[-1], self.episode_number)
+    GLOBAL.summary_writer.add_scalar('closest_dist_to_goal', min(self.dist_to_goals), self.episode_number)
+    GLOBAL.summary_writer.add_video('input_frames', self.frame_buffer, self.episode_number, fps=60)
+
     R = 0
-    if self.dist_to_goals[-1] < 10**2:
+    if self.dist_to_goals[-1] < 10:
       R = 100000
 
+    Vs = []
+    Rs = []
+    As = []
     last_V = None
     self.optimizer_actor.zero_grad()
     for i in reversed(range(num_frames)):
       frames = self.frame_buffer[:, i:i+FLAGS.context_frames]
       frames = torch.reshape(frames, [1, -1, FLAGS.image_height, FLAGS.image_width])
       V = self.critic.forward(frames)
+      R -= self.dist_to_goals[i]
+      Vs.append(V.detach().cpu().data.numpy())
+      Rs.append(R)
+
       if not last_V:
         last_V = V.detach()
         continue
 
-      R -= np.sqrt(self.dist_to_goals[i])
-
       self.optimizer_critic.zero_grad()
-      ((R - V)**2).backward(retain_graph=True)
+      ((R - V)**2).backward()
       self.optimizer_critic.step()
 
       last_V *= FLAGS.reward_decay_multiplier
       A = R + last_V - V
-      scores = self.actor.forward(frames)
-      (-1.0*torch.log(scores[0, self.sampled_action[i]]) * A).backward()
+      As.append(A)
+      softmax = self.actor.forward(frames)
+      entropy = torch.distributions.categorical.Categorical(probs=softmax).entropy()
+      (-1.0 * torch.log(softmax[0, self.sampled_action[i]]) * A - FLAGS.entropy_weight * entropy).backward()
       R *= FLAGS.reward_decay_multiplier
     self.optimizer_actor.step()
+
+    Vs = reversed(Vs)
+    Rs = reversed(Rs)
+    As = reversed(As)
+    plt.figure()
+    plt.plot(range(num_frames), Vs)
+    GLOBAL.summary_writer.add_figure("loss/value", plt.gcf(), self.episode_number)
+    plt.figure()
+    plt.plot(range(num_frames), Rs)
+    GLOBAL.summary_writer.add_figure("loss/reward", plt.gcf(), self.episode_number)
+    plt.figure()
+    plt.plot(range(num_frames), [(R - V)**2 for R, V in zip(Rs, Vs)])
+    GLOBAL.summary_writer.add_figure("loss/value_reward_diff", plt.gcf(), self.episode_number)
+    plt.figure()
+    plt.plot(range(num_frames - 1), As)
+    GLOBAL.summary_writer.add_figure("loss/advantage", plt.gcf(), self.episode_number)
 
     # Start next episode.
     loadstate()
@@ -226,10 +260,10 @@ class FrameProcessor(object):
         self.frame_buffer = torch.cat([self.frame_buffer, cuda_frame.unsqueeze(1)], 1)
         if self.prior_coord is None:
           # Assume death
-          self.dist_to_goals.append(10000000)
+          self.dist_to_goals.append(10000)
           return self.finishEpisode()
         else:
-          self.dist_to_goals.append((x - self.goal[1])**2 + (y - self.goal[0])**2)
+          self.dist_to_goals.append(sqrt((x - self.goal[1])**2 + (y - self.goal[0])**2))
         if frame_counter - self.episode_start >= FLAGS.episode_length:
           return self.finishEpisode()
       frames = self.frame_buffer[:, -FLAGS.context_frames:]
