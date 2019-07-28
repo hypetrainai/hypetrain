@@ -104,7 +104,6 @@ def sample_action(softmax):
     sample_mapped = [class2button[int(sample[i].numpy())] for i in range(len(sample))]
     return sample, sample_mapped
 
-
 class FrameProcessor(object):
 
   def __init__(self):
@@ -119,7 +118,7 @@ class FrameProcessor(object):
     self.episode_start = -1
     self.start_frame = None
     self.frame_buffer = None
-    self.dist_to_goals = []
+    self.rewards = []
     self.sampled_action = []
 
     fake_inputs = torch.zeros(1, FLAGS.image_channels * FLAGS.context_frames,
@@ -141,20 +140,24 @@ class FrameProcessor(object):
             FLAGS.pretrained_model_path + '/celeste_model_critic_%s.pt' % FLAGS.pretrained_suffix))
         print('Done!')
 
+  
+  def _reward_function_for_current_state(y,x):
+    return -1.0*np.sqrt((x - self.goal[1])**2 + (y - self.goal[0])**2)
+
   def finishEpisode(self):
     assert self.episode_start >= 0
     num_frames = frame_counter - self.episode_start
-    assert len(self.dist_to_goals) == num_frames, (num_frames, len(self.dist_to_goals))
+    assert len(self.rewards) == num_frames, (num_frames, len(self.rewards))
     assert len(self.sampled_action) == num_frames, (num_frames, len(self.sampled_action))
     assert self.frame_buffer.shape[1] == num_frames + FLAGS.context_frames, (num_frames, self.frame_buffer.shape[1])
 
     GLOBAL.summary_writer.add_scalar('episode_length', num_frames, self.episode_number)
-    GLOBAL.summary_writer.add_scalar('final_dist_to_goal', self.dist_to_goals[-1], self.episode_number)
-    GLOBAL.summary_writer.add_scalar('closest_dist_to_goal', min(self.dist_to_goals), self.episode_number)
-    GLOBAL.summary_writer.add_video('input_frames', self.frame_buffer, self.episode_number, fps=60)
+    GLOBAL.summary_writer.add_scalar('final_dist_to_goal', self.rewards[-1], self.episode_number)
+    GLOBAL.summary_writer.add_scalar('closest_dist_to_goal', min(self.rewards), self.episode_number)
+    #GLOBAL.summary_writer.add_video('input_frames', self.frame_buffer, self.episode_number, fps=60)
 
     R = 0
-    if self.dist_to_goals[-1] < 10:
+    if self.rewards[-1] > -10:
       R = 100000
 
     Vs = []
@@ -166,7 +169,7 @@ class FrameProcessor(object):
       frames = self.frame_buffer[:, i:i+FLAGS.context_frames]
       frames = torch.reshape(frames, [1, -1, FLAGS.image_height, FLAGS.image_width])
       V = self.critic.forward(frames).view([])
-      R -= self.dist_to_goals[i]
+      R += self.rewards[i]
       Vs.append(V.detach().cpu().numpy())
       Rs.append(R)
 
@@ -175,11 +178,12 @@ class FrameProcessor(object):
         continue
 
       self.optimizer_critic.zero_grad()
-      ((R - V)**2).backward(retain_graph=True)
+      V_bellman = Vs[1]*FLAGS.reward_decay_multiplier + R
+      ((V_bellman - V)**2).backward(retain_graph=True)
       self.optimizer_critic.step()
 
-      last_V *= FLAGS.reward_decay_multiplier
-      A = R + last_V - V
+      A = V_bellman - V
+      #A = R + last_V - V
       As.append(A.detach().cpu().numpy())
       softmax = self.actor.forward(frames)
       entropy = torch.distributions.categorical.Categorical(probs=softmax).entropy()
@@ -254,16 +258,16 @@ class FrameProcessor(object):
         self.episode_start = frame_counter
         self.start_frame = frame
         self.frame_buffer = torch.stack([cuda_frame] * FLAGS.context_frames, 1)
-        self.dist_to_goals = []
+        self.rewards = []
         self.sampled_action = []
       else:
         self.frame_buffer = torch.cat([self.frame_buffer, cuda_frame.unsqueeze(1)], 1)
         if self.prior_coord is None:
           # Assume death
-          self.dist_to_goals.append(10000)
+          self.rewards.append(10000)
           return self.finishEpisode()
         else:
-          self.dist_to_goals.append(np.sqrt((x - self.goal[1])**2 + (y - self.goal[0])**2))
+          self.rewards.append(self._reward_function_for_current_state(y,x))
         if frame_counter - self.episode_start >= FLAGS.episode_length:
           return self.finishEpisode()
       frames = self.frame_buffer[:, -FLAGS.context_frames:]
