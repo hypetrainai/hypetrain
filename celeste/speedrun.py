@@ -264,7 +264,7 @@ class FrameProcessor(object):
         self.frame_buffer = torch.cat([self.frame_buffer, cuda_frame.unsqueeze(1)], 1)
         if self.prior_coord is None:
           # Assume death
-          self.rewards.append(10000)
+          self.rewards.append(-50)
           return self.finishEpisode()
         else:
           self.rewards.append(self._reward_function_for_current_state(y,x))
