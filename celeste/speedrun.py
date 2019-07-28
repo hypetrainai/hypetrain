@@ -141,8 +141,8 @@ class FrameProcessor(object):
         print('Done!')
 
   
-  def _reward_function_for_current_state(self, y,x):
-    return -1.0*np.sqrt((x - self.goal[1])**2 + (y - self.goal[0])**2)
+  def _reward_function_for_current_state(self, y, x):
+    return -1.0 * np.sqrt((x - self.goal[1])**2 + (y - self.goal[0])**2)
 
   def finishEpisode(self):
     assert self.episode_start >= 0
@@ -178,12 +178,11 @@ class FrameProcessor(object):
         continue
 
       self.optimizer_critic.zero_grad()
-      V_bellman = Vs[1]*FLAGS.reward_decay_multiplier + R
+      V_bellman = Vs[-2] * FLAGS.reward_decay_multiplier + self.rewards[i]
       ((V_bellman - V)**2).backward(retain_graph=True)
       self.optimizer_critic.step()
 
       A = V_bellman - V
-      #A = R + last_V - V
       As.append(A.detach().cpu().numpy())
       softmax = self.actor.forward(frames)
       entropy = torch.distributions.categorical.Categorical(probs=softmax).entropy()
@@ -200,9 +199,9 @@ class FrameProcessor(object):
     plt.figure()
     plt.plot(list(range(num_frames)), Rs)
     GLOBAL.summary_writer.add_figure("loss/reward", plt.gcf(), self.episode_number)
-    plt.figure()
-    plt.plot(list(range(num_frames)), [(R - V)**2 for R, V in zip(Rs, Vs)])
-    GLOBAL.summary_writer.add_figure("loss/value_reward_diff", plt.gcf(), self.episode_number)
+    # plt.figure()
+    # plt.plot(list(range(num_frames)), [(R - V)**2 for R, V in zip(Rs, Vs)])
+    # GLOBAL.summary_writer.add_figure("loss/value_reward_diff", plt.gcf(), self.episode_number)
     plt.figure()
     plt.plot(list(range(num_frames - 1)), As)
     GLOBAL.summary_writer.add_figure("loss/advantage", plt.gcf(), self.episode_number)
@@ -267,7 +266,7 @@ class FrameProcessor(object):
           self.rewards.append(-50)
           return self.finishEpisode()
         else:
-          self.rewards.append(self._reward_function_for_current_state(y,x))
+          self.rewards.append(self._reward_function_for_current_state(y, x))
         if frame_counter - self.episode_start >= FLAGS.episode_length:
           return self.finishEpisode()
       frames = self.frame_buffer[:, -FLAGS.context_frames:]
