@@ -41,7 +41,7 @@ class _ModuleWrapper(ModuleType):
         parser.add_argument('--pretrained_model_path', type=str, default='', help='pretrained model path')
         parser.add_argument('--pretrained_suffix', type=str, default='latest', help='if latest, will load most recent save in dir')
 
-        parser.add_argument('--log_dir', type=str, default='trained_models/firstmodel', help='where to save the models')
+        parser.add_argument('--log_dir', type=str, default='trained_models/firstmodel_bellman', help='where to save the models')
 
         parser.add_argument('--save_every', type=int, default=100, help='every X number of steps save a model')
 
