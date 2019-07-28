@@ -381,7 +381,7 @@ def Speedrun():
 
 if __name__ == "__main__":
   tensorboard = subprocess.Popen(
-      ['tensorboard', '--logdir', os.path.join(os.path.dirname(__file__), FLAGS.log_dir)])
+      ['tensorboard', '--logdir', os.path.join(os.path.abspath(os.path.dirname(__file__)), FLAGS.log_dir)])
 
   try:
     Speedrun()
