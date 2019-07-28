@@ -1,22 +1,53 @@
+from absl import app
+from absl import flags
 from absl import logging
+logging.set_verbosity(logging.INFO)
 import imageio
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-from PIL import Image
+import pprint
 import pylibtas
 import queue
 import signal
 import subprocess
-import sys
-import torch.optim as optim
+from tensorboardX import SummaryWriter
 import torch
-import torch.nn as nn
+from torch import nn
+from torch import optim
 
-from GLOBALS import FLAGS, GLOBAL
-from celeste_detector import CelesteDetector
+from GLOBALS import GLOBAL
+import celeste_detector
 from class2button import class2button
 from model import ResNetIm2Value as Network
+
+
+flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
+flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
+flags.DEFINE_string('logdir', 'trained_models/firstmodel_bellman_lastV_higherentropy_12lookahead', 'logdir')
+
+flags.DEFINE_integer('save_every', 100, 'every X number of steps save a model')
+
+flags.DEFINE_string('movie_file', 'movie.ltm', 'if not empty string, load libTAS input movie file')
+flags.DEFINE_string('save_file', 'level1_screen4', 'if not empty string, use save file.')
+
+flags.DEFINE_boolean('interactive', False, 'interactive mode (enter buttons on command line)')
+
+flags.DEFINE_integer('image_height', 540, 'image height')
+flags.DEFINE_integer('image_width', 960, 'image width')
+flags.DEFINE_integer('image_channels', 3, 'image channels')
+
+flags.DEFINE_integer('num_actions', 72, 'number of actions')
+
+flags.DEFINE_float('lr', 0.0002, 'learning rate')
+flags.DEFINE_float('entropy_weight', 0.05, 'weight for entropy loss')
+flags.DEFINE_float('reward_decay_multiplier', 0.95, 'reward function decay multiplier')
+flags.DEFINE_integer('episode_length', 200, 'episode length')
+flags.DEFINE_integer('context_frames', 30, 'number of frames passed to the network')
+flags.DEFINE_integer('bellman_lookahead_frames', 12, 'number of frames to consider for bellman rollout')
+
+FLAGS = flags.FLAGS
+
 
 SIZE_INT = 4
 SIZE_FLOAT = 4
@@ -109,7 +140,7 @@ def sample_action(softmax):
 class FrameProcessor(object):
 
   def __init__(self):
-    self.det = CelesteDetector()
+    self.det = celeste_detector.CelesteDetector()
     self.prior_coord = None
     self.start_frame_saving = False
     self.saved_frames = 0
@@ -165,7 +196,8 @@ class FrameProcessor(object):
     GLOBAL.summary_writer.add_scalar('episode_length', num_frames, self.episode_number)
     GLOBAL.summary_writer.add_scalar('final_reward', self.rewards[-1], self.episode_number)
     GLOBAL.summary_writer.add_scalar('best_reward', max(self.rewards), self.episode_number)
-    #GLOBAL.summary_writer.add_video('input_frames', self.frame_buffer, self.episode_number, fps=60)
+    GLOBAL.summary_writer.add_image('trajectory', torch.mean(self.frame_buffer, dim=[0, 1]), self.episode_number)
+    # GLOBAL.summary_writer.add_video('input_frames', self.frame_buffer, self.episode_number, fps=60)
 
     R = 0
     Vs = []
@@ -221,14 +253,15 @@ class FrameProcessor(object):
     self.prior_coord = None
     self.episode_start = -1
     self.episode_number += 1
+    logging.info('Starting episode %d', self.episode_number)
     if self.episode_number % FLAGS.save_every == 0:
-        torch.save(self.actor.state_dict(), os.path.join(FLAGS.log_dir,
+        torch.save(self.actor.state_dict(), os.path.join(FLAGS.logdir,
             'train/celeste_model_actor_%d.pt' % self.episode_number))
-        torch.save(self.critic.state_dict(), os.path.join(FLAGS.log_dir,
+        torch.save(self.critic.state_dict(), os.path.join(FLAGS.logdir,
             'train/celeste_model_critic_%d.pt' % self.episode_number))
-        torch.save(self.actor.state_dict(), os.path.join(FLAGS.log_dir,
+        torch.save(self.actor.state_dict(), os.path.join(FLAGS.logdir,
             'train/celeste_model_actor_latest.pt'))
-        torch.save(self.critic.state_dict(), os.path.join(FLAGS.log_dir,
+        torch.save(self.critic.state_dict(), os.path.join(FLAGS.logdir,
             'train/celeste_model_critic_latest.pt'))
     return self.processFrame(self.start_frame)
 
@@ -293,7 +326,7 @@ def Speedrun():
   if FLAGS.movie_file is not None:
     moviefile = pylibtas.MovieFile()
     if moviefile.loadInputs(FLAGS.movie_file) != 0:
-      raise ValueError('Could not load movie %s' % sys.argv[1])
+      raise ValueError('Could not load movie %s' % FLAGS.movie_file)
   if FLAGS.save_file is not None:
     savepath = 'savefiles/' + FLAGS.save_file
     os.system('cp -f %s ~/.local/share/Celeste/Saves/0.celeste' % savepath)
@@ -385,9 +418,18 @@ def Speedrun():
     frame_counter += 1
 
 
-if __name__ == "__main__":
-  abs_log_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), FLAGS.log_dir)
-  tensorboard = subprocess.Popen(['tensorboard', '--logdir', abs_log_dir], stderr=subprocess.DEVNULL)
+def main(argv):
+  del argv  # unused
+
+  logging.info('\n%s', pprint.pformat(FLAGS.flag_values_dict()))
+
+  os.makedirs(FLAGS.logdir, exist_ok=True)
+  train_dir = os.path.join(FLAGS.logdir, 'train')
+  os.makedirs(train_dir, exist_ok=True)
+  GLOBAL.summary_writer = SummaryWriter(train_dir)
+
+  tensorboard = subprocess.Popen(['tensorboard', '--logdir', os.path.abspath(FLAGS.logdir)],
+                                 stderr=subprocess.DEVNULL)
   try:
     Speedrun()
   finally:
@@ -397,3 +439,7 @@ if __name__ == "__main__":
     if game_pid != -1:
       logging.info('killing game %d' % game_pid)
       os.kill(game_pid, signal.SIGKILL)
+
+
+if __name__ == "__main__":
+  app.run(main)

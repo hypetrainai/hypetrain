@@ -1,9 +1,13 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from absl import flags
 import numpy as np
+import torch
+from torch import nn
+from torch.nn import functional as F
+
 import submodules
-from GLOBALS import FLAGS, GLOBAL
+
+FLAGS = flags.FLAGS
+
 
 class ResNetIm2Value(nn.Module):
 
@@ -19,7 +23,7 @@ class ResNetIm2Value(nn.Module):
         self.C = FLAGS.image_channels
         self.context_frames = FLAGS.context_frames
 
-        fc_input = 7*13*256
+        fc_input = 7 * 13 * 256
 
         layer_defs = []
         layer_defs_linear = []
