@@ -170,7 +170,9 @@ class FrameProcessor(object):
       frames = torch.reshape(frames, [1, -1, FLAGS.image_height, FLAGS.image_width])
       V = self.critic.forward(frames).view([])
     
-
+      if not last_V:
+        last_V = FLAGS.reward_decay_multiplier*V.detach()
+        continue    
         
       R += self.rewards[i]
       Vs.append(V.detach().cpu().numpy())
@@ -179,13 +181,10 @@ class FrameProcessor(object):
       A = V_bellman - V
       As.append(A.detach().cpu().numpy())
         
-      if not last_V:
-        last_V = FLAGS.reward_decay_multiplier*V.detach()
-        continue
+
         
       self.optimizer_critic.zero_grad()
 
-    
       ((V_bellman - V)**2).backward(retain_graph=True)
       self.optimizer_critic.step()
 
@@ -201,16 +200,16 @@ class FrameProcessor(object):
     Rs = list(reversed(Rs))
     As = list(reversed(As))
     plt.figure()
-    plt.plot(list(range(num_frames)), Vs)
+    plt.plot(Vs)
     GLOBAL.summary_writer.add_figure("loss/value", plt.gcf(), self.episode_number)
     plt.figure()
-    plt.plot(list(range(num_frames)), Rs)
+    plt.plot(Rs)
     GLOBAL.summary_writer.add_figure("loss/reward", plt.gcf(), self.episode_number)
     # plt.figure()
     # plt.plot(list(range(num_frames)), [(R - V)**2 for R, V in zip(Rs, Vs)])
     # GLOBAL.summary_writer.add_figure("loss/value_reward_diff", plt.gcf(), self.episode_number)
     plt.figure()
-    plt.plot(list(range(num_frames - 1)), As)
+    plt.plot(As)
     GLOBAL.summary_writer.add_figure("loss/advantage", plt.gcf(), self.episode_number)
 
     # Start next episode.
