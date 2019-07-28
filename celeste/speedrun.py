@@ -1,3 +1,4 @@
+from absl import logging
 import imageio
 import matplotlib.pyplot as plt
 import numpy as np
@@ -61,7 +62,7 @@ def startNextFrame():
     if msg == pylibtas.MSGB_WINDOW_ID:
       pylibtas.ignoreData(SIZE_INT)
     elif msg == pylibtas.MSGB_ALERT_MSG:
-      print(pylibtas.receiveString())
+      logging.warning(pylibtas.receiveString())
     elif msg == pylibtas.MSGB_ENCODE_FAILED:
       raise RuntimeError('MSGB_ENCODE_FAILED')
     elif msg == pylibtas.MSGB_FRAMECOUNT_TIME:
@@ -134,12 +135,12 @@ class FrameProcessor(object):
     self.optimizer_critic = optim.Adam(list(self.critic.parameters()), lr=FLAGS.lr)
 
     if FLAGS.pretrained_model_path:
-        print('Loading pretrained model from %s' % FLAGS.pretrained_model_path)
+        logging.info('Loading pretrained model from %s' % FLAGS.pretrained_model_path)
         self.actor.load_state_dict(torch.load(
             FLAGS.pretrained_model_path + '/celeste_model_actor_%s.pt' % FLAGS.pretrained_suffix))
         self.critic.load_state_dict(torch.load(
             FLAGS.pretrained_model_path + '/celeste_model_critic_%s.pt' % FLAGS.pretrained_suffix))
-        print('Done!')
+        logging.info('Done!')
 
   def _reward_function_for_current_state(self, x, y):
     """Returns (rewards, should_end_episode) given state."""
@@ -178,8 +179,8 @@ class FrameProcessor(object):
       V = self.critic.forward(frames).view([])
       R = FLAGS.reward_decay_multiplier * R + self.rewards[i]
 
-      if FLAGS.bellman_lookahead_frames == 0 or i == num_frames - i:
-        A = 0
+      if FLAGS.bellman_lookahead_frames == 0 or i == num_frames - 1:
+        A = R - V
       else:
         blf = min(FLAGS.bellman_lookahead_frames, num_frames - 1 - i)
         assert blf > 0
@@ -235,10 +236,10 @@ class FrameProcessor(object):
     y, x, state = self.det.detect(frame, prior_coord=self.prior_coord)
     if y is not None:
       self.prior_coord = np.array([y, x]).astype(np.int)
-      print('Character Location: (%f, %f), State: %d' % (y, x, state))
+      logging.debug('Character Location: (%f, %f), State: %d' % (y, x, state))
     else:
       self.prior_coord = None
-      print('Character Location: Not Found! State: %d' % state)
+      logging.debug('Character Location: Not Found! State: %d' % state)
 
     if FLAGS.interactive:
       button_input = input('Buttons please! (comma separated)').split(',')
@@ -334,9 +335,7 @@ def Speedrun():
   shared_config.recycle_threads = False
   shared_config.write_savefiles_on_exit = False
   shared_config.main_gettimes_threshold = [-1, -1, -1, 100, -1, -1]
-  shared_config.includeFlags = (
-    pylibtas.LCF_ERROR |
-    pylibtas.LCF_WARNING)
+  shared_config.includeFlags = pylibtas.LCF_ERROR
   pylibtas.sendSharedConfig(shared_config)
 
   pylibtas.sendMessage(pylibtas.MSGN_ENCODING_SEGMENT)
@@ -387,8 +386,8 @@ def Speedrun():
 
 
 if __name__ == "__main__":
-  tensorboard = subprocess.Popen(['tensorboard', '--logdir',
-      os.path.join(os.path.abspath(os.path.dirname(__file__)), FLAGS.log_dir)])
+  abs_log_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), FLAGS.log_dir)
+  tensorboard = subprocess.Popen(['tensorboard', '--logdir', abs_log_dir], stderr=subprocess.DEVNULL)
   try:
     Speedrun()
   finally:
@@ -396,5 +395,5 @@ if __name__ == "__main__":
     if tensorboard:
       tensorboard.terminate()
     if game_pid != -1:
-      print('killing game %d' % game_pid)
+      logging.info('killing game %d' % game_pid)
       os.kill(game_pid, signal.SIGKILL)

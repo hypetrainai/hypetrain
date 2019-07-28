@@ -1,4 +1,7 @@
+from absl import logging
+logging.set_verbosity(logging.INFO)
 import argparse
+import numbers
 import os
 import pprint
 import sys
@@ -72,16 +75,19 @@ class _ModuleWrapper(ModuleType):
     def FLAGS(self):
         if not self._FLAGS:
             if _run_from_ipython():
-                FLAGS = self.parser.parse_args([])
+                flags = self.parser.parse_args([])
             else:
-                FLAGS = self.parser.parse_args()
-            pprint.pprint(vars(FLAGS))
+                flags = self.parser.parse_args()
+            flags_dict = vars(flags)
+            logging.info('\n%s', pprint.pformat(flags_dict))
 
-            os.makedirs(FLAGS.log_dir, exist_ok=True)
-            train_dir = os.path.join(FLAGS.log_dir, 'train')
+            os.makedirs(flags.log_dir, exist_ok=True)
+            train_dir = os.path.join(flags.log_dir, 'train')
             os.makedirs(train_dir, exist_ok=True)
             self.GLOBAL.summary_writer = SummaryWriter(train_dir)
-            self._FLAGS = FLAGS
+            self.GLOBAL.summary_writer.add_hparams(
+                {k: v for k, v in flags_dict.items() if isinstance(v, numbers.Number)}, {})
+            self._FLAGS = flags
         return self._FLAGS
 
 sys.modules[__name__] = _ModuleWrapper(__name__)
