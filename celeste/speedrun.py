@@ -125,10 +125,10 @@ class FrameProcessor(object):
     fake_inputs = torch.zeros(1, FLAGS.image_channels * FLAGS.context_frames,
                               FLAGS.image_height, FLAGS.image_width)
     self.actor = Network()
-    #GLOBAL.summary_writer.add_graph(self.actor, fake_inputs, verbose=False)
+    # GLOBAL.summary_writer.add_graph(self.actor, fake_inputs)
     self.actor = nn.DataParallel(self.actor.cuda())
     self.critic = Network(out_dim=1, use_softmax=False)
-    #GLOBAL.summary_writer.add_graph(self.critic, fake_inputs, verbose=False)
+    # GLOBAL.summary_writer.add_graph(self.critic, fake_inputs)
     self.critic = nn.DataParallel(self.critic.cuda())
     self.optimizer_actor = optim.Adam(list(self.actor.parameters()), lr=FLAGS.lr)
     self.optimizer_critic = optim.Adam(list(self.critic.parameters()), lr=FLAGS.lr)
@@ -193,20 +193,17 @@ class FrameProcessor(object):
     Vs = list(reversed(Vs))
     Rs = list(reversed(Rs))
     As = list(reversed(As))
-    print(list(Rs))
-    print(list(Vs))
-    print([i for i in zip(Rs, Vs)])
     plt.figure()
-    plt.plot(list(range(num_frames)), list(Vs))
+    plt.plot(list(range(num_frames)), Vs)
     GLOBAL.summary_writer.add_figure("loss/value", plt.gcf(), self.episode_number)
     plt.figure()
-    plt.plot(list(range(num_frames)), list(Rs))
+    plt.plot(list(range(num_frames)), Rs)
     GLOBAL.summary_writer.add_figure("loss/reward", plt.gcf(), self.episode_number)
     plt.figure()
     plt.plot(list(range(num_frames)), [(R - V)**2 for R, V in zip(Rs, Vs)])
     GLOBAL.summary_writer.add_figure("loss/value_reward_diff", plt.gcf(), self.episode_number)
     plt.figure()
-    plt.plot(list(range(num_frames - 1)), list(As))
+    plt.plot(list(range(num_frames - 1)), As)
     GLOBAL.summary_writer.add_figure("loss/advantage", plt.gcf(), self.episode_number)
 
     # Start next episode.
@@ -383,11 +380,13 @@ def Speedrun():
 
 
 if __name__ == "__main__":
-  tensorboard = subprocess.Popen(['tensorboard', '--logdir', FLAGS.log_dir])
+  tensorboard = subprocess.Popen(
+      ['tensorboard', '--logdir', os.path.join(os.path.dirname(__file__), FLAGS.log_dir)])
 
   try:
     Speedrun()
   finally:
+    GLOBAL.summary_writer.close()
     if tensorboard:
       tensorboard.terminate()
     if game_pid != -1:
