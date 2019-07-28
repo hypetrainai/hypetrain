@@ -3,16 +3,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import submodules
+from GLOBALS import FLAGS, GLOBAL
 
 class ResNetIm2Value(nn.Module):
     
     
-    def __init__(self, FLAGS, out_dim = None):
+    def __init__(self, out_dim = None, use_softmax=True):
         super(ResNetIm2Value, self).__init__()
         
         #960 x 540
         
-        self.FLAGS = FLAGS
+        self.use_softmax = use_softmax
         self.num_actions = FLAGS.num_actions
         if out_dim is not None:
             self.num_actions = out_dim
@@ -59,7 +60,8 @@ class ResNetIm2Value(nn.Module):
         out = self.operation_stack(input)
         out = out.view(input.shape[0],-1)
         out = self.operation_stack_linear(out)
-        out = F.softmax(out,1)
+        if self.use_softmax:
+            out = F.softmax(out,1)
         
         return out
     
