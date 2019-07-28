@@ -170,22 +170,26 @@ class FrameProcessor(object):
       frames = torch.reshape(frames, [1, -1, FLAGS.image_height, FLAGS.image_width])
       V = self.critic.forward(frames).view([])
     
-      if not last_V:
-        last_V = FLAGS.reward_decay_multiplier*V.detach()
-        continue
+
         
       R += self.rewards[i]
       Vs.append(V.detach().cpu().numpy())
       Rs.append(R)
-
+      V_bellman = R + last_V  
+      A = V_bellman - V
+      As.append(A.detach().cpu().numpy())
+        
+      if not last_V:
+        last_V = FLAGS.reward_decay_multiplier*V.detach()
+        continue
+        
       self.optimizer_critic.zero_grad()
-      V_bellman = R + last_V
+
     
       ((V_bellman - V)**2).backward(retain_graph=True)
       self.optimizer_critic.step()
 
-      A = V_bellman - V
-      As.append(A.detach().cpu().numpy())
+
       softmax = self.actor.forward(frames)
       entropy = torch.distributions.categorical.Categorical(probs=softmax).entropy()
       (-1.0 * torch.log(softmax[0, self.sampled_action[i]]) * A - FLAGS.entropy_weight * entropy).backward()
