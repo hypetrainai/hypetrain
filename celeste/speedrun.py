@@ -383,12 +383,13 @@ def Speedrun():
 
 
 if __name__ == "__main__":
-  subprocess.Popen(['tensorboard', '--logdir', FLAGS.log_dir])
+  tensorboard = subprocess.Popen(['tensorboard', '--logdir', FLAGS.log_dir])
 
   try:
     Speedrun()
-  except:
+  finally:
+    if tensorboard:
+      tensorboard.terminate()
     if game_pid != -1:
       print('killing game %d' % game_pid)
       os.kill(game_pid, signal.SIGKILL)
-    raise
