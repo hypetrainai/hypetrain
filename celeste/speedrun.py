@@ -157,8 +157,8 @@ class FrameProcessor(object):
     #GLOBAL.summary_writer.add_video('input_frames', self.frame_buffer, self.episode_number, fps=60)
 
     R = 0
-    if self.rewards[-1] > -10:
-      R = 100000
+    #if self.rewards[-1] > -10:
+    #  R = 100000
 
     Vs = []
     Rs = []
@@ -169,16 +169,18 @@ class FrameProcessor(object):
       frames = self.frame_buffer[:, i:i+FLAGS.context_frames]
       frames = torch.reshape(frames, [1, -1, FLAGS.image_height, FLAGS.image_width])
       V = self.critic.forward(frames).view([])
+    
+      if not last_V:
+        last_V = FLAGS.reward_decay_multiplier*V.detach()
+        continue
+        
       R += self.rewards[i]
       Vs.append(V.detach().cpu().numpy())
       Rs.append(R)
 
-      if not last_V:
-        last_V = V.detach()
-        continue
-
       self.optimizer_critic.zero_grad()
-      V_bellman = Vs[-2] * FLAGS.reward_decay_multiplier + self.rewards[i]
+      V_bellman = R + last_V
+    
       ((V_bellman - V)**2).backward(retain_graph=True)
       self.optimizer_critic.step()
 
@@ -188,6 +190,7 @@ class FrameProcessor(object):
       entropy = torch.distributions.categorical.Categorical(probs=softmax).entropy()
       (-1.0 * torch.log(softmax[0, self.sampled_action[i]]) * A - FLAGS.entropy_weight * entropy).backward()
       R *= FLAGS.reward_decay_multiplier
+      last_V *= FLAGS.reward_decay_multiplier
     self.optimizer_actor.step()
 
     Vs = list(reversed(Vs))
