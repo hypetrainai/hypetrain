@@ -177,7 +177,14 @@ class FrameProcessor(object):
       R += self.rewards[i]
       Vs.append(V.detach().cpu().numpy())
       Rs.append(R)
-      V_bellman = R + last_V  
+    
+      if len(Vs) > FLAGS.bellman_lookahead_frames:
+          lam = FLAGS.reward_decay_multiplier
+          blf = FLAGS.bellman_lookahead_frames
+          V_bellman = R - (lam**(len(Vs)-blf))*Rs[-1*blf] + Vs[-1*blf]
+      else:
+          V_bellman = R + last_V  
+      
       A = V_bellman - V
       As.append(A.detach().cpu().numpy())
         
@@ -269,7 +276,7 @@ class FrameProcessor(object):
         self.frame_buffer = torch.cat([self.frame_buffer, cuda_frame.unsqueeze(1)], 1)
         if self.prior_coord is None:
           # Assume death
-          self.rewards.append(-50)
+          self.rewards.append(self.rewards[-1])
           return self.finishEpisode()
         else:
           self.rewards.append(self._reward_function_for_current_state(y, x))
