@@ -141,7 +141,7 @@ class FrameProcessor(object):
         print('Done!')
 
   
-  def _reward_function_for_current_state(slef, y,x):
+  def _reward_function_for_current_state(self, y,x):
     return -1.0*np.sqrt((x - self.goal[1])**2 + (y - self.goal[0])**2)
 
   def finishEpisode(self):
