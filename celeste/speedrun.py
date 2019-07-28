@@ -104,6 +104,7 @@ def sample_action(softmax):
     sample_mapped = [class2button[int(sample[i].numpy())] for i in range(len(sample))]
     return sample, sample_mapped
 
+
 class FrameProcessor(object):
 
   def __init__(self):
@@ -140,9 +141,18 @@ class FrameProcessor(object):
             FLAGS.pretrained_model_path + '/celeste_model_critic_%s.pt' % FLAGS.pretrained_suffix))
         print('Done!')
 
-  
-  def _reward_function_for_current_state(self, y, x):
-    return -1.0 * np.sqrt((x - self.goal[1])**2 + (y - self.goal[0])**2)
+  def _reward_function_for_current_state(self, x, y):
+    """Returns (rewards, should_end_episode) given state."""
+    if self.prior_coord is None:
+      # Assume death
+      return 0, True  # TODO: death penalty
+    dist_to_goal = np.sqrt((x - self.goal[1])**2 + (y - self.goal[0])**2)
+    reward = -1.0 * dist_to_goal
+    if dist_to_goal < 10:
+      return reward + 100, True
+    if frame_counter - self.episode_start >= FLAGS.episode_length:
+      return reward, True
+    return reward, False
 
   def finishEpisode(self):
     assert self.episode_start >= 0
@@ -152,72 +162,58 @@ class FrameProcessor(object):
     assert self.frame_buffer.shape[1] == num_frames + FLAGS.context_frames, (num_frames, self.frame_buffer.shape[1])
 
     GLOBAL.summary_writer.add_scalar('episode_length', num_frames, self.episode_number)
-    GLOBAL.summary_writer.add_scalar('final_dist_to_goal', self.rewards[-1], self.episode_number)
-    GLOBAL.summary_writer.add_scalar('closest_dist_to_goal', min(self.rewards), self.episode_number)
+    GLOBAL.summary_writer.add_scalar('final_reward', self.rewards[-1], self.episode_number)
+    GLOBAL.summary_writer.add_scalar('best_reward', max(self.rewards), self.episode_number)
     #GLOBAL.summary_writer.add_video('input_frames', self.frame_buffer, self.episode_number, fps=60)
 
     R = 0
-    #if self.rewards[-1] > -10:
-    #  R = 100000
-
     Vs = []
     Rs = []
     As = []
-    last_V = None
+    actor_losses = []
     self.optimizer_actor.zero_grad()
     for i in reversed(range(num_frames)):
       frames = self.frame_buffer[:, i:i+FLAGS.context_frames]
       frames = torch.reshape(frames, [1, -1, FLAGS.image_height, FLAGS.image_width])
       V = self.critic.forward(frames).view([])
-    
-      if not last_V:
-        last_V = FLAGS.reward_decay_multiplier*V.detach()
-        continue    
-        
-      R += self.rewards[i]
+      R = FLAGS.reward_decay_multiplier * R + self.rewards[i]
+
+      if FLAGS.bellman_lookahead_frames == 0 or i == num_frames - i:
+        A = 0
+      else:
+        blf = min(FLAGS.bellman_lookahead_frames, num_frames - 1 - i)
+        assert blf > 0
+        V_bellman = R - (FLAGS.reward_decay_multiplier**blf) * Rs[-blf] + Vs[-blf]
+        A = V_bellman - V
+
       Vs.append(V.detach().cpu().numpy())
       Rs.append(R)
-    
-      if len(Vs) > FLAGS.bellman_lookahead_frames:
-          lam = FLAGS.reward_decay_multiplier
-          blf = FLAGS.bellman_lookahead_frames
-          V_bellman = R - (lam**(len(Vs)-blf))*Rs[-1*blf] + Vs[-1*blf]
-      else:
-          V_bellman = R + last_V  
-      
-      A = V_bellman - V
       As.append(A.detach().cpu().numpy())
-        
 
-        
       self.optimizer_critic.zero_grad()
-
-      ((V_bellman - V)**2).backward(retain_graph=True)
+      (A**2).backward(retain_graph=True)
       self.optimizer_critic.step()
-
 
       softmax = self.actor.forward(frames)
       entropy = torch.distributions.categorical.Categorical(probs=softmax).entropy()
-      (-1.0 * torch.log(softmax[0, self.sampled_action[i]]) * A - FLAGS.entropy_weight * entropy).backward()
-      R *= FLAGS.reward_decay_multiplier
-      last_V *= FLAGS.reward_decay_multiplier
+      actor_loss = (-1.0 * torch.log(softmax[0, self.sampled_action[i]]) * A
+                    - FLAGS.entropy_weight * entropy)
+      actor_losses.append(actor_loss.detach().cpu().numpy())
+      actor_loss.backward()
     self.optimizer_actor.step()
 
-    Vs = list(reversed(Vs))
-    Rs = list(reversed(Rs))
-    As = list(reversed(As))
     plt.figure()
-    plt.plot(Vs)
+    plt.plot(list(reversed(Vs)))
     GLOBAL.summary_writer.add_figure("loss/value", plt.gcf(), self.episode_number)
     plt.figure()
-    plt.plot(Rs)
+    plt.plot(list(reversed(Rs)))
     GLOBAL.summary_writer.add_figure("loss/reward", plt.gcf(), self.episode_number)
-    # plt.figure()
-    # plt.plot(list(range(num_frames)), [(R - V)**2 for R, V in zip(Rs, Vs)])
-    # GLOBAL.summary_writer.add_figure("loss/value_reward_diff", plt.gcf(), self.episode_number)
     plt.figure()
-    plt.plot(As)
+    plt.plot(list(reversed(As)))
     GLOBAL.summary_writer.add_figure("loss/advantage", plt.gcf(), self.episode_number)
+    plt.figure()
+    plt.plot(list(reversed(actor_losses)))
+    GLOBAL.summary_writer.add_figure("loss/actor_loss", plt.gcf(), self.episode_number)
 
     # Start next episode.
     loadstate()
@@ -274,13 +270,9 @@ class FrameProcessor(object):
         self.sampled_action = []
       else:
         self.frame_buffer = torch.cat([self.frame_buffer, cuda_frame.unsqueeze(1)], 1)
-        if self.prior_coord is None:
-          # Assume death
-          self.rewards.append(self.rewards[-1])
-          return self.finishEpisode()
-        else:
-          self.rewards.append(self._reward_function_for_current_state(y, x))
-        if frame_counter - self.episode_start >= FLAGS.episode_length:
+        reward, should_end_episode = self._reward_function_for_current_state(x, y)
+        self.rewards.append(reward)
+        if should_end_episode:
           return self.finishEpisode()
       frames = self.frame_buffer[:, -FLAGS.context_frames:]
       frames = torch.reshape(frames, [1, -1, FLAGS.image_height, FLAGS.image_width])
