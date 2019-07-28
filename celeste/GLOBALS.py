@@ -77,7 +77,9 @@ class _ModuleWrapper(ModuleType):
             pprint.pprint(vars(FLAGS))
 
             os.makedirs(FLAGS.log_dir, exist_ok=True)
-            self.GLOBAL.summary_writer = SummaryWriter(FLAGS.log_dir)
+            train_dir = os.path.join(FLAGS.log_dir, 'train')
+            os.makedirs(train_dir, exist_ok=True)
+            self.GLOBAL.summary_writer = SummaryWriter(train_dir)
             self._FLAGS = FLAGS
         return self._FLAGS
 

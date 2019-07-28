@@ -133,9 +133,6 @@ class FrameProcessor(object):
     self.optimizer_actor = optim.Adam(list(self.actor.parameters()), lr=FLAGS.lr)
     self.optimizer_critic = optim.Adam(list(self.critic.parameters()), lr=FLAGS.lr)
 
-    if not os.path.isdir(FLAGS.log_dir):
-        os.path.makedirs(FLAGS.log_dir)
-
     if FLAGS.pretrained_model_path:
         print('Loading pretrained model from %s' % FLAGS.pretrained_model_path)
         self.actor.load_state_dict(torch.load(
@@ -212,12 +209,14 @@ class FrameProcessor(object):
     self.episode_start = -1
     self.episode_number += 1
     if self.episode_number % FLAGS.save_every == 0:
-        model_dir_actor = FLAGS.log_dir + '/celeste_model_actor_%d.pt' % self.episode_number
-        model_dir_critic = FLAGS.log_dir + '/celeste_model_critic_%d.pt' % self.episode_number
-        torch.save(self.actor.state_dict(), model_dir_actor)
-        torch.save(self.critic.state_dict(), model_dir_critic)
-        torch.save(self.actor.state_dict(), FLAGS.log_dir + '/celeste_model_actor_latest.pt')
-        torch.save(self.critic.state_dict(), FLAGS.log_dir + '/celeste_model_critic_latest.pt')
+        torch.save(self.actor.state_dict(), os.path.join(FLAGS.log_dir,
+            'train/celeste_model_actor_%d.pt' % self.episode_number))
+        torch.save(self.critic.state_dict(), os.path.join(FLAGS.log_dir,
+            'train/celeste_model_critic_%d.pt' % self.episode_number))
+        torch.save(self.actor.state_dict(), os.path.join(FLAGS.log_dir,
+            'train/celeste_model_actor_latest.pt'))
+        torch.save(self.critic.state_dict(), os.path.join(FLAGS.log_dir,
+            'train/celeste_model_critic_latest.pt'))
     return self.processFrame(self.start_frame)
 
   def processFrame(self, frame):
@@ -380,9 +379,8 @@ def Speedrun():
 
 
 if __name__ == "__main__":
-  tensorboard = subprocess.Popen(
-      ['tensorboard', '--logdir', os.path.join(os.path.abspath(os.path.dirname(__file__)), FLAGS.log_dir)])
-
+  tensorboard = subprocess.Popen(['tensorboard', '--logdir',
+      os.path.join(os.path.abspath(os.path.dirname(__file__)), FLAGS.log_dir)])
   try:
     Speedrun()
   finally:
