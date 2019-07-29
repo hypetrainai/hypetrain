@@ -24,7 +24,7 @@ from model import ResNetIm2Value as Network
 
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
-flags.DEFINE_string('logdir', 'trained_models/firstmodel_bellman_lastV_higherentropy_12lookahead', 'logdir')
+flags.DEFINE_string('logdir', 'trained_models/firstmodel_test', 'logdir')
 
 flags.DEFINE_integer('save_every', 100, 'every X number of steps save a model')
 
@@ -42,7 +42,7 @@ flags.DEFINE_integer('num_actions', 72, 'number of actions')
 flags.DEFINE_float('lr', 0.0002, 'learning rate')
 flags.DEFINE_float('entropy_weight', 0.05, 'weight for entropy loss')
 flags.DEFINE_float('reward_decay_multiplier', 0.95, 'reward function decay multiplier')
-flags.DEFINE_integer('episode_length', 200, 'episode length')
+flags.DEFINE_integer('episode_length', 300, 'episode length')
 flags.DEFINE_integer('context_frames', 30, 'number of frames passed to the network')
 flags.DEFINE_integer('bellman_lookahead_frames', 12, 'number of frames to consider for bellman rollout')
 
@@ -145,7 +145,7 @@ class FrameProcessor(object):
     self.start_frame_saving = False
     self.saved_frames = 0
 
-    self.goal = (440, 730)
+    self.goal = (107, 611)
 
     self.episode_number = 0
     self.episode_start = -1
