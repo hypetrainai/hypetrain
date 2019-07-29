@@ -328,7 +328,7 @@ class FrameProcessor(object):
     
       # generate the full frame input by concatenating gaussian heat maps. 
       if y is None:
-        gaussian_current_position = torch.zeros(frame[:, :, 0].shape).cuda()
+        gaussian_current_position = torch.zeros(frame[:, :, 0].shape).cuda().unsqueeze(0).unsqueeze(0)
       else:
         gaussian_current_position = torch.tensor(generate_gaussian_heat_map(frame[:, :, 0].shape, y, x)).float().cuda()
       gaussian_goal_position = torch.tensor(generate_gaussian_heat_map(frame[:, :, 0].shape, self.goal_y, self.goal_x)).float().cuda()
