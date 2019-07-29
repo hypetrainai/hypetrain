@@ -5,7 +5,7 @@
   <WindowScale>3</WindowScale>
   <ViewportPadding>0</ViewportPadding>
   <VSync>false</VSync>
-  <DisableFlashes>false</DisableFlashes>
+  <DisableFlashes>true</DisableFlashes>
   <DisableScreenShake>true</DisableScreenShake>
   <Rumble>false</Rumble>
   <MusicVolume>0</MusicVolume>

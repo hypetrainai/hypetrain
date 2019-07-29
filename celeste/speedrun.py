@@ -196,7 +196,11 @@ class FrameProcessor(object):
     GLOBAL.summary_writer.add_scalar('episode_length', num_frames, self.episode_number)
     GLOBAL.summary_writer.add_scalar('final_reward', self.rewards[-1], self.episode_number)
     GLOBAL.summary_writer.add_scalar('best_reward', max(self.rewards), self.episode_number)
-    GLOBAL.summary_writer.add_image('trajectory', torch.mean(self.frame_buffer, dim=[0, 1]), self.episode_number)
+    np_frames = self.frame_buffer[0, -num_frames:].detach().cpu().numpy()
+    average_frame = np.mean(np_frames, axis=0)
+    diff_frames = np_frames - np.expand_dims(average_frame, 0)
+    trajectory = average_frame + np.average(diff_frames, weights=np.linspace(0.3, 1.0, num_frames), axis=0)
+    GLOBAL.summary_writer.add_image('trajectory', trajectory, self.episode_number)
     # GLOBAL.summary_writer.add_video('input_frames', self.frame_buffer, self.episode_number, fps=60)
 
     R = 0
@@ -292,7 +296,7 @@ class FrameProcessor(object):
         self.saved_frames += 1
 
     if not FLAGS.interactive:
-      cuda_frame = torch.tensor(frame).float().permute(2, 0, 1).unsqueeze(0).cuda()
+      cuda_frame = torch.tensor(frame).float().permute(2, 0, 1).unsqueeze(0).cuda() / 255.0
       if self.episode_start < 0:
         if self.start_frame is None:
           savestate()
