@@ -141,9 +141,6 @@ class FrameProcessor(object):
 
   def __init__(self):
     self.det = celeste_detector.CelesteDetector()
-    self.prior_coord = None
-    self.start_frame_saving = False
-    self.saved_frames = 0
 
     self.goal = (107, 611)
 
@@ -151,6 +148,7 @@ class FrameProcessor(object):
     self.episode_start = -1
     self.start_frame = None
     self.frame_buffer = None
+    self.trajectory = []
     self.rewards = []
     self.sampled_action = []
 
@@ -165,6 +163,9 @@ class FrameProcessor(object):
     self.optimizer_actor = optim.Adam(list(self.actor.parameters()), lr=FLAGS.lr)
     self.optimizer_critic = optim.Adam(list(self.critic.parameters()), lr=FLAGS.lr)
 
+    self.start_frame_saving = False
+    self.saved_frames = 0
+
     if FLAGS.pretrained_model_path:
         logging.info('Loading pretrained model from %s' % FLAGS.pretrained_model_path)
         self.actor.load_state_dict(torch.load(
@@ -173,12 +174,13 @@ class FrameProcessor(object):
             FLAGS.pretrained_model_path + '/celeste_model_critic_%s.pt' % FLAGS.pretrained_suffix))
         logging.info('Done!')
 
-  def _reward_function_for_current_state(self, x, y):
+  def _reward_function_for_current_state(self):
     """Returns (rewards, should_end_episode) given state."""
-    if self.prior_coord is None:
+    y, x = self.trajectory[-1]
+    if y is None:
       # Assume death
       return 0, True  # TODO: death penalty
-    dist_to_goal = np.sqrt((x - self.goal[1])**2 + (y - self.goal[0])**2)
+    dist_to_goal = np.sqrt((y - self.goal[0])**2 + (x - self.goal[1])**2)
     reward = -1.0 * dist_to_goal
     if dist_to_goal < 10:
       return reward + 100, True
@@ -191,16 +193,15 @@ class FrameProcessor(object):
     num_frames = frame_counter - self.episode_start
     assert len(self.rewards) == num_frames, (num_frames, len(self.rewards))
     assert len(self.sampled_action) == num_frames, (num_frames, len(self.sampled_action))
+    assert len(self.trajectory) == num_frames + 1, (num_frames + 1, len(self.trajectory))
     assert self.frame_buffer.shape[1] == num_frames + FLAGS.context_frames, (num_frames, self.frame_buffer.shape[1])
 
     GLOBAL.summary_writer.add_scalar('episode_length', num_frames, self.episode_number)
     GLOBAL.summary_writer.add_scalar('final_reward', self.rewards[-1], self.episode_number)
     GLOBAL.summary_writer.add_scalar('best_reward', max(self.rewards), self.episode_number)
-    np_frames = self.frame_buffer[0, -num_frames:].detach().cpu().numpy()
+    np_frames = self.frame_buffer[0, -(num_frames+1):].detach().cpu().numpy()
     average_frame = np.mean(np_frames, axis=0)
-    diff_frames = np_frames - np.expand_dims(average_frame, 0)
-    trajectory = average_frame + np.average(diff_frames, weights=np.linspace(0.3, 1.0, num_frames), axis=0)
-    GLOBAL.summary_writer.add_image('trajectory', trajectory, self.episode_number)
+    GLOBAL.summary_writer.add_image('trajectory', average_frame, self.episode_number)
     # GLOBAL.summary_writer.add_video('input_frames', self.frame_buffer, self.episode_number, fps=60)
 
     R = 0
@@ -254,7 +255,6 @@ class FrameProcessor(object):
 
     # Start next episode.
     loadstate()
-    self.prior_coord = None
     self.episode_start = -1
     self.episode_number += 1
     logging.info('Starting episode %d', self.episode_number)
@@ -270,14 +270,6 @@ class FrameProcessor(object):
     return self.processFrame(self.start_frame)
 
   def processFrame(self, frame):
-    y, x, state = self.det.detect(frame, prior_coord=self.prior_coord)
-    if y is not None:
-      self.prior_coord = np.array([y, x]).astype(np.int)
-      logging.debug('Character Location: (%f, %f), State: %d' % (y, x, state))
-    else:
-      self.prior_coord = None
-      logging.debug('Character Location: Not Found! State: %d' % state)
-
     if FLAGS.interactive:
       button_input = input('Buttons please! (comma separated)').split(',')
       button_input = []
@@ -300,15 +292,19 @@ class FrameProcessor(object):
       if self.episode_start < 0:
         if self.start_frame is None:
           savestate()
-        assert self.prior_coord is not None
         self.episode_start = frame_counter
         self.start_frame = frame
         self.frame_buffer = torch.stack([cuda_frame] * FLAGS.context_frames, 1)
+        y, x, state = self.det.detect(frame)
+        assert state != -1
+        self.trajectory = [(y, x)]
         self.rewards = []
         self.sampled_action = []
       else:
         self.frame_buffer = torch.cat([self.frame_buffer, cuda_frame.unsqueeze(1)], 1)
-        reward, should_end_episode = self._reward_function_for_current_state(x, y)
+        y, x, _ = self.det.detect(frame, prior_coord=self.trajectory[-1])
+        self.trajectory.append((y, x))
+        reward, should_end_episode = self._reward_function_for_current_state()
         self.rewards.append(reward)
         if should_end_episode:
           return self.finishEpisode()
