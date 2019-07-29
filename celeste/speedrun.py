@@ -18,8 +18,8 @@ from torch import optim
 
 from GLOBALS import GLOBAL
 import celeste_detector
-from class2button import class2button
 from model import ResNetIm2Value as Network
+import utils
 
 
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
@@ -133,7 +133,7 @@ button_dict = {
 def sample_action(softmax):
     softmax = softmax.detach().cpu()
     sample = torch.distributions.categorical.Categorical(probs=softmax).sample()
-    sample_mapped = [class2button[int(sample[i].numpy())] for i in range(len(sample))]
+    sample_mapped = [utils.class2button(int(sample[i].numpy())) for i in range(len(sample))]
     return sample, sample_mapped
 
 
@@ -199,10 +199,10 @@ class FrameProcessor(object):
     GLOBAL.summary_writer.add_scalar('episode_length', num_frames, self.episode_number)
     GLOBAL.summary_writer.add_scalar('final_reward', self.rewards[-1], self.episode_number)
     GLOBAL.summary_writer.add_scalar('best_reward', max(self.rewards), self.episode_number)
-    np_frames = self.frame_buffer[0, -(num_frames+1):].detach().cpu().numpy()
-    average_frame = np.mean(np_frames, axis=0)
-    GLOBAL.summary_writer.add_image('trajectory', average_frame, self.episode_number)
     # GLOBAL.summary_writer.add_video('input_frames', self.frame_buffer, self.episode_number, fps=60)
+
+    average_frame = np.mean(self.frame_buffer[0, -(num_frames+1):].detach().cpu().numpy(), axis=0)
+    GLOBAL.summary_writer.add_figure('trajectory', utils.plotTrajectory(average_frame, self.trajectory), self.episode_number)
 
     R = 0
     Vs = []

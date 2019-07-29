@@ -15,9 +15,9 @@ class ResNetIm2Value(nn.Module):
         super(ResNetIm2Value, self).__init__()
 
         self.use_softmax = use_softmax
-        self.num_actions = FLAGS.num_actions
+        self.out_dim = FLAGS.num_actions
         if out_dim is not None:
-            self.num_actions = out_dim
+            self.out_dim = out_dim
         self.H = FLAGS.image_height
         self.W = FLAGS.image_width
         self.C = FLAGS.image_channels
@@ -50,7 +50,7 @@ class ResNetIm2Value(nn.Module):
         layer_defs_linear.append(nn.Linear(512, 256))
         #layer_defs_linear.append(nn.BatchNorm1d(256))
         layer_defs_linear.append(nn.ReLU())
-        layer_defs_linear.append(nn.Linear(256, self.num_actions))
+        layer_defs_linear.append(nn.Linear(256, self.out_dim))
 
         self.operation_stack = nn.Sequential(*layer_defs)
         self.operation_stack_linear = nn.Sequential(*layer_defs_linear)
