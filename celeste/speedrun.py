@@ -90,7 +90,7 @@ def loadstate(index=1):
   pylibtas.sendMessage(pylibtas.MSGN_EXPOSE)
 
 
-def startNextFrame():
+def start_next_frame():
   msg = pylibtas.receiveMessage()
   while msg != pylibtas.MSGB_START_FRAMEBOUNDARY:
     if msg == pylibtas.MSGB_WINDOW_ID:
@@ -154,6 +154,8 @@ class FrameProcessor(object):
   def __init__(self):
     self.det = celeste_detector.CelesteDetector()
 
+    self.goal_y = FLAGS.goal_y
+    self.goal_x = FLAGS.goal_x
     self.episode_number = 0
     self.episode_start = -1
     self.start_frame = None
@@ -184,13 +186,17 @@ class FrameProcessor(object):
             FLAGS.pretrained_model_path + '/celeste_model_critic_%s.pt' % FLAGS.pretrained_suffix))
         logging.info('Done!')
 
+  def _generate_goal_state(self):
+    self.goal_y = FLAGS.goal_y
+    self.goal_x = FLAGS.goal_x
+
   def _reward_function_for_current_state(self):
     """Returns (rewards, should_end_episode) given state."""
     y, x = self.trajectory[-1]
     if y is None:
       # Assume death
       return 0, True  # TODO: death penalty
-    dist_to_goal = np.sqrt((y - FLAGS.goal_y)**2 + (x - FLAGS.goal_x)**2)
+    dist_to_goal = np.sqrt((y - self.goal_y)**2 + (x - self.goal_x)**2)
     reward = -1.0 * dist_to_goal
     if dist_to_goal < 10:
       return reward + 100, True
@@ -198,7 +204,7 @@ class FrameProcessor(object):
       return reward, True
     return reward, False
 
-  def finishEpisode(self):
+  def _finish_episode(self):
     assert self.episode_start >= 0
     num_frames = frame_counter - self.episode_start
     assert len(self.rewards) == num_frames, (num_frames, len(self.rewards))
@@ -213,7 +219,7 @@ class FrameProcessor(object):
 
     average_frame = np.mean(self.frame_buffer[0, -(num_frames+1):, :3].detach().cpu().numpy(), axis=0)
     plt.figure()
-    plt.scatter(FLAGS.goal_x, FLAGS.goal_y, facecolors='none', edgecolors='r')
+    plt.scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')
     utils.plotTrajectory(average_frame, self.trajectory)
     GLOBAL.summary_writer.add_figure('trajectory', plt.gcf(), self.episode_number)
 
@@ -280,9 +286,9 @@ class FrameProcessor(object):
             'train/celeste_model_actor_latest.pt'))
         torch.save(self.critic.state_dict(), os.path.join(FLAGS.logdir,
             'train/celeste_model_critic_latest.pt'))
-    return self.processFrame(self.start_frame)
+    return self.process_frame(self.start_frame)
 
-  def processFrame(self, frame):
+  def process_frame(self, frame):
     if FLAGS.interactive:
       button_input = input('Buttons please! (comma separated)').split(',')
       button_input = []
@@ -304,6 +310,13 @@ class FrameProcessor(object):
       cuda_frame = torch.tensor(frame).float().permute(2, 0, 1).unsqueeze(0).cuda() / 255.0
 
       if self.episode_start < 0:
+        if self.start_frame is None:
+          savestate()
+        self.episode_start = frame_counter
+        self.start_frame = frame
+        self.rewards = []
+        self.sampled_action = []
+        self._generate_goal_state()
         prior_coord = None
       else:
         prior_coord = self.trajectory[-1]
@@ -312,28 +325,21 @@ class FrameProcessor(object):
         gaussian_current_position = torch.zeros(frame[:, :, 0].shape)
       else:
         gaussian_current_position = torch.tensor(generate_gaussian_heat_map(frame[:, :, 0].shape, y, x)).float().cuda()
-      gaussian_goal_position = torch.tensor(generate_gaussian_heat_map(frame[:, :, 0].shape, FLAGS.goal_y, FLAGS.goal_x)).float().cuda()
+      gaussian_goal_position = torch.tensor(generate_gaussian_heat_map(frame[:, :, 0].shape, self.goal_y, self.goal_x)).float().cuda()
       cuda_frame = torch.cat([cuda_frame, gaussian_current_position, gaussian_goal_position], 1)
 
       if self.episode_start < 0:
-        if self.start_frame is None:
-          savestate()
-
-        self.episode_start = frame_counter
-        self.start_frame = frame
-        self.frame_buffer = torch.stack([cuda_frame] * FLAGS.context_frames, 1)
         assert state != -1
+        self.frame_buffer = torch.stack([cuda_frame] * FLAGS.context_frames, 1)
         self.trajectory = [(y, x)]
-        self.rewards = []
-        self.sampled_action = []
       else:
         self.frame_buffer = torch.cat([self.frame_buffer, cuda_frame.unsqueeze(1)], 1)
-
         self.trajectory.append((y, x))
         reward, should_end_episode = self._reward_function_for_current_state()
         self.rewards.append(reward)
         if should_end_episode:
-          return self.finishEpisode()
+          return self._finish_episode()
+
       frames = self.frame_buffer[:, -FLAGS.context_frames:]
       frames = torch.reshape(frames, [1, -1, FLAGS.image_height, FLAGS.image_width])
       softmax = self.actor.forward(frames)
@@ -405,7 +411,7 @@ def Speedrun():
   processor = FrameProcessor()
   action_queue = queue.Queue()
   while True:
-    startNextFrame()
+    start_next_frame()
 
     msg = pylibtas.receiveMessage()
     assert msg == pylibtas.MSGB_FRAME_DATA, msg
@@ -428,7 +434,7 @@ def Speedrun():
       moviefile.getInputs(ai, frame_counter)
     else:
       if action_queue.empty():
-        for button_inputs in processor.processFrame(frame):
+        for button_inputs in processor.process_frame(frame):
           action_queue.put(button_inputs)
       button_input = action_queue.get()
       for button in button_input:
