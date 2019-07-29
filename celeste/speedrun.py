@@ -24,18 +24,21 @@ from model import ResNetIm2Value as Network
 
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
-flags.DEFINE_string('logdir', 'trained_models/firstmodel_test', 'logdir')
+flags.DEFINE_string('logdir', 'trained_models/testgaussian', 'logdir')
 
 flags.DEFINE_integer('save_every', 100, 'every X number of steps save a model')
 
 flags.DEFINE_string('movie_file', 'movie.ltm', 'if not empty string, load libTAS input movie file')
 flags.DEFINE_string('save_file', 'level1_screen4', 'if not empty string, use save file.')
+flags.DEFINE_integer('goal_y', 107, 'goal pixel coordinate in y')
+flags.DEFINE_integer('goal_x', 611, 'goal pixel coordinate in x')
+                 
 
 flags.DEFINE_boolean('interactive', False, 'interactive mode (enter buttons on command line)')
 
 flags.DEFINE_integer('image_height', 540, 'image height')
 flags.DEFINE_integer('image_width', 960, 'image width')
-flags.DEFINE_integer('image_channels', 3, 'image channels')
+flags.DEFINE_integer('image_channels', 5, 'image channels')
 
 flags.DEFINE_integer('num_actions', 72, 'number of actions')
 
@@ -136,13 +139,21 @@ def sample_action(softmax):
     sample_mapped = [class2button[int(sample[i].numpy())] for i in range(len(sample))]
     return sample, sample_mapped
 
+def generate_gaussian_heat_map(image_shape, y, x, sigma = 10, amplitude = 1.0):
+    H, W = image_shape
+    y_range = np.arange(0,H)
+    x_range = np.arange(0,W)
+    x_grid, y_grid = np.meshgrid(x_range, y_range)
+    
+    result = np.zeros([1,1,H,W])
+    result[0,0] = amplitude * np.exp((-1.0 * (y_grid - y)**2 + -1.0 * (x_grid - x)**2)/(2*sigma**2))
+    
+    return result
 
 class FrameProcessor(object):
 
   def __init__(self):
     self.det = celeste_detector.CelesteDetector()
-
-    self.goal = (107, 611)
 
     self.episode_number = 0
     self.episode_start = -1
@@ -173,14 +184,20 @@ class FrameProcessor(object):
         self.critic.load_state_dict(torch.load(
             FLAGS.pretrained_model_path + '/celeste_model_critic_%s.pt' % FLAGS.pretrained_suffix))
         logging.info('Done!')
+        
+  def _get_goal_state(self, goal = None):
+    if goal is None:
+        return (FLAGS.goal_y, FLAGS.goal_x)
+    else:
+        return goal
 
-  def _reward_function_for_current_state(self):
+  def _reward_function_for_current_state(self, goal):
     """Returns (rewards, should_end_episode) given state."""
     y, x = self.trajectory[-1]
     if y is None:
       # Assume death
       return 0, True  # TODO: death penalty
-    dist_to_goal = np.sqrt((y - self.goal[0])**2 + (x - self.goal[1])**2)
+    dist_to_goal = np.sqrt((y - goal[0])**2 + (x - goal[1])**2)
     reward = -1.0 * dist_to_goal
     if dist_to_goal < 10:
       return reward + 100, True
@@ -200,8 +217,8 @@ class FrameProcessor(object):
     GLOBAL.summary_writer.add_scalar('final_reward', self.rewards[-1], self.episode_number)
     GLOBAL.summary_writer.add_scalar('best_reward', max(self.rewards), self.episode_number)
     np_frames = self.frame_buffer[0, -(num_frames+1):].detach().cpu().numpy()
-    average_frame = np.mean(np_frames, axis=0)
-    GLOBAL.summary_writer.add_image('trajectory', average_frame, self.episode_number)
+    # average_frame = np.mean(np_frames, axis=0)
+    # GLOBAL.summary_writer.add_image('trajectory', average_frame, self.episode_number)
     # GLOBAL.summary_writer.add_video('input_frames', self.frame_buffer, self.episode_number, fps=60)
 
     R = 0
@@ -289,22 +306,35 @@ class FrameProcessor(object):
 
     if not FLAGS.interactive:
       cuda_frame = torch.tensor(frame).float().permute(2, 0, 1).unsqueeze(0).cuda() / 255.0
+    
+      try:
+            prior_coord = self.trajectory[-1]
+      except:
+            prior_coord = None
+            
+      y, x, state = self.det.detect(frame, prior_coord = prior_coord)
+      y_goal, x_goal = self._get_goal_state()       
+      gaussian_current_position = torch.tensor(generate_gaussian_heat_map(frame[:,:,0].shape, y, x)).float().cuda()
+      gaussian_goal_position = torch.tensor(generate_gaussian_heat_map(frame[:,:,0].shape, y, x)).float().cuda()
+    
+      cuda_frame = torch.cat([cuda_frame, gaussian_current_position, gaussian_goal_position], 1)
+        
       if self.episode_start < 0:
         if self.start_frame is None:
           savestate()
+        
         self.episode_start = frame_counter
         self.start_frame = frame
         self.frame_buffer = torch.stack([cuda_frame] * FLAGS.context_frames, 1)
-        y, x, state = self.det.detect(frame)
         assert state != -1
         self.trajectory = [(y, x)]
         self.rewards = []
         self.sampled_action = []
-      else:
+      else:                                                               
         self.frame_buffer = torch.cat([self.frame_buffer, cuda_frame.unsqueeze(1)], 1)
-        y, x, _ = self.det.detect(frame, prior_coord=self.trajectory[-1])
+                                                               
         self.trajectory.append((y, x))
-        reward, should_end_episode = self._reward_function_for_current_state()
+        reward, should_end_episode = self._reward_function_for_current_state((y_goal, x_goal))
         self.rewards.append(reward)
         if should_end_episode:
           return self.finishEpisode()
