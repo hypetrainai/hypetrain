@@ -199,9 +199,10 @@ class FrameProcessor(object):
     """Returns (rewards, should_end_episode) given state."""
     y, x = self.trajectory[-1]
     if y is None:
+      y, x = self.trajectory[-2]
       # Assume death
       # Currently penalize death by 25, and get last position.
-      return self._reward_function_for_current_state(self.trajectory[-2])[0] - 25, True  # TODO: death penalty
+      return np.sqrt((y - self.goal_y)**2 + (x - self.goal_x)**2) - 25, True  # TODO: death penalty
     dist_to_goal = np.sqrt((y - self.goal_y)**2 + (x - self.goal_x)**2)
     reward = -1.0 * dist_to_goal
     if dist_to_goal < 10:
