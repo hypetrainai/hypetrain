@@ -32,7 +32,7 @@ flags.DEFINE_string('movie_file', 'movie.ltm', 'if not empty string, load libTAS
 flags.DEFINE_string('save_file', 'level1_screen4', 'if not empty string, use save file.')
 flags.DEFINE_integer('goal_y', 107, 'goal pixel coordinate in y')
 flags.DEFINE_integer('goal_x', 611, 'goal pixel coordinate in x')
-                 
+
 
 flags.DEFINE_boolean('interactive', False, 'interactive mode (enter buttons on command line)')
 
@@ -144,7 +144,7 @@ def generate_gaussian_heat_map(image_shape, y, x, sigma=10, amplitude=1.0):
     y_range = np.arange(0, H)
     x_range = np.arange(0, W)
     x_grid, y_grid = np.meshgrid(x_range, y_range)
-    
+
     result = np.zeros([1, 1, H, W])
     result[0, 0] = amplitude * np.exp((-1.0 * (y_grid - y)**2 + -1.0 * (x_grid - x)**2)/(2 * sigma**2))
     return result
@@ -209,10 +209,13 @@ class FrameProcessor(object):
     GLOBAL.summary_writer.add_scalar('episode_length', num_frames, self.episode_number)
     GLOBAL.summary_writer.add_scalar('final_reward', self.rewards[-1], self.episode_number)
     GLOBAL.summary_writer.add_scalar('best_reward', max(self.rewards), self.episode_number)
-    # GLOBAL.summary_writer.add_video('input_frames', self.frame_buffer, self.episode_number, fps=60)
+    # GLOBAL.summary_writer.add_video('input_frames', self.frame_buffer[:, :, :3], self.episode_number, fps=60)
 
-    average_frame = np.mean(self.frame_buffer[0, -(num_frames+1):].detach().cpu().numpy(), axis=0)
-    GLOBAL.summary_writer.add_figure('trajectory', utils.plotTrajectory(average_frame, self.trajectory), self.episode_number)
+    average_frame = np.mean(self.frame_buffer[0, -(num_frames+1):, :3].detach().cpu().numpy(), axis=0)
+    plt.figure()
+    plt.scatter(FLAGS.goal_x, FLAGS.goal_y, facecolors='none', edgecolors='r')
+    utils.plotTrajectory(average_frame, self.trajectory)
+    GLOBAL.summary_writer.add_figure('trajectory', plt.gcf(), self.episode_number)
 
     R = 0
     Vs = []
@@ -299,7 +302,7 @@ class FrameProcessor(object):
 
     if not FLAGS.interactive:
       cuda_frame = torch.tensor(frame).float().permute(2, 0, 1).unsqueeze(0).cuda() / 255.0
-    
+
       if self.episode_start < 0:
         prior_coord = None
       else:
@@ -311,11 +314,11 @@ class FrameProcessor(object):
         gaussian_current_position = torch.tensor(generate_gaussian_heat_map(frame[:, :, 0].shape, y, x)).float().cuda()
       gaussian_goal_position = torch.tensor(generate_gaussian_heat_map(frame[:, :, 0].shape, FLAGS.goal_y, FLAGS.goal_x)).float().cuda()
       cuda_frame = torch.cat([cuda_frame, gaussian_current_position, gaussian_goal_position], 1)
-        
+
       if self.episode_start < 0:
         if self.start_frame is None:
           savestate()
-        
+
         self.episode_start = frame_counter
         self.start_frame = frame
         self.frame_buffer = torch.stack([cuda_frame] * FLAGS.context_frames, 1)
@@ -323,9 +326,9 @@ class FrameProcessor(object):
         self.trajectory = [(y, x)]
         self.rewards = []
         self.sampled_action = []
-      else:                                                               
+      else:
         self.frame_buffer = torch.cat([self.frame_buffer, cuda_frame.unsqueeze(1)], 1)
-                                                               
+
         self.trajectory.append((y, x))
         reward, should_end_episode = self._reward_function_for_current_state()
         self.rewards.append(reward)

@@ -72,8 +72,6 @@ def colorline(x, y, z=None, cmap='copper', norm=plt.Normalize(0.0, 1.0),
 
 def plotTrajectory(bg, trajectory):
     """Plots trajectory list of (y, x) coordinates over bg."""
-    plt.figure()
     plt.imshow(np.transpose(bg, [1, 2, 0]))
     y, x = zip(*trajectory)
     colorline(x, y, cmap='autumn')
-    return plt.gcf()
