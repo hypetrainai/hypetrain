@@ -24,7 +24,7 @@ import utils
 
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
-flags.DEFINE_string('logdir', 'trained_models/testgaussian', 'logdir')
+flags.DEFINE_string('logdir', 'trained_models/bellsandwhistles', 'logdir')
 
 flags.DEFINE_integer('save_every', 100, 'every X number of steps save a model')
 
@@ -45,9 +45,9 @@ flags.DEFINE_integer('num_actions', 72, 'number of actions')
 flags.DEFINE_float('lr', 0.0002, 'learning rate')
 flags.DEFINE_float('entropy_weight', 0.05, 'weight for entropy loss')
 flags.DEFINE_float('reward_decay_multiplier', 0.95, 'reward function decay multiplier')
-flags.DEFINE_integer('episode_length', 300, 'episode length')
+flags.DEFINE_integer('episode_length', 200, 'episode length')
 flags.DEFINE_integer('context_frames', 30, 'number of frames passed to the network')
-flags.DEFINE_integer('bellman_lookahead_frames', 12, 'number of frames to consider for bellman rollout')
+flags.DEFINE_integer('bellman_lookahead_frames', 18, 'number of frames to consider for bellman rollout')
 
 FLAGS = flags.FLAGS
 
@@ -328,7 +328,7 @@ class FrameProcessor(object):
     
       # generate the full frame input by concatenating gaussian heat maps. 
       if y is None:
-        gaussian_current_position = torch.zeros(frame[:, :, 0].shape)
+        gaussian_current_position = torch.zeros(frame[:, :, 0].shape).cuda()
       else:
         gaussian_current_position = torch.tensor(generate_gaussian_heat_map(frame[:, :, 0].shape, y, x)).float().cuda()
       gaussian_goal_position = torch.tensor(generate_gaussian_heat_map(frame[:, :, 0].shape, self.goal_y, self.goal_x)).float().cuda()
