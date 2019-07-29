@@ -157,6 +157,7 @@ class FrameProcessor(object):
     self.goal_y = FLAGS.goal_y
     self.goal_x = FLAGS.goal_x
     self.episode_number = 0
+    gigit  = -1
     self.episode_start = -1
     self.start_frame = None
     self.frame_buffer = None
@@ -186,9 +187,13 @@ class FrameProcessor(object):
             FLAGS.pretrained_model_path + '/celeste_model_critic_%s.pt' % FLAGS.pretrained_suffix))
         logging.info('Done!')
 
-  def _generate_goal_state(self):
-    self.goal_y = FLAGS.goal_y
-    self.goal_x = FLAGS.goal_x
+  def _generate_goal_state(self, custom_goal = None):
+    if custom_goal:
+        self.goal_y = custom_goal[0]
+        self.goal_x = custom_goal[1]
+    else:
+        self.goal_y = FLAGS.goal_y
+        self.goal_x = FLAGS.goal_x
 
   def _reward_function_for_current_state(self):
     """Returns (rewards, should_end_episode) given state."""
@@ -312,7 +317,6 @@ class FrameProcessor(object):
       if self.episode_start < 0:
         if self.start_frame is None:
           savestate()
-        self.episode_start = frame_counter
         self.start_frame = frame
         self.rewards = []
         self.sampled_action = []
@@ -321,6 +325,8 @@ class FrameProcessor(object):
       else:
         prior_coord = self.trajectory[-1]
       y, x, state = self.det.detect(frame, prior_coord=prior_coord)
+    
+      # generate the full frame input by concatenating gaussian heat maps. 
       if y is None:
         gaussian_current_position = torch.zeros(frame[:, :, 0].shape)
       else:
@@ -332,6 +338,7 @@ class FrameProcessor(object):
         assert state != -1
         self.frame_buffer = torch.stack([cuda_frame] * FLAGS.context_frames, 1)
         self.trajectory = [(y, x)]
+        self.episode_start = frame_counter
       else:
         self.frame_buffer = torch.cat([self.frame_buffer, cuda_frame.unsqueeze(1)], 1)
         self.trajectory.append((y, x))
