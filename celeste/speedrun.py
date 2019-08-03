@@ -131,7 +131,7 @@ button_dict = {
     'l': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_LEFT,
     'r': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_RIGHT,
     'rt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_RIGHTSHOULDER,
-    'lt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_LEFTSHOULDER
+    'lt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_LEFTSHOULDER,
 }
 
 
@@ -149,20 +149,14 @@ def generate_gaussian_heat_map(image_shape, y, x, sigma=10, amplitude=1.0):
     x_grid, y_grid = np.meshgrid(x_range, y_range)
 
     result = np.zeros([1, 1, H, W])
-    result[0, 0] = amplitude * np.exp((-1.0 * (y_grid - y)**2 + -1.0 * (x_grid - x)**2)/(2 * sigma**2))
-    return result
+    result[0, 0] = amplitude * np.exp((-(y_grid - y)**2 + -(x_grid - x)**2) / (2 * sigma**2))
+    return result.astype(np.float32)
 
 
 class FrameProcessor(object):
 
   def __init__(self):
     self.det = celeste_detector.CelesteDetector()
-
-    self.goal_y = FLAGS.goal_y
-    self.goal_x = FLAGS.goal_x
-
-    self_init_goal_y = FLAGS.goal_y
-    self_init_goal_x = FLAGS.goal_x
 
     self.episode_number = 0
     self.episode_start = -1
@@ -172,19 +166,12 @@ class FrameProcessor(object):
     self.rewards = []
     self.sampled_action = []
 
-    fake_inputs = torch.zeros(1, FLAGS.image_channels * FLAGS.context_frames,
-                              FLAGS.image_height, FLAGS.image_width)
     self.actor = Network()
-    # GLOBAL.summary_writer.add_graph(self.actor, fake_inputs)
     self.actor = nn.DataParallel(self.actor.cuda())
     self.critic = Network(out_dim=1, use_softmax=False)
-    # GLOBAL.summary_writer.add_graph(self.critic, fake_inputs)
     self.critic = nn.DataParallel(self.critic.cuda())
     self.optimizer_actor = optim.Adam(list(self.actor.parameters()), lr=FLAGS.lr)
     self.optimizer_critic = optim.Adam(list(self.critic.parameters()), lr=FLAGS.lr)
-
-    self.start_frame_saving = False
-    self.saved_frames = 0
 
     if FLAGS.pretrained_model_path:
         logging.info('Loading pretrained model from %s' % FLAGS.pretrained_model_path)
@@ -195,8 +182,7 @@ class FrameProcessor(object):
         logging.info('Done!')
 
   def _generate_goal_state(self):
-    custom_goal = np.random.uniform(0, 1) < FLAGS.random_goal_probability
-    if custom_goal:
+    if np.random.uniform() < FLAGS.random_goal_probability:
         self.goal_y = np.random.randint(50, FLAGS.image_height - 50)
         self.goal_x = np.random.randint(50, FLAGS.image_width - 50)
     else:
@@ -205,19 +191,33 @@ class FrameProcessor(object):
 
   def _reward_function_for_current_state(self):
     """Returns (rewards, should_end_episode) given state."""
+    reward = 0
+    should_end_episode = False
     y, x = self.trajectory[-1]
     if y is None:
-      y, x = self.trajectory[-2]
       # Assume death
-      # Currently penalize death by 25, and get last position.
-      return np.sqrt((y - self.goal_y)**2 + (x - self.goal_x)**2) - 25, True  # TODO: death penalty
+      reward -= 25
+      should_end_episode = True
+      y, x = self.trajectory[-2]
     dist_to_goal = np.sqrt((y - self.goal_y)**2 + (x - self.goal_x)**2)
-    reward = -1.0 * dist_to_goal
-    if dist_to_goal < 10:
-      return reward + 100, True
+    reward -= dist_to_goal
+    if dist_to_goal < 10 and not should_end_episode:
+      reward += 100
+      should_end_episode = True
     if frame_counter - self.episode_start >= FLAGS.episode_length:
-      return reward, True
-    return reward, False
+      should_end_episode = True
+    return reward, should_end_episode
+
+  def _start_new_episode(self, frame):
+    if self.start_frame is None:
+      savestate()
+    self.episode_start = frame_counter
+    self.start_frame = frame
+    self.rewards = []
+    self.sampled_action = []
+    self.trajectory = []
+    self._generate_goal_state()
+
 
   def _finish_episode(self):
     assert self.episode_start >= 0
@@ -267,7 +267,7 @@ class FrameProcessor(object):
 
       softmax = self.actor.forward(frames)
       entropy = torch.distributions.categorical.Categorical(probs=softmax).entropy()
-      actor_loss = (-1.0 * torch.log(softmax[0, self.sampled_action[i]]) * A
+      actor_loss = (-torch.log(softmax[0, self.sampled_action[i]]) * A
                     - FLAGS.entropy_weight * entropy)
       actor_losses.append(actor_loss.detach().cpu().numpy())
       actor_loss.backward()
@@ -336,44 +336,30 @@ class FrameProcessor(object):
           loadstate()
         elif button_input == ['start_episode']:
           FLAGS.interactive = False
-        if button_input[-1] == 'sf':
-          self.start_frame_saving = True
-          button_input = button_input[:-1]
-      if self.start_frame_saving:
-        imageio.imwrite('frame_%04d.png' % self.saved_frames, frame)
-        self.saved_frames += 1
 
     if not FLAGS.interactive:
-      cuda_frame = torch.tensor(frame).float().permute(2, 0, 1).unsqueeze(0).cuda() / 255.0
-
+      new_episode = False
       if self.episode_start < 0:
-        if self.start_frame is None:
-          savestate()
-        self.start_frame = frame
-        self.rewards = []
-        self.sampled_action = []
-        self._generate_goal_state()
-        prior_coord = None
-      else:
-        prior_coord = self.trajectory[-1]
-      y, x, state = self.det.detect(frame, prior_coord=prior_coord)
+        new_episode = True
+        self._start_new_episode(frame)
+
+      y, x, state = self.det.detect(frame, prior_coord=None if new_episode else self.trajectory[-1])
+      self.trajectory.append((y, x))
 
       # generate the full frame input by concatenating gaussian heat maps.
       if y is None:
         gaussian_current_position = torch.zeros(frame[:, :, 0].shape).cuda().unsqueeze(0).unsqueeze(0)
       else:
-        gaussian_current_position = torch.tensor(generate_gaussian_heat_map(frame[:, :, 0].shape, y, x)).float().cuda()
-      gaussian_goal_position = torch.tensor(generate_gaussian_heat_map(frame[:, :, 0].shape, self.goal_y, self.goal_x)).float().cuda()
+        gaussian_current_position = torch.tensor(generate_gaussian_heat_map(frame[:, :, 0].shape, y, x)).cuda()
+      gaussian_goal_position = torch.tensor(generate_gaussian_heat_map(frame[:, :, 0].shape, self.goal_y, self.goal_x)).cuda()
+      cuda_frame = torch.tensor(frame).float().permute(2, 0, 1).unsqueeze(0).cuda() / 255.0
       cuda_frame = torch.cat([cuda_frame, gaussian_current_position, gaussian_goal_position], 1)
 
-      if self.episode_start < 0:
+      if new_episode:
         assert state != -1
         self.frame_buffer = torch.stack([cuda_frame] * FLAGS.context_frames, 1)
-        self.trajectory = [(y, x)]
-        self.episode_start = frame_counter
       else:
         self.frame_buffer = torch.cat([self.frame_buffer, cuda_frame.unsqueeze(1)], 1)
-        self.trajectory.append((y, x))
         reward, should_end_episode = self._reward_function_for_current_state()
         self.rewards.append(reward)
         if should_end_episode:
