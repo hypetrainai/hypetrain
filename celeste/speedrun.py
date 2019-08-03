@@ -24,7 +24,7 @@ import utils
 
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
-flags.DEFINE_string('logdir', 'trained_models/bellsandwhistles_wdp_6f_highlr', 'logdir')
+flags.DEFINE_string('logdir', 'trained_models/randomgoaltest', 'logdir')
 
 flags.DEFINE_integer('save_every', 100, 'every X number of steps save a model')
 
@@ -49,7 +49,7 @@ flags.DEFINE_integer('episode_length', 200, 'episode length')
 flags.DEFINE_integer('context_frames', 30, 'number of frames passed to the network')
 flags.DEFINE_integer('bellman_lookahead_frames', 6, 'number of frames to consider for bellman rollout')
 
-flags.DEFINE_integer('random_goal_probability', 0.4, 'probability that we choose a random goal')
+flags.DEFINE_float('random_goal_probability', 0.4, 'probability that we choose a random goal')
 
 FLAGS = flags.FLAGS
 
