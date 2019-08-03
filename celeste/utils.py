@@ -39,7 +39,7 @@ def class2button(key):
 class2button.dict = {}
 
 
-def colorline(x, y, z=None, cmap='copper', norm=plt.Normalize(0.0, 1.0),
+def colorline(x, y, z=None, ax=None, cmap='copper', norm=plt.Normalize(0.0, 1.0),
               linewidth=3, alpha=1.0):
     """
     http://nbviewer.ipython.org/github/dpsanders/matplotlib-examples/blob/master/colorline.ipynb
@@ -64,14 +64,14 @@ def colorline(x, y, z=None, cmap='copper', norm=plt.Normalize(0.0, 1.0),
     lc = mcoll.LineCollection(segments, array=z, cmap=cmap, norm=norm,
                               linewidth=linewidth, alpha=alpha)
 
-    ax = plt.gca()
+    ax = ax or plt.gca()
     ax.add_collection(lc)
-
     return lc
 
 
-def plotTrajectory(bg, trajectory):
+def plotTrajectory(bg, trajectory, ax=None):
     """Plots trajectory list of (y, x) coordinates over bg."""
-    plt.imshow(np.transpose(bg, [1, 2, 0]))
+    ax = ax or plt.gca()
+    ax.imshow(np.transpose(bg, [1, 2, 0]))
     y, x = zip(*trajectory)
-    colorline(x, y, cmap='autumn')
+    colorline(x, y, ax=ax, cmap='autumn')

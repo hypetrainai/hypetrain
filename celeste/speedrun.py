@@ -33,7 +33,6 @@ flags.DEFINE_string('save_file', 'level1_screen4', 'if not empty string, use sav
 flags.DEFINE_integer('goal_y', 107, 'goal pixel coordinate in y')
 flags.DEFINE_integer('goal_x', 611, 'goal pixel coordinate in x')
 
-
 flags.DEFINE_boolean('interactive', False, 'interactive mode (enter buttons on command line)')
 
 flags.DEFINE_integer('image_height', 540, 'image height')
@@ -48,6 +47,8 @@ flags.DEFINE_float('reward_decay_multiplier', 0.95, 'reward function decay multi
 flags.DEFINE_integer('episode_length', 200, 'episode length')
 flags.DEFINE_integer('context_frames', 30, 'number of frames passed to the network')
 flags.DEFINE_integer('bellman_lookahead_frames', 6, 'number of frames to consider for bellman rollout')
+
+flags.DEFINE_integer('action_summary_frames', 50, 'number of frames between action summaries')
 
 FLAGS = flags.FLAGS
 
@@ -139,6 +140,7 @@ def sample_action(softmax):
     sample_mapped = [utils.class2button(int(sample[i].numpy())) for i in range(len(sample))]
     return sample, sample_mapped
 
+
 def generate_gaussian_heat_map(image_shape, y, x, sigma=10, amplitude=1.0):
     H, W = image_shape
     y_range = np.arange(0, H)
@@ -149,6 +151,7 @@ def generate_gaussian_heat_map(image_shape, y, x, sigma=10, amplitude=1.0):
     result[0, 0] = amplitude * np.exp((-1.0 * (y_grid - y)**2 + -1.0 * (x_grid - x)**2)/(2 * sigma**2))
     return result
 
+
 class FrameProcessor(object):
 
   def __init__(self):
@@ -156,10 +159,10 @@ class FrameProcessor(object):
 
     self.goal_y = FLAGS.goal_y
     self.goal_x = FLAGS.goal_x
-    
+
     self_init_goal_y = FLAGS.goal_y
     self_init_goal_x = FLAGS.goal_x
-    
+
     self.episode_number = 0
     self.episode_start = -1
     self.start_frame = None
@@ -227,10 +230,9 @@ class FrameProcessor(object):
     GLOBAL.summary_writer.add_scalar('best_reward', max(self.rewards), self.episode_number)
     # GLOBAL.summary_writer.add_video('input_frames', self.frame_buffer[:, :, :3], self.episode_number, fps=60)
 
-    average_frame = np.mean(self.frame_buffer[0, -(num_frames+1):, :3].detach().cpu().numpy(), axis=0)
     plt.figure()
     plt.scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')
-    utils.plotTrajectory(average_frame, self.trajectory)
+    utils.plotTrajectory(self.frame_buffer[0, -1, :3].detach().cpu().numpy(), self.trajectory)
     GLOBAL.summary_writer.add_figure('trajectory', plt.gcf(), self.episode_number)
 
     R = 0
@@ -267,6 +269,29 @@ class FrameProcessor(object):
                     - FLAGS.entropy_weight * entropy)
       actor_losses.append(actor_loss.detach().cpu().numpy())
       actor_loss.backward()
+
+      if (i + 1) % FLAGS.action_summary_frames == 0:
+        ax1_height_ratio = 3
+        fig, (ax1, ax2) = plt.subplots(2, gridspec_kw={
+            'height_ratios' : [ax1_height_ratio, 1],
+        })
+        ax1.scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')
+        last_frame = self.frame_buffer[0, i + FLAGS.context_frames - 1, :3].detach().cpu().numpy()
+        trajectory_i = self.trajectory[max(0, i - FLAGS.context_frames):i+1]
+        utils.plotTrajectory(last_frame, trajectory_i, ax=ax1)
+
+        num_topk = 5
+        softmax_np = softmax[0].detach().cpu().numpy()
+        topk_idxs = np.argsort(softmax_np)[::-1][:num_topk]
+        labels = [','.join(utils.class2button(int(idx))) for idx in topk_idxs]
+        ax2.bar(np.arange(num_topk), softmax_np[topk_idxs], width=0.3)
+        ax2.set_xticks(np.arange(num_topk))
+        ax2.set_xticklabels(labels)
+        asp = np.diff(ax2.get_xlim())[0] / np.diff(ax2.get_ylim())[0]
+        asp /= np.abs(np.diff(ax1.get_xlim())[0] / np.diff(ax1.get_ylim())[0])
+        ax2.set_aspect(asp / ax1_height_ratio)
+        GLOBAL.summary_writer.add_figure('action/frame_%03d' % i, fig, self.episode_number)
+
     self.optimizer_actor.step()
 
     plt.figure()
@@ -330,8 +355,8 @@ class FrameProcessor(object):
       else:
         prior_coord = self.trajectory[-1]
       y, x, state = self.det.detect(frame, prior_coord=prior_coord)
-    
-      # generate the full frame input by concatenating gaussian heat maps. 
+
+      # generate the full frame input by concatenating gaussian heat maps.
       if y is None:
         gaussian_current_position = torch.zeros(frame[:, :, 0].shape).cuda().unsqueeze(0).unsqueeze(0)
       else:
