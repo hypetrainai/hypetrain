@@ -24,7 +24,7 @@ import utils
 
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
-flags.DEFINE_string('logdir', 'trained_models/bellsandwhistles_wdp_6f_highlr', 'logdir')
+flags.DEFINE_string('logdir', 'trained_models/randomgoaltest', 'logdir')
 
 flags.DEFINE_integer('save_every', 100, 'every X number of steps save a model')
 
@@ -48,6 +48,7 @@ flags.DEFINE_integer('episode_length', 200, 'episode length')
 flags.DEFINE_integer('context_frames', 30, 'number of frames passed to the network')
 flags.DEFINE_integer('bellman_lookahead_frames', 6, 'number of frames to consider for bellman rollout')
 
+flags.DEFINE_float('random_goal_probability', 0.4, 'probability that we choose a random goal')
 flags.DEFINE_integer('action_summary_frames', 50, 'number of frames between action summaries')
 
 FLAGS = flags.FLAGS
@@ -193,10 +194,11 @@ class FrameProcessor(object):
             FLAGS.pretrained_model_path + '/celeste_model_critic_%s.pt' % FLAGS.pretrained_suffix))
         logging.info('Done!')
 
-  def _generate_goal_state(self, custom_goal = None):
+  def _generate_goal_state(self):
+    custom_goal = np.random.uniform(0, 1) < FLAGS.random_goal_probability
     if custom_goal:
-        self.goal_y = custom_goal[0]
-        self.goal_x = custom_goal[1]
+        self.goal_y = np.random.randint(50, FLAGS.image_height - 50)
+        self.goal_x = np.random.randint(50, FLAGS.image_width - 50)
     else:
         self.goal_y = FLAGS.goal_y
         self.goal_x = FLAGS.goal_x
