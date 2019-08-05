@@ -329,10 +329,10 @@ class FrameProcessor(object):
     GLOBAL.summary_writer.add_figure('loss/advantage', plt.gcf(), self.episode_number)
     plt.figure()
     plt.plot(list(reversed(actor_losses)))
-    GLOBAL.summary_writer.add_figure('loss/actor_loss', plt.gcf(), self.episode_number)
+    GLOBAL.summary_writer.add_figure('loss/actor', plt.gcf(), self.episode_number)
     plt.figure()
     plt.plot(list(reversed(entropy_losses)))
-    GLOBAL.summary_writer.add_figure('loss/entropy_loss', plt.gcf(), self.episode_number)
+    GLOBAL.summary_writer.add_figure('loss/entropy', plt.gcf(), self.episode_number)
 
     # Start next episode.
     loadstate()
