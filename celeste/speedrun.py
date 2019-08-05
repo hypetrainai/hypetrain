@@ -43,12 +43,12 @@ flags.DEFINE_integer('image_height', 540, 'image height')
 flags.DEFINE_integer('image_width', 960, 'image width')
 
 flags.DEFINE_float('lr', 0.001, 'learning rate')
-flags.DEFINE_float('entropy_weight', 0.5, 'weight for entropy loss')
+flags.DEFINE_float('entropy_weight', 0.05, 'weight for entropy loss')
 flags.DEFINE_float('reward_scale', 1.0/100.0, 'multiplicative scale for the reward function')
 flags.DEFINE_float('reward_decay_multiplier', 0.95, 'reward time decay multiplier')
 flags.DEFINE_integer('episode_length', 200, 'episode length')
 flags.DEFINE_integer('context_frames', 30, 'number of frames passed to the network')
-flags.DEFINE_integer('bellman_lookahead_frames', 12, 'number of frames to consider for bellman rollout')
+flags.DEFINE_integer('bellman_lookahead_frames', 1, 'number of frames to consider for bellman rollout')
 flags.DEFINE_float('clip_grad_norm', 1000.0, 'value to clip gradient norm to.')
 flags.DEFINE_float('clip_grad_value', 0.0, 'value to clip gradients to.')
 
@@ -191,23 +191,21 @@ class FrameProcessor(object):
         self.goal_y = FLAGS.goal_y
         self.goal_x = FLAGS.goal_x
 
-  def _reward_function_for_current_state(self):
+  def _reward_for_current_state(self):
     """Returns (rewards, should_end_episode) given state."""
     reward = 0
     should_end_episode = False
     y, x = self.trajectory[-1]
     if y is None:
       # Assume death
-      reward -= 25
+      reward -= 50
       should_end_episode = True
       y, x = self.trajectory[-2]
     dist_to_goal = np.sqrt((y - self.goal_y)**2 + (x - self.goal_x)**2)
-    reward -= dist_to_goal
-    if dist_to_goal < 10 and not should_end_episode:
-      reward += 100
-      should_end_episode = True
-    if frame_counter - self.episode_start >= FLAGS.episode_length:
-      should_end_episode = True
+    reward += 2000 - dist_to_goal
+    if not should_end_episode:
+      if dist_to_goal < 10 or frame_counter - self.episode_start >= FLAGS.episode_length:
+        should_end_episode = True
     return reward * FLAGS.reward_scale, should_end_episode
 
   def _get_network_inputs(self, i):
@@ -238,7 +236,7 @@ class FrameProcessor(object):
     num_frames = frame_counter - self.episode_start
     utils.assert_equal(len(self.trajectory), num_frames + 1)
     utils.assert_equal(self.frame_buffer.shape[0], num_frames + FLAGS.context_frames)
-    utils.assert_equal(len(self.extra_channels), num_frames)
+    utils.assert_equal(len(self.extra_channels), num_frames + 1)
     utils.assert_equal(len(self.rewards), num_frames)
     utils.assert_equal(len(self.softmaxes), num_frames)
     utils.assert_equal(len(self.sampled_action), num_frames)
@@ -253,10 +251,13 @@ class FrameProcessor(object):
     utils.plot_trajectory(self.frame_buffer[-1, :3].detach().cpu().numpy(), self.trajectory)
     GLOBAL.summary_writer.add_figure('trajectory', plt.gcf(), self.episode_number)
 
-    R = 0
-    Rs = []
-    Vs = []
-    As = []
+    R = self.rewards[num_frames - 1]
+    # reward = (1 + gamma + gamma^2 + ...) * reward
+    R *= 1.0 / (1.0 - FLAGS.reward_decay_multiplier)
+    Rs = [R]
+    final_V = self.critic.forward(self._get_network_inputs(num_frames)).view([]).detach().cpu().numpy()
+    Vs = [final_V]
+    As = [0]
     actor_losses = []
     entropy_losses = []
     self.optimizer_actor.zero_grad()
@@ -264,19 +265,14 @@ class FrameProcessor(object):
     for i in reversed(range(num_frames)):
       R = FLAGS.reward_decay_multiplier * R + self.rewards[i]
       V = self.critic.forward(self._get_network_inputs(i)).view([])
-
-      if FLAGS.bellman_lookahead_frames == 0 or i == num_frames - 1:
-        A = R - V
-      else:
-        blf = min(FLAGS.bellman_lookahead_frames, num_frames - 1 - i)
-        assert blf > 0
-        V_bellman = (R - (FLAGS.reward_decay_multiplier**blf) * Rs[-blf]
-                     + (FLAGS.reward_decay_multiplier**blf) * Vs[-blf])
-        A = V_bellman - V
-
-      (A**2).backward()
+      ((R - V)**2).backward()
       V = V.detach()
-      A = A.detach()
+
+      blf = min(FLAGS.bellman_lookahead_frames, num_frames - i)
+      assert blf > 0
+      V_bellman = (R - (FLAGS.reward_decay_multiplier**blf) * Rs[-blf]
+                   + (FLAGS.reward_decay_multiplier**blf) * Vs[-blf])
+      A = V_bellman - V
 
       Rs.append(R)
       Vs.append(V.cpu().numpy())
@@ -287,7 +283,7 @@ class FrameProcessor(object):
       entropy = torch.distributions.categorical.Categorical(probs=softmax).entropy()
       actor_loss = -torch.log(softmax[0, self.sampled_action[i][0]]) * A
       actor_losses.append(actor_loss.detach().cpu().numpy())
-      entropy_loss = FLAGS.entropy_weight * -torch.log(entropy)
+      entropy_loss = FLAGS.entropy_weight / (entropy + 1e-6)
       entropy_losses.append(entropy_loss.detach().cpu().numpy())
       (actor_loss + entropy_loss).backward()
 
@@ -334,13 +330,13 @@ class FrameProcessor(object):
     plt.plot(self.rewards)
     GLOBAL.summary_writer.add_figure('out/reward', plt.gcf(), self.episode_number)
     plt.figure()
-    plt.plot(list(reversed(Rs)))
+    plt.plot(list(reversed(Rs[1:])))
     GLOBAL.summary_writer.add_figure('out/reward_cumul', plt.gcf(), self.episode_number)
     plt.figure()
-    plt.plot(list(reversed(Vs)))
+    plt.plot(list(reversed(Vs[1:])))
     GLOBAL.summary_writer.add_figure('out/value', plt.gcf(), self.episode_number)
     plt.figure()
-    plt.plot(list(reversed(As)))
+    plt.plot(list(reversed(As[1:])))
     GLOBAL.summary_writer.add_figure('out/advantage', plt.gcf(), self.episode_number)
     plt.figure()
     plt.plot(list(reversed(actor_losses)))
@@ -403,16 +399,6 @@ class FrameProcessor(object):
       if FLAGS.use_cuda:
         input_frame = input_frame.cuda()
 
-      if new_episode:
-        assert state != -1
-        self.frame_buffer = torch.stack([input_frame] * FLAGS.context_frames, 0)
-      else:
-        self.frame_buffer = torch.cat([self.frame_buffer, input_frame.unsqueeze(0)], 0)
-        reward, should_end_episode = self._reward_function_for_current_state()
-        self.rewards.append(reward)
-        if should_end_episode:
-          return self._finish_episode()
-
       gaussian_goal_position = generate_gaussian_heat_map(window_shape, self.goal_y, self.goal_x)
 
       last_frame_buttons = torch.zeros([len(button_dict)] + window_shape)
@@ -426,6 +412,16 @@ class FrameProcessor(object):
       if FLAGS.use_cuda:
         extra_channels = extra_channels.cuda()
       self.extra_channels.append(extra_channels)
+
+      if new_episode:
+        assert state != -1
+        self.frame_buffer = torch.stack([input_frame] * FLAGS.context_frames, 0)
+      else:
+        self.frame_buffer = torch.cat([self.frame_buffer, input_frame.unsqueeze(0)], 0)
+        reward, should_end_episode = self._reward_for_current_state()
+        self.rewards.append(reward)
+        if should_end_episode:
+          return self._finish_episode()
 
       frame_id = frame_counter - self.episode_start
       utils.assert_equal(frame_id + FLAGS.context_frames, self.frame_buffer.shape[0])
