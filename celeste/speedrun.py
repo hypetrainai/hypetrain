@@ -43,6 +43,7 @@ flags.DEFINE_integer('image_height', 540, 'image height')
 flags.DEFINE_integer('image_width', 960, 'image width')
 
 flags.DEFINE_float('lr', 0.001, 'learning rate')
+flags.DEFINE_float('actor_start_delay', 10, 'delay training of the actor for this many episodes')
 flags.DEFINE_float('entropy_weight', 0.05, 'weight for entropy loss')
 flags.DEFINE_float('reward_scale', 1.0/100.0, 'multiplicative scale for the reward function')
 flags.DEFINE_float('reward_decay_multiplier', 0.95, 'reward time decay multiplier')
@@ -323,7 +324,8 @@ class FrameProcessor(object):
     elif FLAGS.clip_grad_norm:
       nn.utils.clip_grad_norm_(self.actor.parameters(), FLAGS.clip_grad_norm)
       nn.utils.clip_grad_norm_(self.critic.parameters(), FLAGS.clip_grad_norm)
-    self.optimizer_actor.step()
+    if self.episode_number >= FLAGS.actor_start_delay:
+      self.optimizer_actor.step()
     self.optimizer_critic.step()
 
     plt.figure()
