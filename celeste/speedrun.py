@@ -25,6 +25,7 @@ import utils
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
 flags.DEFINE_string('logdir', 'trained_models/randomgoaltest3', 'logdir')
+flags.DEFINE_boolean('use_cuda', True, 'Use cuda')
 
 flags.DEFINE_integer('save_every', 100, 'every X number of steps save a model')
 
@@ -37,7 +38,7 @@ flags.DEFINE_boolean('interactive', False, 'interactive mode (enter buttons on c
 
 flags.DEFINE_integer('image_height', 540, 'image height')
 flags.DEFINE_integer('image_width', 960, 'image width')
-flags.DEFINE_integer('image_channels', 5, 'image channels')
+flags.DEFINE_integer('image_channels', 12, 'image channels')
 
 flags.DEFINE_integer('num_actions', 72, 'number of actions')
 
@@ -48,7 +49,7 @@ flags.DEFINE_float('reward_decay_multiplier', 0.95, 'reward time decay multiplie
 flags.DEFINE_integer('episode_length', 200, 'episode length')
 flags.DEFINE_integer('context_frames', 30, 'number of frames passed to the network')
 flags.DEFINE_integer('bellman_lookahead_frames', 12, 'number of frames to consider for bellman rollout')
-flags.DEFINE_float('clip_grad_norm', 100.0, 'value to clip gradient norm to.')
+flags.DEFINE_float('clip_grad_norm', 1000.0, 'value to clip gradient norm to.')
 flags.DEFINE_float('clip_grad_value', 0.0, 'value to clip gradients to.')
 
 flags.DEFINE_float('random_goal_probability', 0.4, 'probability that we choose a random goal')
@@ -127,14 +128,14 @@ def start_next_frame():
 button_dict = {
     'a': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_A,
     'b': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_B,
-    'x': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_X,
-    'y': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_Y,
+#    'x': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_X,
+#    'y': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_Y,
+    'rt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_RIGHTSHOULDER,
+#    'lt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_LEFTSHOULDER,
     'u': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_UP,
     'd': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_DOWN,
     'l': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_LEFT,
     'r': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_RIGHT,
-    'rt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_RIGHTSHOULDER,
-    'lt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_LEFTSHOULDER,
 }
 
 
@@ -151,9 +152,8 @@ def generate_gaussian_heat_map(image_shape, y, x, sigma=10, amplitude=1.0):
     x_range = np.arange(0, W)
     x_grid, y_grid = np.meshgrid(x_range, y_range)
 
-    result = np.zeros([1, 1, H, W])
-    result[0, 0] = amplitude * np.exp((-(y_grid - y)**2 + -(x_grid - x)**2) / (2 * sigma**2))
-    return result.astype(np.float32)
+    result = amplitude * np.exp((-(y_grid - y)**2 + -(x_grid - x)**2) / (2 * sigma**2))
+    return torch.tensor(result).unsqueeze(0).float()
 
 
 class FrameProcessor(object):
@@ -171,9 +171,12 @@ class FrameProcessor(object):
     self.sampled_action = []
 
     self.actor = Network()
-    self.actor = nn.DataParallel(self.actor.cuda())
     self.critic = Network(out_dim=1, use_softmax=False)
-    self.critic = nn.DataParallel(self.critic.cuda())
+    if FLAGS.use_cuda:
+      self.actor = self.actor.cuda()
+      self.critic = self.critic.cuda()
+    self.actor = nn.DataParallel(self.actor)
+    self.critic = nn.DataParallel(self.critic)
     self.optimizer_actor = optim.Adam(list(self.actor.parameters()), lr=FLAGS.lr)
     self.optimizer_critic = optim.Adam(list(self.critic.parameters()), lr=FLAGS.lr)
 
@@ -213,6 +216,7 @@ class FrameProcessor(object):
     return reward * FLAGS.reward_scale, should_end_episode
 
   def _start_new_episode(self, frame):
+    logging.info('Starting episode %d', self.episode_number)
     if self.start_frame is None:
       savestate()
     self.episode_start = frame_counter
@@ -345,7 +349,6 @@ class FrameProcessor(object):
     loadstate()
     self.episode_start = -1
     self.episode_number += 1
-    logging.info('Starting episode %d', self.episode_number)
     if self.episode_number % FLAGS.save_every == 0:
         torch.save(self.actor.state_dict(), os.path.join(FLAGS.logdir,
             'train/celeste_model_actor_%d.pt' % self.episode_number))
@@ -382,20 +385,34 @@ class FrameProcessor(object):
       y, x, state = self.det.detect(frame, prior_coord=None if new_episode else self.trajectory[-1])
       self.trajectory.append((y, x))
 
+      window_shape = [FLAGS.image_height, FLAGS.image_width]
       # generate the full frame input by concatenating gaussian heat maps.
       if y is None:
-        gaussian_current_position = torch.zeros(frame[:, :, 0].shape).cuda().unsqueeze(0).unsqueeze(0)
+        gaussian_current_position = torch.zeros(window_shape).unsqueeze(0)
       else:
-        gaussian_current_position = torch.tensor(generate_gaussian_heat_map(frame[:, :, 0].shape, y, x)).cuda()
-      gaussian_goal_position = torch.tensor(generate_gaussian_heat_map(frame[:, :, 0].shape, self.goal_y, self.goal_x)).cuda()
-      cuda_frame = torch.tensor(frame).float().permute(2, 0, 1).unsqueeze(0).cuda() / 255.0
-      cuda_frame = torch.cat([cuda_frame, gaussian_current_position, gaussian_goal_position], 1)
+        gaussian_current_position = generate_gaussian_heat_map(window_shape, y, x)
+      gaussian_goal_position = generate_gaussian_heat_map(window_shape, self.goal_y, self.goal_x)
+
+      last_frame_buttons = torch.zeros([len(button_dict)] + window_shape)
+      if self.sampled_action:
+        pressed = utils.class2button(self.sampled_action[-1][0])
+        for i, button in enumerate(button_dict.keys()):
+          if button in pressed:
+            last_frame_buttons[i] = 1.0
+
+      input_frame = torch.tensor(frame).float().permute(2, 0, 1) / 255.0
+      input_frame = torch.cat([input_frame, gaussian_current_position, gaussian_goal_position, last_frame_buttons], 0)
+      input_frame = input_frame.unsqueeze(0).unsqueeze(0)
+      # [batch, time, channels, height, width]
+      assert list(input_frame.shape) == [1, 1, FLAGS.image_channels, FLAGS.image_height, FLAGS.image_width], input_frame.shape
+      if FLAGS.use_cuda:
+        input_frame = input_frame.cuda()
 
       if new_episode:
         assert state != -1
-        self.frame_buffer = torch.stack([cuda_frame] * FLAGS.context_frames, 1)
+        self.frame_buffer = torch.cat([input_frame] * FLAGS.context_frames, 1)
       else:
-        self.frame_buffer = torch.cat([self.frame_buffer, cuda_frame.unsqueeze(1)], 1)
+        self.frame_buffer = torch.cat([self.frame_buffer, input_frame], 1)
         reward, should_end_episode = self._reward_function_for_current_state()
         self.rewards.append(reward)
         if should_end_episode:
@@ -417,6 +434,9 @@ class FrameProcessor(object):
 def Speedrun():
   global frame_counter
   global shared_config
+
+  assert FLAGS.num_actions == len(utils.class2button.dict), (FLAGS.num_actions, len(utils.class2button.dict))
+
   os.system('mkdir -p /tmp/celeste/movies')
   os.system('cp -f settings.celeste ~/.local/share/Celeste/Saves/')
   moviefile = None

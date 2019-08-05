@@ -37,6 +37,7 @@ def class2button(key):
                 class2button.dict[final_key] = final_value
     return class2button.dict[key]
 class2button.dict = {}
+class2button(0)
 
 
 def colorline(x, y, z=None, ax=None, cmap='copper', norm=plt.Normalize(0.0, 1.0),

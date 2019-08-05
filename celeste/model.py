@@ -55,9 +55,9 @@ class ResNetIm2Value(nn.Module):
         self.operation_stack = nn.Sequential(*layer_defs)
         self.operation_stack_linear = nn.Sequential(*layer_defs_linear)
 
-    def forward(self, input):
-        out = self.operation_stack(input)
-        out = out.view(input.shape[0], -1)
+    def forward(self, inputs):
+        out = self.operation_stack(inputs)
+        out = out.view(inputs.shape[0], -1)
         out = self.operation_stack_linear(out)
         if self.use_softmax:
             out = F.softmax(out, 1)
