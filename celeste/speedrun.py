@@ -15,7 +15,6 @@ from tensorboardX import SummaryWriter
 import torch
 from torch import nn
 from torch import optim
-from torch.nn.utils import clip_grad_value_
 
 from GLOBALS import GLOBAL
 import celeste_detector
@@ -43,12 +42,13 @@ flags.DEFINE_integer('image_channels', 5, 'image channels')
 flags.DEFINE_integer('num_actions', 72, 'number of actions')
 
 flags.DEFINE_float('lr', 0.001, 'learning rate')
-flags.DEFINE_float('entropy_weight', 0.05, 'weight for entropy loss')
+flags.DEFINE_float('entropy_weight', 5, 'weight for entropy loss')
 flags.DEFINE_float('reward_decay_multiplier', 0.95, 'reward function decay multiplier')
 flags.DEFINE_integer('episode_length', 200, 'episode length')
 flags.DEFINE_integer('context_frames', 30, 'number of frames passed to the network')
 flags.DEFINE_integer('bellman_lookahead_frames', 12, 'number of frames to consider for bellman rollout')
-flags.DEFINE_float('clip_grad_value', 100.0, 'value to clip gradients to.')
+flags.DEFINE_float('clip_grad_norm', 100.0, 'value to clip gradient norm to.')
+flags.DEFINE_float('clip_grad_value', 0.0, 'value to clip gradients to.')
 
 flags.DEFINE_float('random_goal_probability', 0.4, 'probability that we choose a random goal')
 flags.DEFINE_integer('action_summary_frames', 50, 'number of frames between action summaries')
@@ -306,27 +306,32 @@ class FrameProcessor(object):
         GLOBAL.summary_writer.add_figure('action/frame_%03d' % i, fig, self.episode_number)
 
     GLOBAL.summary_writer.add_scalar('actor_grad_norm', utils.grad_norm(self.actor), self.episode_number)
-    clip_grad_value_(self.actor.parameters(), FLAGS.clip_grad_value)
-    self.optimizer_actor.step()
     GLOBAL.summary_writer.add_scalar('critic_grad_norm', utils.grad_norm(self.critic), self.episode_number)
-    clip_grad_value_(self.critic.parameters(), FLAGS.clip_grad_value)
+    assert not (FLAGS.clip_grad_value and FLAGS.clip_grad_norm)
+    if FLAGS.clip_grad_value:
+      nn.utils.clip_grad_value_(self.actor.parameters(), FLAGS.clip_grad_value)
+      nn.utils.clip_grad_value_(self.critic.parameters(), FLAGS.clip_grad_value)
+    elif FLAGS.clip_grad_norm:
+      nn.utils.clip_grad_norm_(self.actor.parameters(), FLAGS.clip_grad_norm)
+      nn.utils.clip_grad_norm_(self.critic.parameters(), FLAGS.clip_grad_norm)
+    self.optimizer_actor.step()
     self.optimizer_critic.step()
 
     plt.figure()
     plt.plot(list(reversed(Vs)))
-    GLOBAL.summary_writer.add_figure("loss/value", plt.gcf(), self.episode_number)
+    GLOBAL.summary_writer.add_figure('loss/value', plt.gcf(), self.episode_number)
     plt.figure()
     plt.plot(list(reversed(Rs)))
-    GLOBAL.summary_writer.add_figure("loss/reward", plt.gcf(), self.episode_number)
+    GLOBAL.summary_writer.add_figure('loss/reward', plt.gcf(), self.episode_number)
     plt.figure()
     plt.plot(list(reversed(As)))
-    GLOBAL.summary_writer.add_figure("loss/advantage", plt.gcf(), self.episode_number)
+    GLOBAL.summary_writer.add_figure('loss/advantage', plt.gcf(), self.episode_number)
     plt.figure()
     plt.plot(list(reversed(actor_losses)))
-    GLOBAL.summary_writer.add_figure("loss/actor_loss", plt.gcf(), self.episode_number)
+    GLOBAL.summary_writer.add_figure('loss/actor_loss', plt.gcf(), self.episode_number)
     plt.figure()
     plt.plot(list(reversed(entropy_losses)))
-    GLOBAL.summary_writer.add_figure("loss/entropy_loss", plt.gcf(), self.episode_number)
+    GLOBAL.summary_writer.add_figure('loss/entropy_loss', plt.gcf(), self.episode_number)
 
     # Start next episode.
     loadstate()
@@ -526,5 +531,5 @@ def main(argv):
       os.kill(game_pid, signal.SIGKILL)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
   app.run(main)
