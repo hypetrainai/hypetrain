@@ -2,6 +2,7 @@ from absl import app
 from absl import flags
 from absl import logging
 logging.set_verbosity(logging.INFO)
+import cProfile
 import imageio
 import matplotlib.pyplot as plt
 import numpy as np
@@ -26,7 +27,9 @@ flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
 flags.DEFINE_string('logdir', 'trained_models/randomgoaltest3', 'logdir')
 flags.DEFINE_boolean('use_cuda', True, 'Use cuda')
+flags.DEFINE_boolean('profile', False, 'Profile code')
 
+flags.DEFINE_integer('max_episodes', 100000, 'stop after this many episodes')
 flags.DEFINE_integer('save_every', 100, 'every X number of steps save a model')
 
 flags.DEFINE_string('movie_file', 'movie.ltm', 'if not empty string, load libTAS input movie file')
@@ -351,14 +354,16 @@ class FrameProcessor(object):
     self.episode_start = -1
     self.episode_number += 1
     if self.episode_number % FLAGS.save_every == 0:
-        torch.save(self.actor.state_dict(), os.path.join(FLAGS.logdir,
-            'train/celeste_model_actor_%d.pt' % self.episode_number))
-        torch.save(self.critic.state_dict(), os.path.join(FLAGS.logdir,
-            'train/celeste_model_critic_%d.pt' % self.episode_number))
-        torch.save(self.actor.state_dict(), os.path.join(FLAGS.logdir,
-            'train/celeste_model_actor_latest.pt'))
-        torch.save(self.critic.state_dict(), os.path.join(FLAGS.logdir,
-            'train/celeste_model_critic_latest.pt'))
+      torch.save(self.actor.state_dict(), os.path.join(FLAGS.logdir,
+          'train/celeste_model_actor_%d.pt' % self.episode_number))
+      torch.save(self.critic.state_dict(), os.path.join(FLAGS.logdir,
+          'train/celeste_model_critic_%d.pt' % self.episode_number))
+      torch.save(self.actor.state_dict(), os.path.join(FLAGS.logdir,
+          'train/celeste_model_actor_latest.pt'))
+      torch.save(self.critic.state_dict(), os.path.join(FLAGS.logdir,
+          'train/celeste_model_critic_latest.pt'))
+    if self.episode_number >= FLAGS.max_episodes:
+      return None
     return self.process_frame(self.start_frame)
 
   def process_frame(self, frame):
@@ -523,17 +528,22 @@ def Speedrun():
     if moviefile and frame_counter < moviefile.nbFrames():
       moviefile.getInputs(ai, frame_counter)
     else:
+      frames_actions = processor.process_frame(frame)
+      if not frames_actions:
+        return
       if action_queue.empty():
-        for button_inputs in processor.process_frame(frame):
-          action_queue.put(button_inputs)
-      button_input = action_queue.get()
-      assert isinstance(button_input, (list, tuple))
-      for button in button_input:
-        if button not in button_dict:
-          continue
-        si = pylibtas.SingleInput()
-        si.type = button_dict[button]
-        ai.setInput(si, 1)
+        for frame_actions in frames_actions:
+          action_queue.put(frame_actions)
+      frame_actions = action_queue.get()
+      assert isinstance(frame_actions, (list, tuple))
+      if list(frame_actions) != ['']:
+        for button in frame_actions:
+          if button not in button_dict:
+            logging.warning('Unknown button %s!' % button)
+            continue
+          si = pylibtas.SingleInput()
+          si.type = button_dict[button]
+          ai.setInput(si, 1)
 
     pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)
     pylibtas.sendAllInputs(ai)
@@ -554,7 +564,11 @@ def main(argv):
   tensorboard = subprocess.Popen(['tensorboard', '--logdir', os.path.abspath(FLAGS.logdir)],
                                  stderr=subprocess.DEVNULL)
   try:
-    Speedrun()
+    if FLAGS.profile:
+      FLAGS.max_episodes = 1
+      cProfile.run('Speedrun()')
+    else:
+      Speedrun()
   finally:
     GLOBAL.summary_writer.close()
     if tensorboard:
