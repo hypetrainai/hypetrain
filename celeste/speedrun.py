@@ -239,7 +239,7 @@ class FrameProcessor(object):
 
     plt.figure()
     plt.scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')
-    utils.plotTrajectory(self.frame_buffer[0, -1, :3].detach().cpu().numpy(), self.trajectory)
+    utils.plot_trajectory(self.frame_buffer[0, -1, :3].detach().cpu().numpy(), self.trajectory)
     GLOBAL.summary_writer.add_figure('trajectory', plt.gcf(), self.episode_number)
 
     R = 0
@@ -287,7 +287,7 @@ class FrameProcessor(object):
         ax1.scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')
         last_frame = self.frame_buffer[0, i + FLAGS.context_frames - 1, :3].detach().cpu().numpy()
         trajectory_i = self.trajectory[max(0, i - FLAGS.context_frames):i+1]
-        utils.plotTrajectory(last_frame, trajectory_i, ax=ax1)
+        utils.plot_trajectory(last_frame, trajectory_i, ax=ax1)
         ax1.axis('off')
 
         num_topk = 5
@@ -305,8 +305,10 @@ class FrameProcessor(object):
             softmax[0, self.sampled_action[i][0]] * 100.0))
         GLOBAL.summary_writer.add_figure('action/frame_%03d' % i, fig, self.episode_number)
 
+    GLOBAL.summary_writer.add_scalar('actor_grad_norm', utils.grad_norm(self.actor), self.episode_number)
     clip_grad_value_(self.actor.parameters(), FLAGS.clip_grad_value)
     self.optimizer_actor.step()
+    GLOBAL.summary_writer.add_scalar('critic_grad_norm', utils.grad_norm(self.critic), self.episode_number)
     clip_grad_value_(self.critic.parameters(), FLAGS.clip_grad_value)
     self.optimizer_critic.step()
 

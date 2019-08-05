@@ -69,9 +69,17 @@ def colorline(x, y, z=None, ax=None, cmap='copper', norm=plt.Normalize(0.0, 1.0)
     return lc
 
 
-def plotTrajectory(bg, trajectory, ax=None):
+def plot_trajectory(bg, trajectory, ax=None):
     """Plots trajectory list of (y, x) coordinates over bg."""
     ax = ax or plt.gca()
     ax.imshow(np.transpose(bg, [1, 2, 0]))
     y, x = zip(*trajectory)
     colorline(x, y, ax=ax, cmap='autumn')
+
+
+def grad_norm(network):
+  total_norm = 0
+  for p in network.parameters():
+    param_norm = p.grad.data.norm(2)
+    total_norm += param_norm.item()**2
+  return total_norm**0.5
