@@ -275,7 +275,7 @@ class FrameProcessor(object):
       entropy = torch.distributions.categorical.Categorical(probs=softmax).entropy()
       actor_loss = -torch.log(softmax[0, self.sampled_action[i][0]]) * A.detach()
       actor_losses.append(actor_loss.detach().cpu().numpy())
-      entropy_loss = -FLAGS.entropy_weight * entropy
+      entropy_loss = FLAGS.entropy_weight * -torch.log(entropy)
       entropy_losses.append(entropy_loss.detach().cpu().numpy())
       (actor_loss + entropy_loss).backward()
 
