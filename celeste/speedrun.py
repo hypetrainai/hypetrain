@@ -139,8 +139,8 @@ button_dict = {
 
 def sample_action(softmax):
     softmax = softmax.detach().cpu()
-    sample = torch.distributions.categorical.Categorical(probs=softmax).sample()
-    sample_mapped = [utils.class2button(int(sample[i].numpy())) for i in range(len(sample))]
+    sample = torch.distributions.categorical.Categorical(probs=softmax).sample().numpy()
+    sample_mapped = [utils.class2button(sample[i]) for i in range(len(sample))]
     return sample, sample_mapped
 
 
@@ -166,6 +166,7 @@ class FrameProcessor(object):
     self.frame_buffer = None
     self.trajectory = []
     self.rewards = []
+    self.softmaxes = []
     self.sampled_action = []
 
     self.actor = Network()
@@ -216,6 +217,7 @@ class FrameProcessor(object):
     self.episode_start = frame_counter
     self.start_frame = frame
     self.rewards = []
+    self.softmaxes = []
     self.sampled_action = []
     self.trajectory = []
     self._generate_goal_state()
@@ -225,6 +227,7 @@ class FrameProcessor(object):
     assert self.episode_start >= 0
     num_frames = frame_counter - self.episode_start
     assert len(self.rewards) == num_frames, (num_frames, len(self.rewards))
+    assert len(self.softmaxes) == num_frames, (num_frames, len(self.softmaxes))
     assert len(self.sampled_action) == num_frames, (num_frames, len(self.sampled_action))
     assert len(self.trajectory) == num_frames + 1, (num_frames + 1, len(self.trajectory))
     assert self.frame_buffer.shape[1] == num_frames + FLAGS.context_frames, (num_frames, self.frame_buffer.shape[1])
@@ -244,6 +247,7 @@ class FrameProcessor(object):
     Rs = []
     As = []
     actor_losses = []
+    entropy_losses = []
     self.optimizer_actor.zero_grad()
     self.optimizer_critic.zero_grad()
     for i in reversed(range(num_frames)):
@@ -264,16 +268,16 @@ class FrameProcessor(object):
       Rs.append(R)
       As.append(A.detach().cpu().numpy())
 
-      
       (A**2).backward()
-      
 
       softmax = self.actor.forward(frames)
+      assert np.array_equal(self.softmaxes[i], softmax.detach().cpu().numpy())
       entropy = torch.distributions.categorical.Categorical(probs=softmax).entropy()
-      actor_loss = (-torch.log(softmax[0, self.sampled_action[i]]) * A.detach()
-                    - FLAGS.entropy_weight * entropy)
+      actor_loss = -torch.log(softmax[0, self.sampled_action[i][0]]) * A.detach()
       actor_losses.append(actor_loss.detach().cpu().numpy())
-      actor_loss.backward()
+      entropy_loss = -FLAGS.entropy_weight * entropy
+      entropy_losses.append(entropy_loss.detach().cpu().numpy())
+      (actor_loss + entropy_loss).backward()
 
       if (i + 1) % FLAGS.action_summary_frames == 0:
         ax1_height_ratio = 3
@@ -284,24 +288,28 @@ class FrameProcessor(object):
         last_frame = self.frame_buffer[0, i + FLAGS.context_frames - 1, :3].detach().cpu().numpy()
         trajectory_i = self.trajectory[max(0, i - FLAGS.context_frames):i+1]
         utils.plotTrajectory(last_frame, trajectory_i, ax=ax1)
+        ax1.axis('off')
 
         num_topk = 5
         softmax_np = softmax[0].detach().cpu().numpy()
         topk_idxs = np.argsort(softmax_np)[::-1][:num_topk]
-        labels = [','.join(utils.class2button(int(idx))) for idx in topk_idxs]
+        labels = [','.join(utils.class2button(idx)) for idx in topk_idxs]
         ax2.bar(np.arange(num_topk), softmax_np[topk_idxs], width=0.3)
         ax2.set_xticks(np.arange(num_topk))
         ax2.set_xticklabels(labels)
         asp = np.diff(ax2.get_xlim())[0] / np.diff(ax2.get_ylim())[0]
         asp /= np.abs(np.diff(ax1.get_xlim())[0] / np.diff(ax1.get_ylim())[0])
         ax2.set_aspect(asp / ax1_height_ratio)
+        ax2.set_title('Sampled: %s (%0.2f%%)' % (
+            ','.join(utils.class2button(self.sampled_action[i][0])),
+            softmax[0, self.sampled_action[i][0]] * 100.0))
         GLOBAL.summary_writer.add_figure('action/frame_%03d' % i, fig, self.episode_number)
-    
+
     clip_grad_value_(self.actor.parameters(), FLAGS.clip_grad_value)
-    clip_grad_value_(self.critic.parameters(), FLAGS.clip_grad_value)
     self.optimizer_actor.step()
+    clip_grad_value_(self.critic.parameters(), FLAGS.clip_grad_value)
     self.optimizer_critic.step()
-    
+
     plt.figure()
     plt.plot(list(reversed(Vs)))
     GLOBAL.summary_writer.add_figure("loss/value", plt.gcf(), self.episode_number)
@@ -314,6 +322,9 @@ class FrameProcessor(object):
     plt.figure()
     plt.plot(list(reversed(actor_losses)))
     GLOBAL.summary_writer.add_figure("loss/actor_loss", plt.gcf(), self.episode_number)
+    plt.figure()
+    plt.plot(list(reversed(entropy_losses)))
+    GLOBAL.summary_writer.add_figure("loss/entropy_loss", plt.gcf(), self.episode_number)
 
     # Start next episode.
     loadstate()
@@ -332,16 +343,20 @@ class FrameProcessor(object):
     return self.process_frame(self.start_frame)
 
   def process_frame(self, frame):
+    """Returns a list of button inputs for the next N frames."""
     if FLAGS.interactive:
-      button_input = input('Buttons please! (comma separated)').split(',')
       button_input = []
-      if button_input:
+      while not button_input:
+        button_input = input('Buttons please! (comma separated)').split(',')
         if button_input == ['save']:
           savestate()
         elif button_input == ['load']:
           loadstate()
         elif button_input == ['start_episode']:
           FLAGS.interactive = False
+          break
+        else:
+          button_inputs = [button_input]
 
     if not FLAGS.interactive:
       new_episode = False
@@ -374,10 +389,14 @@ class FrameProcessor(object):
       frames = self.frame_buffer[:, -FLAGS.context_frames:]
       frames = torch.reshape(frames, [1, -1, FLAGS.image_height, FLAGS.image_width])
       softmax = self.actor.forward(frames)
-      idx, button_input = sample_action(softmax)
-      self.sampled_action.append(idx)
+      self.softmaxes.append(softmax.detach().cpu().numpy())
+      idxs, button_inputs = sample_action(softmax)
+      # Predicted button_inputs include a batch dimension.
+      # Returned button_inputs should be for next N frames, but for now N==1.
+      button_inputs = [button_inputs[0]]
+      self.sampled_action.append(idxs)
 
-    return button_input
+    return button_inputs
 
 
 def Speedrun():
@@ -468,6 +487,7 @@ def Speedrun():
         for button_inputs in processor.process_frame(frame):
           action_queue.put(button_inputs)
       button_input = action_queue.get()
+      assert isinstance(button_input, (list, tuple))
       for button in button_input:
         if button not in button_dict:
           continue
