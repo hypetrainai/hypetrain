@@ -42,7 +42,7 @@ flags.DEFINE_integer('image_channels', 5, 'image channels')
 flags.DEFINE_integer('num_actions', 72, 'number of actions')
 
 flags.DEFINE_float('lr', 0.001, 'learning rate')
-flags.DEFINE_float('entropy_weight', 5, 'weight for entropy loss')
+flags.DEFINE_float('entropy_weight', 0.5, 'weight for entropy loss')
 flags.DEFINE_float('reward_scale', 1.0/100.0, 'multiplicative scale for the reward function')
 flags.DEFINE_float('reward_decay_multiplier', 0.95, 'reward time decay multiplier')
 flags.DEFINE_integer('episode_length', 200, 'episode length')
@@ -244,8 +244,8 @@ class FrameProcessor(object):
     GLOBAL.summary_writer.add_figure('trajectory', plt.gcf(), self.episode_number)
 
     R = 0
-    Vs = []
     Rs = []
+    Vs = []
     As = []
     actor_losses = []
     entropy_losses = []
@@ -254,27 +254,30 @@ class FrameProcessor(object):
     for i in reversed(range(num_frames)):
       frames = self.frame_buffer[:, i:i+FLAGS.context_frames]
       frames = torch.reshape(frames, [1, -1, FLAGS.image_height, FLAGS.image_width])
-      V = self.critic.forward(frames).view([])
       R = FLAGS.reward_decay_multiplier * R + self.rewards[i]
+      V = self.critic.forward(frames).view([])
 
       if FLAGS.bellman_lookahead_frames == 0 or i == num_frames - 1:
         A = R - V
       else:
         blf = min(FLAGS.bellman_lookahead_frames, num_frames - 1 - i)
         assert blf > 0
-        V_bellman = R - (FLAGS.reward_decay_multiplier**blf) * Rs[-blf] + Vs[-blf]
+        V_bellman = (R - (FLAGS.reward_decay_multiplier**blf) * Rs[-blf]
+                     + (FLAGS.reward_decay_multiplier**blf) * Vs[-blf])
         A = V_bellman - V
 
-      Vs.append(V.detach().cpu().numpy())
-      Rs.append(R)
-      As.append(A.detach().cpu().numpy())
-
       (A**2).backward()
+      V = V.detach()
+      A = A.detach()
+
+      Rs.append(R)
+      Vs.append(V.cpu().numpy())
+      As.append(A.cpu().numpy())
 
       softmax = self.actor.forward(frames)
       assert np.array_equal(self.softmaxes[i], softmax.detach().cpu().numpy())
       entropy = torch.distributions.categorical.Categorical(probs=softmax).entropy()
-      actor_loss = -torch.log(softmax[0, self.sampled_action[i][0]]) * A.detach()
+      actor_loss = -torch.log(softmax[0, self.sampled_action[i][0]]) * A
       actor_losses.append(actor_loss.detach().cpu().numpy())
       entropy_loss = FLAGS.entropy_weight * -torch.log(entropy)
       entropy_losses.append(entropy_loss.detach().cpu().numpy())
@@ -298,6 +301,7 @@ class FrameProcessor(object):
         ax2.bar(np.arange(num_topk), softmax_np[topk_idxs], width=0.3)
         ax2.set_xticks(np.arange(num_topk))
         ax2.set_xticklabels(labels)
+        ax2.set_ylim(0.0, 1.0)
         asp = np.diff(ax2.get_xlim())[0] / np.diff(ax2.get_ylim())[0]
         asp /= np.abs(np.diff(ax1.get_xlim())[0] / np.diff(ax1.get_ylim())[0])
         ax2.set_aspect(asp / ax1_height_ratio)
@@ -319,14 +323,17 @@ class FrameProcessor(object):
     self.optimizer_critic.step()
 
     plt.figure()
-    plt.plot(list(reversed(Vs)))
-    GLOBAL.summary_writer.add_figure('loss/value', plt.gcf(), self.episode_number)
+    plt.plot(self.rewards)
+    GLOBAL.summary_writer.add_figure('out/reward', plt.gcf(), self.episode_number)
     plt.figure()
     plt.plot(list(reversed(Rs)))
-    GLOBAL.summary_writer.add_figure('loss/reward', plt.gcf(), self.episode_number)
+    GLOBAL.summary_writer.add_figure('out/reward_cumul', plt.gcf(), self.episode_number)
+    plt.figure()
+    plt.plot(list(reversed(Vs)))
+    GLOBAL.summary_writer.add_figure('out/value', plt.gcf(), self.episode_number)
     plt.figure()
     plt.plot(list(reversed(As)))
-    GLOBAL.summary_writer.add_figure('loss/advantage', plt.gcf(), self.episode_number)
+    GLOBAL.summary_writer.add_figure('out/advantage', plt.gcf(), self.episode_number)
     plt.figure()
     plt.plot(list(reversed(actor_losses)))
     GLOBAL.summary_writer.add_figure('loss/actor', plt.gcf(), self.episode_number)
