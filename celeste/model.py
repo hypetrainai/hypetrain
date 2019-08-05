@@ -6,28 +6,16 @@ from torch.nn import functional as F
 
 import submodules
 
-FLAGS = flags.FLAGS
-
 
 class ResNetIm2Value(nn.Module):
 
-    def __init__(self, out_dim=None, use_softmax=True):
+    def __init__(self, in_dim, out_dim, use_softmax=True):
         super(ResNetIm2Value, self).__init__()
 
         self.use_softmax = use_softmax
-        self.out_dim = FLAGS.num_actions
-        if out_dim is not None:
-            self.out_dim = out_dim
-        self.H = FLAGS.image_height
-        self.W = FLAGS.image_width
-        self.C = FLAGS.image_channels
-        self.context_frames = FLAGS.context_frames
-
-        fc_input = 7 * 13 * 256
 
         layer_defs = []
-        layer_defs_linear = []
-        layer_defs.append(submodules.convbn(self.context_frames*self.C, 64, kernel_size=5, stride=2))
+        layer_defs.append(submodules.convbn(in_dim, 64, kernel_size=5, stride=2))
         layer_defs.append(submodules.convbn(64, 64, kernel_size=3, stride=2))
         layer_defs.append(submodules.convbn(64, 64, kernel_size=3, stride=2))
 
@@ -44,13 +32,15 @@ class ResNetIm2Value(nn.Module):
 
         layer_defs.append(submodules.convbn(256, 256, kernel_size=3, stride=2))
 
+        fc_input = 7 * 13 * 256
+        layer_defs_linear = []
         layer_defs_linear.append(nn.Linear(fc_input, 512))
         #layer_defs_linear.append(nn.BatchNorm1d(512))
         layer_defs_linear.append(nn.ReLU())
         layer_defs_linear.append(nn.Linear(512, 256))
         #layer_defs_linear.append(nn.BatchNorm1d(256))
         layer_defs_linear.append(nn.ReLU())
-        layer_defs_linear.append(nn.Linear(256, self.out_dim))
+        layer_defs_linear.append(nn.Linear(256, out_dim))
 
         self.operation_stack = nn.Sequential(*layer_defs)
         self.operation_stack_linear = nn.Sequential(*layer_defs_linear)
@@ -62,10 +52,4 @@ class ResNetIm2Value(nn.Module):
         if self.use_softmax:
             out = F.softmax(out, 1)
         return out
-
-
-
-
-
-
 

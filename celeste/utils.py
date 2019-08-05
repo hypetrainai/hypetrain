@@ -2,6 +2,11 @@ import matplotlib.collections as mcoll
 import matplotlib.pyplot as plt
 import numpy as np
 
+
+def assert_equal(a, b):
+    assert a == b, (a, b)
+
+
 def class2button(key):
     if not class2button.dict:
         action_button_dict = {
@@ -84,3 +89,4 @@ def grad_norm(network):
     param_norm = p.grad.data.norm(2)
     total_norm += param_norm.item()**2
   return total_norm**0.5
+

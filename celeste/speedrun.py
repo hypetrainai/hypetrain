@@ -38,9 +38,6 @@ flags.DEFINE_boolean('interactive', False, 'interactive mode (enter buttons on c
 
 flags.DEFINE_integer('image_height', 540, 'image height')
 flags.DEFINE_integer('image_width', 960, 'image width')
-flags.DEFINE_integer('image_channels', 12, 'image channels')
-
-flags.DEFINE_integer('num_actions', 72, 'number of actions')
 
 flags.DEFINE_float('lr', 0.001, 'learning rate')
 flags.DEFINE_float('entropy_weight', 0.5, 'weight for entropy loss')
@@ -74,7 +71,7 @@ def savestate(index=1):
   pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_INDEX)
   pylibtas.sendInt(index)
   pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE)
-  assert pylibtas.receiveMessage() == pylibtas.MSGB_SAVING_SUCCEEDED
+  utils.assert_equal(pylibtas.receiveMessage(), pylibtas.MSGB_SAVING_SUCCEEDED)
 
 
 # TODO: move these functions all into a class so shared_config can be a class member.
@@ -90,7 +87,7 @@ def loadstate(index=1):
     pylibtas.sendSharedConfig(shared_config)
     msg = pylibtas.receiveMessage()
 
-  assert msg == pylibtas.MSGB_FRAMECOUNT_TIME
+  utils.assert_equal(msg, pylibtas.MSGB_FRAMECOUNT_TIME)
   _, frame_counter = pylibtas.receiveULong()
   pylibtas.ignoreData(SIZE_TIMESPEC)
   pylibtas.sendMessage(pylibtas.MSGN_EXPOSE)
@@ -140,7 +137,6 @@ button_dict = {
 
 
 def sample_action(softmax):
-    softmax = softmax.detach().cpu()
     sample = torch.distributions.categorical.Categorical(probs=softmax).sample().numpy()
     sample_mapped = [utils.class2button(sample[i]) for i in range(len(sample))]
     return sample, sample_mapped
@@ -164,14 +160,10 @@ class FrameProcessor(object):
     self.episode_number = 0
     self.episode_start = -1
     self.start_frame = None
-    self.frame_buffer = None
-    self.trajectory = []
-    self.rewards = []
-    self.softmaxes = []
-    self.sampled_action = []
 
-    self.actor = Network()
-    self.critic = Network(out_dim=1, use_softmax=False)
+    in_dim = 4 * FLAGS.context_frames + 1 + len(button_dict)
+    self.actor = Network(in_dim, out_dim=len(utils.class2button.dict))
+    self.critic = Network(in_dim, out_dim=1, use_softmax=False)
     if FLAGS.use_cuda:
       self.actor = self.actor.cuda()
       self.critic = self.critic.cuda()
@@ -215,6 +207,14 @@ class FrameProcessor(object):
       should_end_episode = True
     return reward * FLAGS.reward_scale, should_end_episode
 
+  def _get_network_inputs(self, i):
+    input_frames = self.frame_buffer[i:i+FLAGS.context_frames]
+    # [time, channels, height, width] -> [time * channels, height, width]
+    input_frames = torch.reshape(input_frames, [-1, FLAGS.image_height, FLAGS.image_width])
+    input_frames = torch.cat([input_frames, self.extra_channels[i]], 0)
+    input_frames = input_frames.unsqueeze(0)
+    return input_frames
+
   def _start_new_episode(self, frame):
     logging.info('Starting episode %d', self.episode_number)
     if self.start_frame is None:
@@ -225,26 +225,29 @@ class FrameProcessor(object):
     self.softmaxes = []
     self.sampled_action = []
     self.trajectory = []
+    self.frame_buffer = None
+    self.extra_channels = []
     self._generate_goal_state()
-
+    torch.cuda.empty_cache()
 
   def _finish_episode(self):
     assert self.episode_start >= 0
     num_frames = frame_counter - self.episode_start
-    assert len(self.rewards) == num_frames, (num_frames, len(self.rewards))
-    assert len(self.softmaxes) == num_frames, (num_frames, len(self.softmaxes))
-    assert len(self.sampled_action) == num_frames, (num_frames, len(self.sampled_action))
-    assert len(self.trajectory) == num_frames + 1, (num_frames + 1, len(self.trajectory))
-    assert self.frame_buffer.shape[1] == num_frames + FLAGS.context_frames, (num_frames, self.frame_buffer.shape[1])
+    utils.assert_equal(len(self.trajectory), num_frames + 1)
+    utils.assert_equal(self.frame_buffer.shape[0], num_frames + FLAGS.context_frames)
+    utils.assert_equal(len(self.extra_channels), num_frames)
+    utils.assert_equal(len(self.rewards), num_frames)
+    utils.assert_equal(len(self.softmaxes), num_frames)
+    utils.assert_equal(len(self.sampled_action), num_frames)
 
     GLOBAL.summary_writer.add_scalar('episode_length', num_frames, self.episode_number)
     GLOBAL.summary_writer.add_scalar('final_reward', self.rewards[-1], self.episode_number)
     GLOBAL.summary_writer.add_scalar('best_reward', max(self.rewards), self.episode_number)
-    # GLOBAL.summary_writer.add_video('input_frames', self.frame_buffer[:, :, :3], self.episode_number, fps=60)
+    # GLOBAL.summary_writer.add_video('input_frames', self.frame_buffer[:, :3], self.episode_number, fps=60)
 
     plt.figure()
     plt.scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')
-    utils.plot_trajectory(self.frame_buffer[0, -1, :3].detach().cpu().numpy(), self.trajectory)
+    utils.plot_trajectory(self.frame_buffer[-1, :3].detach().cpu().numpy(), self.trajectory)
     GLOBAL.summary_writer.add_figure('trajectory', plt.gcf(), self.episode_number)
 
     R = 0
@@ -256,10 +259,8 @@ class FrameProcessor(object):
     self.optimizer_actor.zero_grad()
     self.optimizer_critic.zero_grad()
     for i in reversed(range(num_frames)):
-      frames = self.frame_buffer[:, i:i+FLAGS.context_frames]
-      frames = torch.reshape(frames, [1, -1, FLAGS.image_height, FLAGS.image_width])
       R = FLAGS.reward_decay_multiplier * R + self.rewards[i]
-      V = self.critic.forward(frames).view([])
+      V = self.critic.forward(self._get_network_inputs(i)).view([])
 
       if FLAGS.bellman_lookahead_frames == 0 or i == num_frames - 1:
         A = R - V
@@ -278,8 +279,8 @@ class FrameProcessor(object):
       Vs.append(V.cpu().numpy())
       As.append(A.cpu().numpy())
 
-      softmax = self.actor.forward(frames)
-      assert np.array_equal(self.softmaxes[i], softmax.detach().cpu().numpy())
+      softmax = self.actor.forward(self._get_network_inputs(i))
+      assert torch.eq(self.softmaxes[i], softmax.cpu()).all()
       entropy = torch.distributions.categorical.Categorical(probs=softmax).entropy()
       actor_loss = -torch.log(softmax[0, self.sampled_action[i][0]]) * A
       actor_losses.append(actor_loss.detach().cpu().numpy())
@@ -293,7 +294,7 @@ class FrameProcessor(object):
             'height_ratios' : [ax1_height_ratio, 1],
         })
         ax1.scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')
-        last_frame = self.frame_buffer[0, i + FLAGS.context_frames - 1, :3].detach().cpu().numpy()
+        last_frame = self.frame_buffer[i + FLAGS.context_frames - 1, :3].detach().cpu().numpy()
         trajectory_i = self.trajectory[max(0, i - FLAGS.context_frames):i+1]
         utils.plot_trajectory(last_frame, trajectory_i, ax=ax1)
         ax1.axis('off')
@@ -391,6 +392,22 @@ class FrameProcessor(object):
         gaussian_current_position = torch.zeros(window_shape).unsqueeze(0)
       else:
         gaussian_current_position = generate_gaussian_heat_map(window_shape, y, x)
+
+      input_frame = torch.tensor(frame).float().permute(2, 0, 1) / 255.0
+      input_frame = torch.cat([input_frame, gaussian_current_position], 0)
+      if FLAGS.use_cuda:
+        input_frame = input_frame.cuda()
+
+      if new_episode:
+        assert state != -1
+        self.frame_buffer = torch.stack([input_frame] * FLAGS.context_frames, 0)
+      else:
+        self.frame_buffer = torch.cat([self.frame_buffer, input_frame.unsqueeze(0)], 0)
+        reward, should_end_episode = self._reward_function_for_current_state()
+        self.rewards.append(reward)
+        if should_end_episode:
+          return self._finish_episode()
+
       gaussian_goal_position = generate_gaussian_heat_map(window_shape, self.goal_y, self.goal_x)
 
       last_frame_buttons = torch.zeros([len(button_dict)] + window_shape)
@@ -400,28 +417,17 @@ class FrameProcessor(object):
           if button in pressed:
             last_frame_buttons[i] = 1.0
 
-      input_frame = torch.tensor(frame).float().permute(2, 0, 1) / 255.0
-      input_frame = torch.cat([input_frame, gaussian_current_position, gaussian_goal_position, last_frame_buttons], 0)
-      input_frame = input_frame.unsqueeze(0).unsqueeze(0)
-      # [batch, time, channels, height, width]
-      assert list(input_frame.shape) == [1, 1, FLAGS.image_channels, FLAGS.image_height, FLAGS.image_width], input_frame.shape
+      extra_channels = torch.cat([gaussian_goal_position, last_frame_buttons], 0)
       if FLAGS.use_cuda:
-        input_frame = input_frame.cuda()
+        extra_channels = extra_channels.cuda()
+      self.extra_channels.append(extra_channels)
 
-      if new_episode:
-        assert state != -1
-        self.frame_buffer = torch.cat([input_frame] * FLAGS.context_frames, 1)
-      else:
-        self.frame_buffer = torch.cat([self.frame_buffer, input_frame], 1)
-        reward, should_end_episode = self._reward_function_for_current_state()
-        self.rewards.append(reward)
-        if should_end_episode:
-          return self._finish_episode()
-
-      frames = self.frame_buffer[:, -FLAGS.context_frames:]
-      frames = torch.reshape(frames, [1, -1, FLAGS.image_height, FLAGS.image_width])
-      softmax = self.actor.forward(frames)
-      self.softmaxes.append(softmax.detach().cpu().numpy())
+      frame_id = frame_counter - self.episode_start
+      utils.assert_equal(frame_id + FLAGS.context_frames, self.frame_buffer.shape[0])
+      utils.assert_equal(frame_id, len(self.extra_channels) - 1)
+      with torch.no_grad():
+        softmax = self.actor.forward(self._get_network_inputs(frame_id)).detach().cpu()
+      self.softmaxes.append(softmax)
       idxs, button_inputs = sample_action(softmax)
       # Predicted button_inputs include a batch dimension.
       # Returned button_inputs should be for next N frames, but for now N==1.
@@ -434,8 +440,6 @@ class FrameProcessor(object):
 def Speedrun():
   global frame_counter
   global shared_config
-
-  assert FLAGS.num_actions == len(utils.class2button.dict), (FLAGS.num_actions, len(utils.class2button.dict))
 
   os.system('mkdir -p /tmp/celeste/movies')
   os.system('cp -f settings.celeste ~/.local/share/Celeste/Saves/')
@@ -499,13 +503,14 @@ def Speedrun():
     start_next_frame()
 
     msg = pylibtas.receiveMessage()
-    assert msg == pylibtas.MSGB_FRAME_DATA, msg
+    utils.assert_equal(msg, pylibtas.MSGB_FRAME_DATA)
     _, actual_window_width = pylibtas.receiveInt()
+    utils.assert_equal(actual_window_width, FLAGS.image_width)
     _, actual_window_height = pylibtas.receiveInt()
-    assert actual_window_width == FLAGS.image_width and actual_window_height == FLAGS.image_height
+    utils.assert_equal(actual_window_height, FLAGS.image_height)
     _, size = pylibtas.receiveInt()
     received, frame = pylibtas.receiveArray(size)
-    assert received == size, (size, received)
+    utils.assert_equal(received, size)
 
     frame = np.reshape(frame, [FLAGS.image_height, FLAGS.image_width, 4])[:, :, :3]
 
