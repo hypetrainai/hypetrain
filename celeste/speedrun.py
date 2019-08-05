@@ -43,7 +43,8 @@ flags.DEFINE_integer('num_actions', 72, 'number of actions')
 
 flags.DEFINE_float('lr', 0.001, 'learning rate')
 flags.DEFINE_float('entropy_weight', 5, 'weight for entropy loss')
-flags.DEFINE_float('reward_decay_multiplier', 0.95, 'reward function decay multiplier')
+flags.DEFINE_float('reward_scale', 1.0/100.0, 'multiplicative scale for the reward function')
+flags.DEFINE_float('reward_decay_multiplier', 0.95, 'reward time decay multiplier')
 flags.DEFINE_integer('episode_length', 200, 'episode length')
 flags.DEFINE_integer('context_frames', 30, 'number of frames passed to the network')
 flags.DEFINE_integer('bellman_lookahead_frames', 12, 'number of frames to consider for bellman rollout')
@@ -209,7 +210,7 @@ class FrameProcessor(object):
       should_end_episode = True
     if frame_counter - self.episode_start >= FLAGS.episode_length:
       should_end_episode = True
-    return reward, should_end_episode
+    return reward * FLAGS.reward_scale, should_end_episode
 
   def _start_new_episode(self, frame):
     if self.start_frame is None:
