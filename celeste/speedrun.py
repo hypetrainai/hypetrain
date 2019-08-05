@@ -15,6 +15,7 @@ from tensorboardX import SummaryWriter
 import torch
 from torch import nn
 from torch import optim
+from torch.nn.utils import clip_grad_value_
 
 from GLOBALS import GLOBAL
 import celeste_detector
@@ -24,7 +25,7 @@ import utils
 
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
-flags.DEFINE_string('logdir', 'trained_models/randomgoaltest', 'logdir')
+flags.DEFINE_string('logdir', 'trained_models/randomgoaltest3', 'logdir')
 
 flags.DEFINE_integer('save_every', 100, 'every X number of steps save a model')
 
@@ -41,12 +42,13 @@ flags.DEFINE_integer('image_channels', 5, 'image channels')
 
 flags.DEFINE_integer('num_actions', 72, 'number of actions')
 
-flags.DEFINE_float('lr', 0.002, 'learning rate')
+flags.DEFINE_float('lr', 0.001, 'learning rate')
 flags.DEFINE_float('entropy_weight', 0.05, 'weight for entropy loss')
 flags.DEFINE_float('reward_decay_multiplier', 0.95, 'reward function decay multiplier')
 flags.DEFINE_integer('episode_length', 200, 'episode length')
 flags.DEFINE_integer('context_frames', 30, 'number of frames passed to the network')
-flags.DEFINE_integer('bellman_lookahead_frames', 6, 'number of frames to consider for bellman rollout')
+flags.DEFINE_integer('bellman_lookahead_frames', 12, 'number of frames to consider for bellman rollout')
+flags.DEFINE_float('clip_grad_value', 100.0, 'value to clip gradients to.')
 
 flags.DEFINE_float('random_goal_probability', 0.4, 'probability that we choose a random goal')
 flags.DEFINE_integer('action_summary_frames', 50, 'number of frames between action summaries')
@@ -243,6 +245,7 @@ class FrameProcessor(object):
     As = []
     actor_losses = []
     self.optimizer_actor.zero_grad()
+    self.optimizer_critic.zero_grad()
     for i in reversed(range(num_frames)):
       frames = self.frame_buffer[:, i:i+FLAGS.context_frames]
       frames = torch.reshape(frames, [1, -1, FLAGS.image_height, FLAGS.image_width])
@@ -261,13 +264,13 @@ class FrameProcessor(object):
       Rs.append(R)
       As.append(A.detach().cpu().numpy())
 
-      self.optimizer_critic.zero_grad()
-      (A**2).backward(retain_graph=True)
-      self.optimizer_critic.step()
+      
+      (A**2).backward()
+      
 
       softmax = self.actor.forward(frames)
       entropy = torch.distributions.categorical.Categorical(probs=softmax).entropy()
-      actor_loss = (-torch.log(softmax[0, self.sampled_action[i]]) * A
+      actor_loss = (-torch.log(softmax[0, self.sampled_action[i]]) * A.detach()
                     - FLAGS.entropy_weight * entropy)
       actor_losses.append(actor_loss.detach().cpu().numpy())
       actor_loss.backward()
@@ -293,9 +296,12 @@ class FrameProcessor(object):
         asp /= np.abs(np.diff(ax1.get_xlim())[0] / np.diff(ax1.get_ylim())[0])
         ax2.set_aspect(asp / ax1_height_ratio)
         GLOBAL.summary_writer.add_figure('action/frame_%03d' % i, fig, self.episode_number)
-
+    
+    clip_grad_value_(self.actor.parameters(), FLAGS.clip_grad_value)
+    clip_grad_value_(self.critic.parameters(), FLAGS.clip_grad_value)
     self.optimizer_actor.step()
-
+    self.optimizer_critic.step()
+    
     plt.figure()
     plt.plot(list(reversed(Vs)))
     GLOBAL.summary_writer.add_figure("loss/value", plt.gcf(), self.episode_number)
