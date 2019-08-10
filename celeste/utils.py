@@ -1,4 +1,3 @@
-import matplotlib
 import matplotlib.collections as mcoll
 import matplotlib.pyplot as plt
 import numpy as np
@@ -70,12 +69,6 @@ def colorline(x, y, z=None, ax=None, cmap='copper', norm=plt.Normalize(0.0, 1.0)
   ax = ax or plt.gca()
   ax.add_collection(lc)
   return lc
-
-
-def figure():
-  fig = plt.figure()
-  plt.gca().yaxis.set_major_formatter(matplotlib.ticker.ScalarFormatter(useOffset=False))
-  return fig
 
 
 def plot_trajectory(bg, trajectory, ax=None):

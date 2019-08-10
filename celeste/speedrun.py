@@ -4,6 +4,8 @@ from absl import logging
 logging.set_verbosity(logging.INFO)
 import cProfile
 import imageio
+import matplotlib
+matplotlib.rcParams['axes.formatter.useoffset'] = False
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -177,20 +179,20 @@ class FrameProcessor(object):
     self.optimizer_critic = optim.Adam(list(self.critic.parameters()), lr=FLAGS.lr)
 
     if FLAGS.pretrained_model_path:
-        logging.info('Loading pretrained model from %s' % FLAGS.pretrained_model_path)
-        self.actor.load_state_dict(torch.load(
-            FLAGS.pretrained_model_path + '/celeste_model_actor_%s.pt' % FLAGS.pretrained_suffix))
-        self.critic.load_state_dict(torch.load(
-            FLAGS.pretrained_model_path + '/celeste_model_critic_%s.pt' % FLAGS.pretrained_suffix))
-        logging.info('Done!')
+      logging.info('Loading pretrained model from %s' % FLAGS.pretrained_model_path)
+      self.actor.load_state_dict(torch.load(
+        FLAGS.pretrained_model_path + '/celeste_model_actor_%s.pt' % FLAGS.pretrained_suffix))
+      self.critic.load_state_dict(torch.load(
+        FLAGS.pretrained_model_path + '/celeste_model_critic_%s.pt' % FLAGS.pretrained_suffix))
+      logging.info('Done!')
 
   def _generate_goal_state(self):
     if np.random.uniform() < FLAGS.random_goal_probability:
-        self.goal_y = np.random.randint(50, FLAGS.image_height - 50)
-        self.goal_x = np.random.randint(50, FLAGS.image_width - 50)
+      self.goal_y = np.random.randint(50, FLAGS.image_height - 50)
+      self.goal_x = np.random.randint(50, FLAGS.image_width - 50)
     else:
-        self.goal_y = FLAGS.goal_y
-        self.goal_x = FLAGS.goal_x
+      self.goal_y = FLAGS.goal_y
+      self.goal_x = FLAGS.goal_x
 
   def _reward_for_current_state(self):
     """Returns (rewards, should_end_episode) given state."""
@@ -247,8 +249,8 @@ class FrameProcessor(object):
     GLOBAL.summary_writer.add_scalar('best_reward', max(self.rewards), self.episode_number)
     # GLOBAL.summary_writer.add_video('input_frames', self.frame_buffer[:, :3], self.episode_number, fps=60)
 
-    fig = utils.figure()
-    fig.axes[0].scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')
+    fig = plt.figure()
+    plt.scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')
     utils.plot_trajectory(self.frame_buffer[-1, :3].detach().cpu().numpy(), self.trajectory)
     GLOBAL.summary_writer.add_figure('trajectory', fig, self.episode_number)
 
@@ -328,23 +330,23 @@ class FrameProcessor(object):
       self.optimizer_actor.step()
     self.optimizer_critic.step()
 
-    fig = utils.figure()
-    fig.axes[0].plot(self.rewards)
+    fig = plt.figure()
+    plt.plot(self.rewards)
     GLOBAL.summary_writer.add_figure('out/reward', fig, self.episode_number)
-    fig = utils.figure()
-    fig.axes[0].plot(list(reversed(Rs[1:])))
+    fig = plt.figure()
+    plt.plot(list(reversed(Rs[1:])))
     GLOBAL.summary_writer.add_figure('out/reward_cumul', fig, self.episode_number)
-    fig = utils.figure()
-    fig.axes[0].plot(list(reversed(Vs[1:])))
+    fig = plt.figure()
+    plt.plot(list(reversed(Vs[1:])))
     GLOBAL.summary_writer.add_figure('out/value', fig, self.episode_number)
-    fig = utils.figure()
-    fig.axes[0].plot(list(reversed(As[1:])))
+    fig = plt.figure()
+    plt.plot(list(reversed(As[1:])))
     GLOBAL.summary_writer.add_figure('out/advantage', fig, self.episode_number)
-    fig = utils.figure()
-    fig.axes[0].plot(list(reversed(actor_losses)))
+    fig = plt.figure()
+    plt.plot(list(reversed(actor_losses)))
     GLOBAL.summary_writer.add_figure('loss/actor', fig, self.episode_number)
-    fig = utils.figure()
-    fig.axes[0].plot(list(reversed(entropy_losses)))
+    fig = plt.figure()
+    plt.plot(list(reversed(entropy_losses)))
     GLOBAL.summary_writer.add_figure('loss/entropy', fig, self.episode_number)
 
     # Start next episode.
