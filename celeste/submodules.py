@@ -37,18 +37,18 @@ def conv(in_planes, out_planes, kernel_size=1, stride=1, pad=0, dilation=1, tran
         return res
 
 
-def convbn(in_planes, out_planes, kernel_size=1, stride=1, pad=0, dilation=1, transpose=False, bias=False, dimension = 2,relu = True):
+def convbn(in_planes, out_planes, kernel_size=1, stride=1, pad=0, dilation=1, transpose=False, dimension = 2,relu = True):
     kwargs = {
         'kernel_size': kernel_size,
         'stride': stride,
         'pad': pad,
         'dilation': dilation,
         'transpose': transpose,
-        'bias': bias,
+        'bias': False,
         'dimension': dimension,
         'relu': relu,
     }
-    if not relu: 
+    if not relu:
         return nn.Sequential(
             conv(in_planes, out_planes, **kwargs),
             nn.BatchNorm2d(out_planes))
@@ -57,29 +57,29 @@ def convbn(in_planes, out_planes, kernel_size=1, stride=1, pad=0, dilation=1, tr
             conv(in_planes, out_planes, **kwargs),
             nn.BatchNorm2d(out_planes),
             nn.ReLU())
-        
-def convbn_resnet(in_planes, out_planes, kernel_size=1, stride=1, pad=0, dilation=1, transpose=False, bias=False, dimension = 2,relu = True):
+
+def convbn_resnet(in_planes, out_planes, kernel_size=1, stride=1, pad=0, dilation=1, transpose=False, dimension = 2,relu = True):
     kwargs = {
         'kernel_size': kernel_size,
         'stride': stride,
         'pad': pad,
         'dilation': dilation,
         'transpose': transpose,
-        'bias': bias,
+        'bias': False,
         'dimension': dimension,
         'relu': False
     }
-    if not relu: 
+    if not relu:
         return nn.Sequential(
             nn.BatchNorm2d(in_planes),
             conv(in_planes, out_planes, **kwargs))
-            
+
     else:
         return nn.Sequential(
             nn.BatchNorm2d(in_planes),
             nn.ReLU(),
             conv(in_planes, out_planes, **kwargs))
-            
+
 
 class ResNetModule(nn.Module):
 
@@ -91,14 +91,13 @@ class ResNetModule(nn.Module):
                  pad=0,
                  dilation=1,
                  transpose=False,
-                 bias=True,
                  bn=True,
                  causal=False,
                  dimension=2):
         super(ResNetModule, self).__init__()
         self.causal = kernel_size - 1 if causal else 0
         conv_fn = convbn_resnet if bn else conv
-        self.convstart = conv_fn(in_planes, out_planes//4, transpose=transpose, bias=bias, dimension=dimension)
+        self.convstart = conv_fn(in_planes, out_planes//4, transpose=transpose, bias=not bn, dimension=dimension)
         self.convmid = conv_fn(out_planes//4,
                                out_planes//4,
                                kernel_size=kernel_size,
@@ -106,9 +105,9 @@ class ResNetModule(nn.Module):
                                pad=pad,
                                dilation=dilation,
                                transpose=transpose,
-                               bias=bias,
+                               bias=not bn,
                                dimension=dimension)
-        self.convend = conv_fn(out_planes//4, out_planes, transpose=transpose, bias=bias, dimension=dimension)
+        self.convend = conv_fn(out_planes//4, out_planes, transpose=transpose, bias=not bn, dimension=dimension)
 
     def forward(self, input):
         out = self.convstart(input)

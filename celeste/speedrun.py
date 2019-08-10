@@ -128,13 +128,13 @@ def start_next_frame():
 
 button_dict = {
     'a': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_A,
-    'b': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_B,
+#    'b': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_B,
 #    'x': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_X,
 #    'y': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_Y,
-    'rt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_RIGHTSHOULDER,
+#    'rt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_RIGHTSHOULDER,
 #    'lt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_LEFTSHOULDER,
-    'u': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_UP,
-    'd': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_DOWN,
+#    'u': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_UP,
+#    'd': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_DOWN,
     'l': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_LEFT,
     'r': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_RIGHT,
 }
@@ -281,7 +281,7 @@ class FrameProcessor(object):
 
       softmax = self.actor.forward(self._get_network_inputs(i))
       assert torch.eq(self.softmaxes[i], softmax.cpu()).all()
-      entropy = torch.distributions.categorical.Categorical(probs=softmax).entropy()
+      entropy = -torch.sum(softmax * torch.log(softmax))
       actor_loss = -torch.log(softmax[0, self.sampled_action[i][0]]) * A
       actor_losses.append(actor_loss.detach().cpu().numpy())
       entropy_loss = FLAGS.entropy_weight / (entropy + 1e-6)
@@ -534,14 +534,13 @@ def Speedrun():
           action_queue.put(frame_actions)
       frame_actions = action_queue.get()
       assert isinstance(frame_actions, (list, tuple))
-      if list(frame_actions) != ['']:
-        for button in frame_actions:
-          if button not in button_dict:
-            logging.warning('Unknown button %s!' % button)
-            continue
-          si = pylibtas.SingleInput()
-          si.type = button_dict[button]
-          ai.setInput(si, 1)
+      for button in frame_actions:
+        if button not in button_dict:
+          logging.warning('Unknown button %s!' % button)
+          continue
+        si = pylibtas.SingleInput()
+        si.type = button_dict[button]
+        ai.setInput(si, 1)
 
     pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)
     pylibtas.sendAllInputs(ai)
