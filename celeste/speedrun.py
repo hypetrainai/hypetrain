@@ -27,7 +27,7 @@ import utils
 
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
-flags.DEFINE_string('logdir', 'trained_models/4thrt_fixed_newgoal_noearlyendorandtarget', 'logdir')
+flags.DEFINE_string('logdir', 'trained_models/truetest', 'logdir')
 flags.DEFINE_boolean('use_cuda', True, 'Use cuda')
 flags.DEFINE_boolean('profile', False, 'Profile code')
 
@@ -36,10 +36,10 @@ flags.DEFINE_integer('save_every', 100, 'every X number of steps save a model')
 
 flags.DEFINE_string('movie_file', 'movie.ltm', 'if not empty string, load libTAS input movie file')
 flags.DEFINE_string('save_file', 'level1_screen4', 'if not empty string, use save file.')
-#flags.DEFINE_integer('goal_y', 107, 'goal pixel coordinate in y')
-#flags.DEFINE_integer('goal_x', 611, 'goal pixel coordinate in x')
-flags.DEFINE_integer('goal_y', 481, 'goal pixel coordinate in y')
-flags.DEFINE_integer('goal_x', 604, 'goal pixel coordinate in x')
+flags.DEFINE_integer('goal_y', 107, 'goal pixel coordinate in y')
+flags.DEFINE_integer('goal_x', 611, 'goal pixel coordinate in x')
+#flags.DEFINE_integer('goal_y', 481, 'goal pixel coordinate in y')
+#flags.DEFINE_integer('goal_x', 604, 'goal pixel coordinate in x')
 
 flags.DEFINE_boolean('interactive', False, 'interactive mode (enter buttons on command line)')
 
@@ -48,17 +48,17 @@ flags.DEFINE_integer('image_width', 960, 'image width')
 
 flags.DEFINE_float('lr', 0.0005, 'learning rate')
 flags.DEFINE_float('actor_start_delay', 10, 'delay training of the actor for this many episodes')
-flags.DEFINE_float('entropy_weight', 0.1, 'weight for entropy loss')
+flags.DEFINE_float('entropy_weight', 0.0001, 'weight for entropy loss')
 flags.DEFINE_float('reward_scale', 1.0/100.0, 'multiplicative scale for the reward function')
 flags.DEFINE_float('reward_decay_multiplier', 0.95, 'reward time decay multiplier')
-flags.DEFINE_integer('episode_length', 100, 'episode length')
+flags.DEFINE_integer('episode_length', 150, 'episode length')
 flags.DEFINE_integer('context_frames', 30, 'number of frames passed to the network')
 flags.DEFINE_integer('bellman_lookahead_frames', 3, 'number of frames to consider for bellman rollout')
 flags.DEFINE_float('clip_grad_norm', 1000.0, 'value to clip gradient norm to.')
 flags.DEFINE_float('clip_grad_value', 0.0, 'value to clip gradients to.')
 flags.DEFINE_integer('hold_buttons_for', 5, 'hold all buttons for at least this number of frames')
 
-flags.DEFINE_float('random_goal_probability', 0.0, 'probability that we choose a random goal')
+flags.DEFINE_float('random_goal_probability', 0.3, 'probability that we choose a random goal')
 flags.DEFINE_integer('action_summary_frames', 50, 'number of frames between action summaries')
 
 FLAGS = flags.FLAGS
@@ -133,13 +133,13 @@ def start_next_frame():
 
 button_dict = {
     'a': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_A,
-#    'b': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_B,
-#    'x': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_X,
-#    'y': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_Y,
-#    'rt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_RIGHTSHOULDER,
-#    'lt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_LEFTSHOULDER,
-#    'u': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_UP,
-#    'd': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_DOWN,
+    'b': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_B,
+    'x': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_X,
+    'y': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_Y,
+    'rt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_RIGHTSHOULDER,
+    'lt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_LEFTSHOULDER,
+    'u': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_UP,
+    'd': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_DOWN,
     'l': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_LEFT,
     'r': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_RIGHT,
 }
