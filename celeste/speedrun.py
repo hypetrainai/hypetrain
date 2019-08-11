@@ -202,14 +202,14 @@ class FrameProcessor(object):
     reward = 0
     should_end_episode = False
     y, x = self.trajectory[-1]
-    
+
     if y is None:
       # Assume death
       reward -= 4
       should_end_episode = True
       y, x = self.trajectory[-2]
-    dist_to_goal = (np.sqrt((y - self.goal_y)**2 + (x - self.goal_x)**2))
-    reward += 50 - 10*(dist_to_goal)**(0.33)
+    dist_to_goal = np.sqrt((y - self.goal_y)**2 + (x - self.goal_x)**2)
+    reward += 50 - 10 * dist_to_goal**0.33
     if not should_end_episode:
       if frame_counter - self.episode_start >= FLAGS.episode_length:
         should_end_episode = True
@@ -236,7 +236,8 @@ class FrameProcessor(object):
     self.frame_buffer = None
     self.extra_channels = []
     self._generate_goal_state()
-    torch.cuda.empty_cache()
+    if FLAGS.use_cuda:
+      torch.cuda.empty_cache()
 
   def _finish_episode(self):
     assert self.episode_start >= 0
@@ -440,7 +441,7 @@ class FrameProcessor(object):
       idxs, button_inputs = sample_action(softmax)
       # Predicted button_inputs include a batch dimension.
       # Returned button_inputs should be for next N frames, but for now N==1.
-      button_inputs = [button_inputs[0]] 
+      button_inputs = [button_inputs[0]]
       self.sampled_action.append(idxs)
 
     return button_inputs
@@ -511,8 +512,6 @@ def Speedrun():
   held_counter = 0
   held_inputs = None
   while True:
-    
-    
     start_next_frame()
 
     msg = pylibtas.receiveMessage()
@@ -537,13 +536,13 @@ def Speedrun():
       moviefile.getInputs(ai, frame_counter)
       frame_counter += 1
     else:
-      if held_counter == 0:   
+      held_counter -= 1
+      if held_counter <= 0:
         frames_actions = processor.process_frame(frame)
         frame_counter += 1
         held_inputs = frames_actions
         held_counter = FLAGS.hold_buttons_for
       else:
-        held_counter -= 1
         frames_actions = held_inputs
       if not frames_actions:
         return
