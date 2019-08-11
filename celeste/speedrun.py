@@ -134,10 +134,10 @@ def start_next_frame():
 button_dict = {
     'a': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_A,
     'b': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_B,
-    'x': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_X,
-    'y': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_Y,
+#    'x': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_X,
+#    'y': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_Y,
     'rt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_RIGHTSHOULDER,
-    'lt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_LEFTSHOULDER,
+#    'lt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_LEFTSHOULDER,
     'u': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_UP,
     'd': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_DOWN,
     'l': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_LEFT,
@@ -167,7 +167,7 @@ class FrameProcessor(object):
     self.det = celeste_detector.CelesteDetector()
 
     self.episode_number = 0
-    self.episode_start = -1
+    self.processed_frames = 0
     self.start_frame = None
 
     in_dim = 4 * FLAGS.context_frames + 1 + len(button_dict)
@@ -211,7 +211,7 @@ class FrameProcessor(object):
     dist_to_goal = np.sqrt((y - self.goal_y)**2 + (x - self.goal_x)**2)
     reward += 50 - 10 * dist_to_goal**0.33
     if not should_end_episode:
-      if frame_counter - self.episode_start >= FLAGS.episode_length:
+      if self.processed_frames >= FLAGS.episode_length:
         should_end_episode = True
     return reward * FLAGS.reward_scale, should_end_episode
 
@@ -227,7 +227,6 @@ class FrameProcessor(object):
     logging.info('Starting episode %d', self.episode_number)
     if self.start_frame is None:
       savestate()
-    self.episode_start = frame_counter
     self.start_frame = frame
     self.rewards = []
     self.softmaxes = []
@@ -240,16 +239,15 @@ class FrameProcessor(object):
       torch.cuda.empty_cache()
 
   def _finish_episode(self):
-    assert self.episode_start >= 0
-    num_frames = frame_counter - self.episode_start
-    utils.assert_equal(len(self.trajectory), num_frames + 1)
-    utils.assert_equal(self.frame_buffer.shape[0], num_frames + FLAGS.context_frames)
-    utils.assert_equal(len(self.extra_channels), num_frames + 1)
-    utils.assert_equal(len(self.rewards), num_frames)
-    utils.assert_equal(len(self.softmaxes), num_frames)
-    utils.assert_equal(len(self.sampled_action), num_frames)
+    assert self.processed_frames > 0
+    utils.assert_equal(len(self.trajectory), self.processed_frames + 1)
+    utils.assert_equal(self.frame_buffer.shape[0], self.processed_frames + FLAGS.context_frames)
+    utils.assert_equal(len(self.extra_channels), self.processed_frames + 1)
+    utils.assert_equal(len(self.rewards), self.processed_frames)
+    utils.assert_equal(len(self.softmaxes), self.processed_frames)
+    utils.assert_equal(len(self.sampled_action), self.processed_frames)
 
-    GLOBAL.summary_writer.add_scalar('episode_length', num_frames, self.episode_number)
+    GLOBAL.summary_writer.add_scalar('episode_length', self.processed_frames, self.episode_number)
     GLOBAL.summary_writer.add_scalar('final_reward', self.rewards[-1], self.episode_number)
     GLOBAL.summary_writer.add_scalar('best_reward', max(self.rewards), self.episode_number)
     # GLOBAL.summary_writer.add_video('input_frames', self.frame_buffer[:, :3], self.episode_number, fps=60)
@@ -259,24 +257,24 @@ class FrameProcessor(object):
     utils.plot_trajectory(self.frame_buffer[-1, :3].detach().cpu().numpy(), self.trajectory)
     GLOBAL.summary_writer.add_figure('trajectory', fig, self.episode_number)
 
-    R = self.rewards[num_frames - 1]
+    R = self.rewards[self.processed_frames - 1]
     # reward = (1 + gamma + gamma^2 + ...) * reward
     R *= 1.0 / (1.0 - FLAGS.reward_decay_multiplier)
     Rs = [R]
-    final_V = self.critic.forward(self._get_network_inputs(num_frames)).view([]).detach().cpu().numpy()
+    final_V = self.critic.forward(self._get_network_inputs(self.processed_frames)).view([]).detach().cpu().numpy()
     Vs = [final_V]
     As = [0]
     actor_losses = []
     entropy_losses = []
     self.optimizer_actor.zero_grad()
     self.optimizer_critic.zero_grad()
-    for i in reversed(range(num_frames)):
+    for i in reversed(range(self.processed_frames)):
       R = FLAGS.reward_decay_multiplier * R + self.rewards[i]
       V = self.critic.forward(self._get_network_inputs(i)).view([])
       ((R - V)**2).backward()
       V = V.detach()
 
-      blf = min(FLAGS.bellman_lookahead_frames, num_frames - i)
+      blf = min(FLAGS.bellman_lookahead_frames, self.processed_frames - i)
       assert blf > 0
       V_bellman = (R - (FLAGS.reward_decay_multiplier**blf) * Rs[-blf]
                    + (FLAGS.reward_decay_multiplier**blf) * Vs[-blf])
@@ -356,7 +354,7 @@ class FrameProcessor(object):
 
     # Start next episode.
     loadstate()
-    self.episode_start = -1
+    self.processed_frames = 0
     self.episode_number += 1
     if self.episode_number % FLAGS.save_every == 0:
       torch.save(self.actor.state_dict(), os.path.join(FLAGS.logdir,
@@ -388,13 +386,10 @@ class FrameProcessor(object):
           button_inputs = [button_input]
 
     if not FLAGS.interactive:
-      new_episode = False
-      if self.episode_start < 0:
-        new_episode = True
+      if self.processed_frames == 0:
         self._start_new_episode(frame)
 
-      y, x, state = self.det.detect(frame, prior_coord=None if new_episode else self.trajectory[-1])
-
+      y, x, state = self.det.detect(frame, prior_coord=self.trajectory[-1] if self.trajectory else None)
       self.trajectory.append((y, x))
 
       window_shape = [FLAGS.image_height, FLAGS.image_width]
@@ -423,7 +418,7 @@ class FrameProcessor(object):
         extra_channels = extra_channels.cuda()
       self.extra_channels.append(extra_channels)
 
-      if new_episode:
+      if self.processed_frames == 0:
         assert state != -1
         self.frame_buffer = torch.stack([input_frame] * FLAGS.context_frames, 0)
       else:
@@ -433,18 +428,18 @@ class FrameProcessor(object):
         if should_end_episode:
           return self._finish_episode()
 
-      frame_id = frame_counter - self.episode_start
-      utils.assert_equal(frame_id + FLAGS.context_frames, self.frame_buffer.shape[0])
-      utils.assert_equal(frame_id, len(self.extra_channels) - 1)
+      utils.assert_equal(self.processed_frames + FLAGS.context_frames, self.frame_buffer.shape[0])
+      utils.assert_equal(self.processed_frames, len(self.extra_channels) - 1)
       with torch.no_grad():
-        softmax = self.actor.forward(self._get_network_inputs(frame_id)).detach().cpu()
+        softmax = self.actor.forward(self._get_network_inputs(self.processed_frames)).detach().cpu()
       self.softmaxes.append(softmax)
       idxs, button_inputs = sample_action(softmax)
       # Predicted button_inputs include a batch dimension.
       # Returned button_inputs should be for next N frames, but for now N==1.
-      button_inputs = [button_inputs[0]]
+      button_inputs = [button_inputs[0]] * FLAGS.hold_buttons_for
       self.sampled_action.append(idxs)
 
+    self.processed_frames += 1
     return button_inputs
 
 
@@ -510,8 +505,6 @@ def Speedrun():
 
   processor = FrameProcessor()
   action_queue = queue.Queue()
-  held_counter = 0
-  held_inputs = None
   while True:
     start_next_frame()
 
@@ -535,20 +528,9 @@ def Speedrun():
     ai.emptyInputs()
     if moviefile and frame_counter < moviefile.nbFrames():
       moviefile.getInputs(ai, frame_counter)
-      frame_counter += 1
     else:
-      held_counter -= 1
-      if held_counter <= 0:
-        frames_actions = processor.process_frame(frame)
-        frame_counter += 1
-        held_inputs = frames_actions
-        held_counter = FLAGS.hold_buttons_for
-      else:
-        frames_actions = held_inputs
-      if not frames_actions:
-        return
       if action_queue.empty():
-        for frame_actions in frames_actions:
+        for frame_actions in processor.process_frame(frame):
           action_queue.put(frame_actions)
       frame_actions = action_queue.get()
       assert isinstance(frame_actions, (list, tuple))
@@ -563,6 +545,7 @@ def Speedrun():
     pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)
     pylibtas.sendAllInputs(ai)
     pylibtas.sendMessage(pylibtas.MSGN_END_FRAMEBOUNDARY)
+    frame_counter += 1
 
 
 def main(argv):
