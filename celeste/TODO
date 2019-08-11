@@ -1,8 +1,11 @@
 P0:
 - Separate game interaction into a environment module.
+- Support recurrent actor network.
 
 P1:
 - Map scroll tracking system.
 
 P2:
+- Flow-based actor network.
+- Decrease FLAGS.hold_buttons_for on a schedule.
 - Environment module should be in its own thread and not interact with each other. LibTAS socket files need to be random tempfiles shared through environ rather than hardcoded /tmp/libTAS.socket.
