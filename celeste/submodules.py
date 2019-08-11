@@ -37,7 +37,7 @@ def conv(in_planes, out_planes, kernel_size=1, stride=1, pad=0, dilation=1, tran
         return res
 
 
-def convbn(in_planes, out_planes, kernel_size=1, stride=1, pad=0, dilation=1, transpose=False, dimension = 2,relu = True):
+def convbn(in_planes, out_planes, kernel_size=1, stride=1, pad=0, dilation=1, transpose=False, bias=False, dimension = 2,relu = True):
     kwargs = {
         'kernel_size': kernel_size,
         'stride': stride,
@@ -58,7 +58,7 @@ def convbn(in_planes, out_planes, kernel_size=1, stride=1, pad=0, dilation=1, tr
             nn.BatchNorm2d(out_planes),
             nn.ReLU())
 
-def convbn_resnet(in_planes, out_planes, kernel_size=1, stride=1, pad=0, dilation=1, transpose=False, dimension = 2,relu = True):
+def convbn_resnet(in_planes, out_planes, kernel_size=1, stride=1, pad=0, dilation=1, transpose=False, bias=False, dimension = 2,relu = True):
     kwargs = {
         'kernel_size': kernel_size,
         'stride': stride,

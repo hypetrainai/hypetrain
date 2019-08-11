@@ -25,7 +25,7 @@ import utils
 
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
-flags.DEFINE_string('logdir', 'trained_models/randomgoaltest3', 'logdir')
+flags.DEFINE_string('logdir', 'trained_models/4thrt_fixed_newgoal_noearlyendorandtarget', 'logdir')
 flags.DEFINE_boolean('use_cuda', True, 'Use cuda')
 flags.DEFINE_boolean('profile', False, 'Profile code')
 
@@ -34,26 +34,29 @@ flags.DEFINE_integer('save_every', 100, 'every X number of steps save a model')
 
 flags.DEFINE_string('movie_file', 'movie.ltm', 'if not empty string, load libTAS input movie file')
 flags.DEFINE_string('save_file', 'level1_screen4', 'if not empty string, use save file.')
-flags.DEFINE_integer('goal_y', 107, 'goal pixel coordinate in y')
-flags.DEFINE_integer('goal_x', 611, 'goal pixel coordinate in x')
+#flags.DEFINE_integer('goal_y', 107, 'goal pixel coordinate in y')
+#flags.DEFINE_integer('goal_x', 611, 'goal pixel coordinate in x')
+flags.DEFINE_integer('goal_y', 481, 'goal pixel coordinate in y')
+flags.DEFINE_integer('goal_x', 604, 'goal pixel coordinate in x')
 
 flags.DEFINE_boolean('interactive', False, 'interactive mode (enter buttons on command line)')
 
 flags.DEFINE_integer('image_height', 540, 'image height')
 flags.DEFINE_integer('image_width', 960, 'image width')
 
-flags.DEFINE_float('lr', 0.001, 'learning rate')
+flags.DEFINE_float('lr', 0.0005, 'learning rate')
 flags.DEFINE_float('actor_start_delay', 10, 'delay training of the actor for this many episodes')
-flags.DEFINE_float('entropy_weight', 0.05, 'weight for entropy loss')
+flags.DEFINE_float('entropy_weight', 0.1, 'weight for entropy loss')
 flags.DEFINE_float('reward_scale', 1.0/100.0, 'multiplicative scale for the reward function')
 flags.DEFINE_float('reward_decay_multiplier', 0.95, 'reward time decay multiplier')
-flags.DEFINE_integer('episode_length', 200, 'episode length')
+flags.DEFINE_integer('episode_length', 100, 'episode length')
 flags.DEFINE_integer('context_frames', 30, 'number of frames passed to the network')
-flags.DEFINE_integer('bellman_lookahead_frames', 1, 'number of frames to consider for bellman rollout')
+flags.DEFINE_integer('bellman_lookahead_frames', 3, 'number of frames to consider for bellman rollout')
 flags.DEFINE_float('clip_grad_norm', 1000.0, 'value to clip gradient norm to.')
 flags.DEFINE_float('clip_grad_value', 0.0, 'value to clip gradients to.')
+flags.DEFINE_integer('hold_buttons_for', 5, 'hold all buttons for at least this number of frames')
 
-flags.DEFINE_float('random_goal_probability', 0.4, 'probability that we choose a random goal')
+flags.DEFINE_float('random_goal_probability', 0.0, 'probability that we choose a random goal')
 flags.DEFINE_integer('action_summary_frames', 50, 'number of frames between action summaries')
 
 FLAGS = flags.FLAGS
@@ -197,15 +200,16 @@ class FrameProcessor(object):
     reward = 0
     should_end_episode = False
     y, x = self.trajectory[-1]
+    
     if y is None:
       # Assume death
-      reward -= 50
+      reward -= 4
       should_end_episode = True
       y, x = self.trajectory[-2]
-    dist_to_goal = np.sqrt((y - self.goal_y)**2 + (x - self.goal_x)**2)
-    reward += 2000 - dist_to_goal
+    dist_to_goal = (np.sqrt((y - self.goal_y)**2 + (x - self.goal_x)**2))
+    reward += 50 - 10*(dist_to_goal)**(0.33)
     if not should_end_episode:
-      if dist_to_goal < 10 or frame_counter - self.episode_start >= FLAGS.episode_length:
+      if frame_counter - self.episode_start >= FLAGS.episode_length:
         should_end_episode = True
     return reward * FLAGS.reward_scale, should_end_episode
 
@@ -434,7 +438,7 @@ class FrameProcessor(object):
       idxs, button_inputs = sample_action(softmax)
       # Predicted button_inputs include a batch dimension.
       # Returned button_inputs should be for next N frames, but for now N==1.
-      button_inputs = [button_inputs[0]]
+      button_inputs = [button_inputs[0]] 
       self.sampled_action.append(idxs)
 
     return button_inputs
@@ -502,7 +506,11 @@ def Speedrun():
 
   processor = FrameProcessor()
   action_queue = queue.Queue()
+  held_counter = 0
+  held_inputs = None
   while True:
+    
+    
     start_next_frame()
 
     msg = pylibtas.receiveMessage()
@@ -525,8 +533,16 @@ def Speedrun():
     ai.emptyInputs()
     if moviefile and frame_counter < moviefile.nbFrames():
       moviefile.getInputs(ai, frame_counter)
+      frame_counter += 1
     else:
-      frames_actions = processor.process_frame(frame)
+      if held_counter == 0:   
+        frames_actions = processor.process_frame(frame)
+        frame_counter += 1
+        held_inputs = frames_actions
+        held_counter = FLAGS.hold_buttons_for
+      else:
+        held_counter -= 1
+        frames_actions = held_inputs
       if not frames_actions:
         return
       if action_queue.empty():
@@ -545,7 +561,6 @@ def Speedrun():
     pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)
     pylibtas.sendAllInputs(ai)
     pylibtas.sendMessage(pylibtas.MSGN_END_FRAMEBOUNDARY)
-    frame_counter += 1
 
 
 def main(argv):

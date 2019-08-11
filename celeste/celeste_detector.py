@@ -21,7 +21,7 @@ class CelesteDetector():
     def __init__(self, threshold=10, search_delta_with_prior=100):
         self.thres = threshold
         self.sdwp = search_delta_with_prior
-        self.death_clock_init = 10
+        self.death_clock_init = int(15/FLAGS.hold_buttons_for)
         self.death_clock = self.death_clock_init
         if self.sdwp % 2 == 1:
             self.sdwp += 1
