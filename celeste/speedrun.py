@@ -394,6 +394,7 @@ class FrameProcessor(object):
         self._start_new_episode(frame)
 
       y, x, state = self.det.detect(frame, prior_coord=None if new_episode else self.trajectory[-1])
+
       self.trajectory.append((y, x))
 
       window_shape = [FLAGS.image_height, FLAGS.image_width]

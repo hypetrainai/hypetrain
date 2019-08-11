@@ -40,6 +40,8 @@ class CelesteDetector():
         mask = self._get_mask(im, col, prior_coord=prior_coord)
         if np.sum(mask) == 0 and prior_coord is not None:
             mask = self._get_mask(im, col, prior_coord=None)
+            if np.sum(mask) != 0:
+                prior_coord = None
         if np.sum(mask) == 0:
             self.death_clock -= 1
             if self.death_clock > 0:
