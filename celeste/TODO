@@ -1,6 +1,5 @@
 P0:
 - Separate game interaction into a environment module.
-- Support recurrent actor network.
 
 P1:
 - Map scroll tracking system.
