@@ -27,7 +27,7 @@ import utils
 
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
-flags.DEFINE_string('logdir', 'trained_models/truetest', 'logdir')
+flags.DEFINE_string('logdir', 'trained_models/truetest_higherdp_norandgoal2_dp3_rs10', 'logdir')
 flags.DEFINE_boolean('use_cuda', True, 'Use cuda')
 flags.DEFINE_boolean('profile', False, 'Profile code')
 
@@ -49,16 +49,16 @@ flags.DEFINE_integer('image_width', 960, 'image width')
 flags.DEFINE_float('lr', 0.0005, 'learning rate')
 flags.DEFINE_float('actor_start_delay', 10, 'delay training of the actor for this many episodes')
 flags.DEFINE_float('entropy_weight', 0.0001, 'weight for entropy loss')
-flags.DEFINE_float('reward_scale', 1.0/100.0, 'multiplicative scale for the reward function')
+flags.DEFINE_float('reward_scale', 10.0/100.0, 'multiplicative scale for the reward function')
 flags.DEFINE_float('reward_decay_multiplier', 0.95, 'reward time decay multiplier')
 flags.DEFINE_integer('episode_length', 150, 'episode length')
 flags.DEFINE_integer('context_frames', 30, 'number of frames passed to the network')
-flags.DEFINE_integer('bellman_lookahead_frames', 3, 'number of frames to consider for bellman rollout')
+flags.DEFINE_integer('bellman_lookahead_frames', 5, 'number of frames to consider for bellman rollout')
 flags.DEFINE_float('clip_grad_norm', 1000.0, 'value to clip gradient norm to.')
 flags.DEFINE_float('clip_grad_value', 0.0, 'value to clip gradients to.')
-flags.DEFINE_integer('hold_buttons_for', 5, 'hold all buttons for at least this number of frames')
+flags.DEFINE_integer('hold_buttons_for', 4, 'hold all buttons for at least this number of frames')
 
-flags.DEFINE_float('random_goal_probability', 0.3, 'probability that we choose a random goal')
+flags.DEFINE_float('random_goal_probability', 0.0, 'probability that we choose a random goal')
 flags.DEFINE_integer('action_summary_frames', 50, 'number of frames between action summaries')
 
 FLAGS = flags.FLAGS
@@ -205,7 +205,7 @@ class FrameProcessor(object):
 
     if y is None:
       # Assume death
-      reward -= 4
+      reward -= 3
       should_end_episode = True
       y, x = self.trajectory[-2]
     dist_to_goal = np.sqrt((y - self.goal_y)**2 + (x - self.goal_x)**2)
