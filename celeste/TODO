@@ -1,6 +1,3 @@
-P0:
-- Separate game interaction into a environment module.
-
 P1:
 - Map scroll tracking system.
 

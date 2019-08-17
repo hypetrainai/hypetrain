@@ -3,7 +3,6 @@ from absl import flags
 from absl import logging
 logging.set_verbosity(logging.INFO)
 import cProfile
-import imageio
 import matplotlib
 matplotlib.rcParams['axes.formatter.useoffset'] = False
 import matplotlib.pyplot as plt
@@ -21,6 +20,7 @@ from torch import optim
 
 from GLOBALS import GLOBAL
 import celeste_detector
+import environment
 from model import ResNetIm2Value as Network
 import utils
 
@@ -64,73 +64,6 @@ flags.DEFINE_integer('action_summary_frames', 50, 'number of frames between acti
 FLAGS = flags.FLAGS
 
 
-SIZE_INT = 4
-SIZE_FLOAT = 4
-SIZE_UNSIGNED_LONG = 8
-SIZE_TIMESPEC = 16
-SIZE_GAMEINFO_STRUCT = 36
-
-
-shared_config = None
-game_pid = -1
-frame_counter = 0
-
-
-def savestate(index=1):
-  pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_INDEX)
-  pylibtas.sendInt(index)
-  pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE)
-  utils.assert_equal(pylibtas.receiveMessage(), pylibtas.MSGB_SAVING_SUCCEEDED)
-
-
-# TODO: move these functions all into a class so shared_config can be a class member.
-def loadstate(index=1):
-  global frame_counter
-  pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_INDEX)
-  pylibtas.sendInt(index)
-  pylibtas.sendMessage(pylibtas.MSGN_LOADSTATE)
-
-  msg = pylibtas.receiveMessage()
-  if msg == pylibtas.MSGB_LOADING_SUCCEEDED:
-    pylibtas.sendMessage(pylibtas.MSGN_CONFIG)
-    pylibtas.sendSharedConfig(shared_config)
-    msg = pylibtas.receiveMessage()
-
-  utils.assert_equal(msg, pylibtas.MSGB_FRAMECOUNT_TIME)
-  _, frame_counter = pylibtas.receiveULong()
-  pylibtas.ignoreData(SIZE_TIMESPEC)
-  pylibtas.sendMessage(pylibtas.MSGN_EXPOSE)
-
-
-def start_next_frame():
-  msg = pylibtas.receiveMessage()
-  while msg != pylibtas.MSGB_START_FRAMEBOUNDARY:
-    if msg == pylibtas.MSGB_WINDOW_ID:
-      pylibtas.ignoreData(SIZE_INT)
-    elif msg == pylibtas.MSGB_ALERT_MSG:
-      logging.warning(pylibtas.receiveString())
-    elif msg == pylibtas.MSGB_ENCODE_FAILED:
-      raise RuntimeError('MSGB_ENCODE_FAILED')
-    elif msg == pylibtas.MSGB_FRAMECOUNT_TIME:
-      pylibtas.ignoreData(SIZE_UNSIGNED_LONG)
-      pylibtas.ignoreData(SIZE_TIMESPEC)
-    elif msg == pylibtas.MSGB_GAMEINFO:
-      pylibtas.ignoreData(SIZE_GAMEINFO_STRUCT)
-    elif msg == pylibtas.MSGB_FPS:
-      pylibtas.ignoreData(SIZE_FLOAT)
-      pylibtas.ignoreData(SIZE_FLOAT)
-    elif msg == pylibtas.MSGB_ENCODING_SEGMENT:
-      pylibtas.ignoreData(SIZE_INT)
-    elif msg == pylibtas.MSGB_QUIT:
-      raise RuntimeError('User Quit.')
-    elif msg == -1:
-      raise RuntimeError('The connection to the game was lost.')
-    else:
-      raise RuntimeError('Received unexpected message %s(%d)' % (pylibtas.message_name(msg), msg))
-    msg = pylibtas.receiveMessage()
-  pylibtas.sendMessage(pylibtas.MSGN_START_FRAMEBOUNDARY)
-
-
 button_dict = {
     'a': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_A,
     'b': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_B,
@@ -163,7 +96,8 @@ def generate_gaussian_heat_map(image_shape, y, x, sigma=10, amplitude=1.0):
 
 class FrameProcessor(object):
 
-  def __init__(self):
+  def __init__(self, env):
+    self.env = env
     self.det = celeste_detector.CelesteDetector()
 
     self.episode_number = 0
@@ -216,7 +150,7 @@ class FrameProcessor(object):
   def _start_new_episode(self, frame):
     logging.info('Starting episode %d', self.episode_number)
     if self.start_frame is None:
-      savestate()
+      self.env.savestate()
     self.actor.reset()
     self.critic.reset()
     self.start_frame = frame
@@ -342,7 +276,7 @@ class FrameProcessor(object):
     GLOBAL.summary_writer.add_figure('loss/entropy', fig, self.episode_number)
 
     # Start next episode.
-    loadstate()
+    self.env.loadstate()
     self.processed_frames = 0
     self.episode_number += 1
     if self.episode_number % FLAGS.save_every == 0:
@@ -365,9 +299,9 @@ class FrameProcessor(object):
       while not button_input:
         button_input = input('Buttons please! (comma separated)').split(',')
         if button_input == ['save']:
-          savestate()
+          self.env.savestate()
         elif button_input == ['load']:
-          loadstate()
+          self.env.loadstate()
         elif button_input == ['start_episode']:
           FLAGS.interactive = False
           break
@@ -433,91 +367,23 @@ class FrameProcessor(object):
     return button_inputs
 
 
-def Speedrun():
-  global frame_counter
-  global shared_config
-
-  os.system('mkdir -p /tmp/celeste/movies')
-  os.system('cp -f settings.celeste ~/.local/share/Celeste/Saves/')
+def Speedrun(env):
   moviefile = None
-  if FLAGS.movie_file is not None:
+  if FLAGS.movie_file:
     moviefile = pylibtas.MovieFile()
     if moviefile.loadInputs(FLAGS.movie_file) != 0:
       raise ValueError('Could not load movie %s' % FLAGS.movie_file)
-  if FLAGS.save_file is not None:
-    savepath = 'savefiles/' + FLAGS.save_file
-    os.system('cp -f %s ~/.local/share/Celeste/Saves/0.celeste' % savepath)
 
-  pylibtas.removeSocket()
-  pylibtas.launchGameThread(
-      'CelesteLinux/Celeste.bin.x86_64',
-      'libTAS/build64/libtas.so',
-      '',  # gameargs
-      0,  # startframe
-      'lib64',
-      os.path.dirname(os.path.abspath(__file__)),
-      pylibtas.SharedConfig.LOGGING_TO_CONSOLE,
-      True,  # opengl_soft
-      '',  # llvm_perf
-      False,  # attach_gdb
-  )
-  pylibtas.initSocketProgram()
-
-  msg = pylibtas.receiveMessage()
-  while msg != pylibtas.MSGB_END_INIT:
-    if msg == pylibtas.MSGB_PID:
-      global game_pid
-      _, game_pid = pylibtas.receiveInt()
-    elif hasattr(pylibtas, 'MSGB_GIT_COMMIT') and msg == pylibtas.MSGB_GIT_COMMIT:
-      _ = pylibtas.receiveString()
-    else:
-      raise RuntimeError('Unexpected message %d in init!' % msg)
-    msg = pylibtas.receiveMessage()
-
-  pylibtas.sendMessage(pylibtas.MSGN_CONFIG)
-  shared_config = pylibtas.SharedConfig()
-  shared_config.nb_controllers = 1
-  shared_config.audio_mute = True
-  shared_config.incremental_savestates = False
-  shared_config.savestates_in_ram = True
-  shared_config.backtrack_savestate = False
-  shared_config.prevent_savefiles = False
-  shared_config.recycle_threads = False
-  shared_config.write_savefiles_on_exit = False
-  shared_config.main_gettimes_threshold = [-1, -1, -1, 100, -1, -1]
-  shared_config.includeFlags = pylibtas.LCF_ERROR
-  pylibtas.sendSharedConfig(shared_config)
-
-  pylibtas.sendMessage(pylibtas.MSGN_ENCODING_SEGMENT)
-  pylibtas.sendInt(0)
-
-  pylibtas.sendMessage(pylibtas.MSGN_END_INIT)
-
-  processor = FrameProcessor()
+  processor = FrameProcessor(env)
   action_queue = queue.Queue()
   while True:
-    start_next_frame()
-
-    msg = pylibtas.receiveMessage()
-    utils.assert_equal(msg, pylibtas.MSGB_FRAME_DATA)
-    _, actual_window_width = pylibtas.receiveInt()
-    utils.assert_equal(actual_window_width, FLAGS.image_width)
-    _, actual_window_height = pylibtas.receiveInt()
-    utils.assert_equal(actual_window_height, FLAGS.image_height)
-    _, size = pylibtas.receiveInt()
-    received, frame = pylibtas.receiveArray(size)
-    utils.assert_equal(received, size)
-
-    frame = np.reshape(frame, [FLAGS.image_height, FLAGS.image_width, 4])[:, :, :3]
-
-    if frame_counter == 0:
-      pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_PATH)
-      pylibtas.sendString('/tmp/celeste/savestate')
+    frame = env.start_frame()
 
     ai = pylibtas.AllInputs()
     ai.emptyInputs()
-    if moviefile and frame_counter < moviefile.nbFrames():
-      moviefile.getInputs(ai, frame_counter)
+
+    if moviefile and env.frame_counter < moviefile.nbFrames():
+      moviefile.getInputs(ai, env.frame_counter)
     else:
       if action_queue.empty():
         for frame_actions in processor.process_frame(frame):
@@ -531,11 +397,7 @@ def Speedrun():
         si = pylibtas.SingleInput()
         si.type = button_dict[button]
         ai.setInput(si, 1)
-
-    pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)
-    pylibtas.sendAllInputs(ai)
-    pylibtas.sendMessage(pylibtas.MSGN_END_FRAMEBOUNDARY)
-    frame_counter += 1
+    env.end_frame(ai)
 
 
 def main(argv):
@@ -550,19 +412,21 @@ def main(argv):
 
   tensorboard = subprocess.Popen(['tensorboard', '--logdir', os.path.abspath(FLAGS.logdir)],
                                  stderr=subprocess.DEVNULL)
+
+  env = environment.Environment()
   try:
     if FLAGS.profile:
       FLAGS.max_episodes = 1
-      cProfile.run('Speedrun()')
+      cProfile.run('Speedrun(env)')
     else:
-      Speedrun()
+      Speedrun(env)
   finally:
     GLOBAL.summary_writer.close()
     if tensorboard:
       tensorboard.terminate()
-    if game_pid != -1:
-      logging.info('killing game %d' % game_pid)
-      os.kill(game_pid, signal.SIGKILL)
+    if env.game_pid != -1:
+      logging.info('killing game %d' % env.game_pid)
+      os.kill(env.game_pid, signal.SIGKILL)
 
 
 if __name__ == '__main__':
