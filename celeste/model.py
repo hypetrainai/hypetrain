@@ -19,7 +19,28 @@ class Model(nn.Module):
     raise NotImplementedError()
 
 
-class ResNetIm2Value(Model):
+class ConvModel(Model):
+
+  def set_inputs(self, i, input_frame, extra_channels):
+    if i == 0:
+      self.frame_buffer = torch.stack([input_frame] * FLAGS.context_frames, 0)
+      self.extra_channels = [extra_channels]
+    else:
+      self.frame_buffer = torch.cat([self.frame_buffer, input_frame.unsqueeze(0)], 0)
+      self.extra_channels.append(extra_channels)
+    utils.assert_equal(i + FLAGS.context_frames, self.frame_buffer.shape[0])
+    utils.assert_equal(i, len(self.extra_channels) - 1)
+
+  def _get_inputs(self, i):
+    input_frames = self.frame_buffer[i:i+FLAGS.context_frames]
+    # [time, channels, height, width] -> [time * channels, height, width]
+    input_frames = torch.reshape(input_frames, [-1, FLAGS.image_height, FLAGS.image_width])
+    input_frames = torch.cat([input_frames, self.extra_channels[i]], 0)
+    input_frames = input_frames.unsqueeze(0)
+    return input_frames
+
+
+class ResNetIm2Value(ConvModel):
 
   def __init__(self, in_dim, out_dim, use_softmax=True):
     super(ResNetIm2Value, self).__init__()
@@ -64,20 +85,3 @@ class ResNetIm2Value(Model):
       out = F.softmax(out, 1)
     return out
 
-  def set_inputs(self, i, input_frame, extra_channels):
-    if i == 0:
-      self.frame_buffer = torch.stack([input_frame] * FLAGS.context_frames, 0)
-      self.extra_channels = [extra_channels]
-    else:
-      self.frame_buffer = torch.cat([self.frame_buffer, input_frame.unsqueeze(0)], 0)
-      self.extra_channels.append(extra_channels)
-    utils.assert_equal(i + FLAGS.context_frames, self.frame_buffer.shape[0])
-    utils.assert_equal(i, len(self.extra_channels) - 1)
-
-  def _get_inputs(self, i):
-    input_frames = self.frame_buffer[i:i+FLAGS.context_frames]
-    # [time, channels, height, width] -> [time * channels, height, width]
-    input_frames = torch.reshape(input_frames, [-1, FLAGS.image_height, FLAGS.image_width])
-    input_frames = torch.cat([input_frames, self.extra_channels[i]], 0)
-    input_frames = input_frames.unsqueeze(0)
-    return input_frames
