@@ -217,6 +217,8 @@ class FrameProcessor(object):
     logging.info('Starting episode %d', self.episode_number)
     if self.start_frame is None:
       savestate()
+    self.actor.reset()
+    self.critic.reset()
     self.start_frame = frame
     self.rewards = []
     self.softmaxes = []
