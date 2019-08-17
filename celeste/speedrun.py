@@ -176,8 +176,6 @@ class FrameProcessor(object):
     if FLAGS.use_cuda:
       self.actor = self.actor.cuda()
       self.critic = self.critic.cuda()
-    self.actor = nn.DataParallel(self.actor)
-    self.critic = nn.DataParallel(self.critic)
     self.optimizer_actor = optim.Adam(list(self.actor.parameters()), lr=FLAGS.lr)
     self.optimizer_critic = optim.Adam(list(self.critic.parameters()), lr=FLAGS.lr)
 
@@ -215,14 +213,6 @@ class FrameProcessor(object):
         should_end_episode = True
     return reward * FLAGS.reward_scale, should_end_episode
 
-  def _get_network_inputs(self, i):
-    input_frames = self.frame_buffer[i:i+FLAGS.context_frames]
-    # [time, channels, height, width] -> [time * channels, height, width]
-    input_frames = torch.reshape(input_frames, [-1, FLAGS.image_height, FLAGS.image_width])
-    input_frames = torch.cat([input_frames, self.extra_channels[i]], 0)
-    input_frames = input_frames.unsqueeze(0)
-    return input_frames
-
   def _start_new_episode(self, frame):
     logging.info('Starting episode %d', self.episode_number)
     if self.start_frame is None:
@@ -232,8 +222,6 @@ class FrameProcessor(object):
     self.softmaxes = []
     self.sampled_action = []
     self.trajectory = []
-    self.frame_buffer = None
-    self.extra_channels = []
     self._generate_goal_state()
     if FLAGS.use_cuda:
       torch.cuda.empty_cache()
@@ -241,8 +229,7 @@ class FrameProcessor(object):
   def _finish_episode(self):
     assert self.processed_frames > 0
     utils.assert_equal(len(self.trajectory), self.processed_frames + 1)
-    utils.assert_equal(self.frame_buffer.shape[0], self.processed_frames + FLAGS.context_frames)
-    utils.assert_equal(len(self.extra_channels), self.processed_frames + 1)
+    utils.assert_equal(len(self.frame_buffer), self.processed_frames + FLAGS.context_frames)
     utils.assert_equal(len(self.rewards), self.processed_frames)
     utils.assert_equal(len(self.softmaxes), self.processed_frames)
     utils.assert_equal(len(self.sampled_action), self.processed_frames)
@@ -250,18 +237,18 @@ class FrameProcessor(object):
     GLOBAL.summary_writer.add_scalar('episode_length', self.processed_frames, self.episode_number)
     GLOBAL.summary_writer.add_scalar('final_reward', self.rewards[-1], self.episode_number)
     GLOBAL.summary_writer.add_scalar('best_reward', max(self.rewards), self.episode_number)
-    # GLOBAL.summary_writer.add_video('input_frames', self.frame_buffer[:, :3], self.episode_number, fps=60)
+    # GLOBAL.summary_writer.add_video('input_frames', self.frame_buffer, self.episode_number, fps=60)
 
     fig = plt.figure()
     plt.scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')
-    utils.plot_trajectory(self.frame_buffer[-1, :3].detach().cpu().numpy(), self.trajectory)
+    utils.plot_trajectory(self.frame_buffer[-1], self.trajectory)
     GLOBAL.summary_writer.add_figure('trajectory', fig, self.episode_number)
 
     R = self.rewards[self.processed_frames - 1]
     # reward = (1 + gamma + gamma^2 + ...) * reward
     R *= 1.0 / (1.0 - FLAGS.reward_decay_multiplier)
     Rs = [R]
-    final_V = self.critic.forward(self._get_network_inputs(self.processed_frames)).view([]).detach().cpu().numpy()
+    final_V = self.critic.forward(self.processed_frames).view([]).detach().cpu().numpy()
     Vs = [final_V]
     As = [0]
     actor_losses = []
@@ -270,7 +257,7 @@ class FrameProcessor(object):
     self.optimizer_critic.zero_grad()
     for i in reversed(range(self.processed_frames)):
       R = FLAGS.reward_decay_multiplier * R + self.rewards[i]
-      V = self.critic.forward(self._get_network_inputs(i)).view([])
+      V = self.critic.forward(i).view([])
       ((R - V)**2).backward()
       V = V.detach()
 
@@ -284,7 +271,7 @@ class FrameProcessor(object):
       Vs.append(V.cpu().numpy())
       As.append(A.cpu().numpy())
 
-      softmax = self.actor.forward(self._get_network_inputs(i))
+      softmax = self.actor.forward(i)
       assert torch.eq(self.softmaxes[i], softmax.cpu()).all()
       entropy = -torch.sum(softmax * torch.log(softmax))
       actor_loss = -torch.log(softmax[0, self.sampled_action[i][0]]) * A
@@ -299,7 +286,7 @@ class FrameProcessor(object):
             'height_ratios' : [ax1_height_ratio, 1],
         })
         ax1.scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')
-        last_frame = self.frame_buffer[i + FLAGS.context_frames - 1, :3].detach().cpu().numpy()
+        last_frame = self.frame_buffer[i + FLAGS.context_frames - 1]
         trajectory_i = self.trajectory[max(0, i - FLAGS.context_frames):i+1]
         utils.plot_trajectory(last_frame, trajectory_i, ax=ax1)
         ax1.axis('off')
@@ -399,8 +386,8 @@ class FrameProcessor(object):
       else:
         gaussian_current_position = generate_gaussian_heat_map(window_shape, y, x)
 
-      input_frame = torch.tensor(frame).float().permute(2, 0, 1) / 255.0
-      input_frame = torch.cat([input_frame, gaussian_current_position], 0)
+      frame = frame.astype(np.float32).transpose([2, 0, 1]) / 255.0
+      input_frame = torch.cat([torch.tensor(frame), gaussian_current_position], 0)
       if FLAGS.use_cuda:
         input_frame = input_frame.cuda()
 
@@ -416,22 +403,23 @@ class FrameProcessor(object):
       extra_channels = torch.cat([gaussian_goal_position, last_frame_buttons], 0)
       if FLAGS.use_cuda:
         extra_channels = extra_channels.cuda()
-      self.extra_channels.append(extra_channels)
+
+      self.actor.set_inputs(self.processed_frames, input_frame, extra_channels)
+      self.critic.set_inputs(self.processed_frames, input_frame, extra_channels)
 
       if self.processed_frames == 0:
         assert state != -1
-        self.frame_buffer = torch.stack([input_frame] * FLAGS.context_frames, 0)
+        self.frame_buffer = [frame] * FLAGS.context_frames
       else:
-        self.frame_buffer = torch.cat([self.frame_buffer, input_frame.unsqueeze(0)], 0)
+        self.frame_buffer.append(frame)
         reward, should_end_episode = self._reward_for_current_state()
         self.rewards.append(reward)
         if should_end_episode:
           return self._finish_episode()
+      utils.assert_equal(self.processed_frames + FLAGS.context_frames, len(self.frame_buffer))
 
-      utils.assert_equal(self.processed_frames + FLAGS.context_frames, self.frame_buffer.shape[0])
-      utils.assert_equal(self.processed_frames, len(self.extra_channels) - 1)
       with torch.no_grad():
-        softmax = self.actor.forward(self._get_network_inputs(self.processed_frames)).detach().cpu()
+        softmax = self.actor.forward(self.processed_frames).detach().cpu()
       self.softmaxes.append(softmax)
       idxs, button_inputs = sample_action(softmax)
       # Predicted button_inputs include a batch dimension.
