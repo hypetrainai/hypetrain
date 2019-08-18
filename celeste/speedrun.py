@@ -368,7 +368,8 @@ class FrameProcessor(object):
       if frame is None:
         if np.random.uniform() < FLAGS.random_loadstate_prob:
           custom_savestates = set(self.saved_states.keys())
-          custom_savestates.remove(0)
+          if len(custom_savestates) > 1:
+            custom_savestates.remove(0)
           self.loadstate(int(np.random.choice(list(custom_savestates))))
         else:
           self.loadstate(0)
