@@ -70,13 +70,13 @@ class Environment(object):
 
     pylibtas.sendMessage(pylibtas.MSGN_END_INIT)
 
-  def savestate(self, index=1):
+  def savestate(self, index):
     pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_INDEX)
     pylibtas.sendInt(index)
     pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE)
     utils.assert_equal(pylibtas.receiveMessage(), pylibtas.MSGB_SAVING_SUCCEEDED)
 
-  def loadstate(self, index=1):
+  def loadstate(self, index):
     pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_INDEX)
     pylibtas.sendInt(index)
     pylibtas.sendMessage(pylibtas.MSGN_LOADSTATE)

@@ -21,10 +21,17 @@ class CelesteDetector():
     def __init__(self, threshold=10, search_delta_with_prior=100):
         self.thres = threshold
         self.sdwp = search_delta_with_prior
-        self.death_clock_init = int(25/FLAGS.hold_buttons_for)
-        self.death_clock = self.death_clock_init
         if self.sdwp % 2 == 1:
-            self.sdwp += 1
+          self.sdwp += 1
+        self.saved_states = {}
+        self.death_clock_limit = int(25 / FLAGS.hold_buttons_for)
+        self.death_clock = 0
+
+    def savestate(self, index):
+        self.saved_states[index] = self.death_clock
+
+    def loadstate(self, index):
+        self.death_clock = self.saved_states[index]
 
     def detect(self, im, prior_coord=None):
         # state 0 is red hair
@@ -43,11 +50,11 @@ class CelesteDetector():
             if np.sum(mask) != 0:
                 prior_coord = None
         if np.sum(mask) == 0:
-            self.death_clock -= 1
-            if self.death_clock > 0:
+            self.death_clock += 1
+            if self.death_clock < self.death_clock_limit:
                 y, x, state = prior_coord[0], prior_coord[1], 3
         else:
-            self.death_clock = self.death_clock_init
+            self.death_clock = 0
             y, x = self._COM_coordinates(mask)
             if prior_coord is not None:
                 miny = np.maximum(0, prior_coord[0] - self.sdwp//2)

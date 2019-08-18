@@ -14,14 +14,9 @@ FLAGS = flags.FLAGS
 
 class Model(nn.Module):
 
-  def reset(self):
-    raise NotImplementedError()
-
-  def set_inputs(self, i, input_frame, extra_channels):
-    raise NotImplementedError()
-
-  def _get_inputs(self, i):
-    raise NotImplementedError()
+  def __init__(self):
+    super(Model, self).__init__()
+    self.saved_states = {}
 
 
 class ConvModel(Model):
@@ -45,13 +40,25 @@ class ConvModel(Model):
     input_frames = torch.cat([input_frames, self.extra_channels[i]], 0)
     return input_frames.unsqueeze(0)
 
+  def savestate(self, index):
+    self.saved_states[index] = (
+        self.frame_buffer[-FLAGS.context_frames:].clone().detach(),
+        self.extra_channels[-1].clone().detach())
+
+  def loadstate(self, index):
+    frame_buffer, extra_channels = self.saved_states[index]
+    self.frame_buffer = frame_buffer.clone()
+    self.extra_channels = [extra_channels.clone()]
+
 
 class ResNetIm2Value(ConvModel):
 
-  def __init__(self, in_dim, out_dim, use_softmax=True):
+  def __init__(self, frame_channels, extra_channels, out_dim, use_softmax=True):
     super(ResNetIm2Value, self).__init__()
 
     self.use_softmax = use_softmax
+
+    in_dim = frame_channels * FLAGS.context_frames + extra_channels
 
     layer_defs = []
     layer_defs.append(submodules.convbn(in_dim, 64, kernel_size=3, pad=1, stride=2))
@@ -115,8 +122,10 @@ def upshuffle(in_planes, out_planes, upscale_factor):
 
 class FPNNet(ConvModel):
 
-  def __init__(self, in_dim, out_dim, pretrained=True, fixed_feature_weights=False, use_softmax=True):
+  def __init__(self, frame_channels, extra_channels, out_dim, pretrained=True, fixed_feature_weights=False, use_softmax=True):
     super(FPNNet, self).__init__()
+
+    in_dim = frame_channels * FLAGS.context_frames + extra_channels
 
     resnet = resnet101(pretrained=pretrained)
 
@@ -193,7 +202,7 @@ class FPNNet(ConvModel):
     So we choose bilinear upsample which supports arbitrary output sizes.
     '''
     _, _, H, W = y.size()
-    return F.upsample(x, size=(H, W), mode='bilinear') + y
+    return F.interpolate(x, size=(H, W), mode='bilinear', align_corners=False) + y
 
   def forward(self, i):
     x, sep = self._get_inputs(i)
@@ -220,7 +229,7 @@ class FPNNet(ConvModel):
     # Top-down predict and refine
     d5, d4, d3, d2 = self.up1(self.agg1(p5)), self.up2(self.agg2(p4)), self.up3(self.agg3(p3)), self.agg4(p2)
     _, _, H, W = d2.size()
-    vol = torch.cat([F.upsample(d, size=(H, W), mode='bilinear') for d in [d5,d4,d3,d2]], dim=1)
+    vol = torch.cat([F.interpolate(d, size=(H, W), mode='bilinear', align_corners=False) for d in [d5,d4,d3,d2]], dim=1)
     vol = self.predict5(self.predict4(self.predict3(self.predict2(self.predict1(vol))))).view(vol.shape[0],-1)
     out = self.linops(vol)
 

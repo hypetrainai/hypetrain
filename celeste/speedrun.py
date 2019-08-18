@@ -21,10 +21,12 @@ from torch import optim
 from GLOBALS import GLOBAL
 import celeste_detector
 import environment
-from model import FPNNet as Network
+import model
 import utils
 
 
+flags.DEFINE_string('actor_network', 'FPNNet', 'class for actor network')
+flags.DEFINE_string('critic_network', 'ResNetIm2Value', 'class for critic network')
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
 flags.DEFINE_string('logdir', 'trained_models/fpntest', 'logdir')
@@ -49,7 +51,7 @@ flags.DEFINE_integer('image_width', 960, 'image width')
 flags.DEFINE_float('lr', 0.0005, 'learning rate')
 flags.DEFINE_float('actor_start_delay', 10, 'delay training of the actor for this many episodes')
 flags.DEFINE_float('entropy_weight', 0.0001, 'weight for entropy loss')
-flags.DEFINE_float('reward_scale', 10.0/100.0, 'multiplicative scale for the reward function')
+flags.DEFINE_float('reward_scale', 1.0/10.0, 'multiplicative scale for the reward function')
 flags.DEFINE_float('reward_decay_multiplier', 0.95, 'reward time decay multiplier')
 flags.DEFINE_integer('episode_length', 150, 'episode length')
 flags.DEFINE_integer('context_frames', 30, 'number of frames passed to the network')
@@ -58,7 +60,10 @@ flags.DEFINE_float('clip_grad_norm', 1000.0, 'value to clip gradient norm to.')
 flags.DEFINE_float('clip_grad_value', 0.0, 'value to clip gradients to.')
 flags.DEFINE_integer('hold_buttons_for', 4, 'hold all buttons for at least this number of frames')
 
-flags.DEFINE_float('random_goal_probability', 0.0, 'probability that we choose a random goal')
+flags.DEFINE_float('random_goal_prob', 0.0, 'probability that we choose a random goal')
+flags.DEFINE_float('random_savestate_prob', 1.0/1000.0, 'probability that we savestate each frame')
+flags.DEFINE_float('random_loadstate_prob', 0.3, 'probability that we load a custom state each episode')
+flags.DEFINE_float('num_custom_savestates', 3, 'number of custom savestates, not including the default one')
 flags.DEFINE_integer('action_summary_frames', 50, 'number of frames between action summaries')
 
 FLAGS = flags.FLAGS
@@ -99,14 +104,17 @@ class FrameProcessor(object):
   def __init__(self, env):
     self.env = env
     self.det = celeste_detector.CelesteDetector()
+    self.saved_states = {}
 
     self.episode_number = 0
     self.processed_frames = 0
-    self.start_frame = None
 
-    in_dim = 4 * FLAGS.context_frames + 1 + len(button_dict)
-    self.actor = Network(in_dim, out_dim=len(utils.class2button.dict))
-    self.critic = Network(in_dim, out_dim=1, use_softmax=False)
+    frame_channels = 4
+    extra_channels = 1 + len(button_dict)
+    actor_network = getattr(model, FLAGS.actor_network)
+    self.actor = actor_network(frame_channels, extra_channels, out_dim=len(utils.class2button.dict))
+    critic_network = getattr(model, FLAGS.critic_network)
+    self.critic = critic_network(frame_channels, extra_channels, out_dim=1, use_softmax=False)
     if FLAGS.use_cuda:
       self.actor = self.actor.cuda()
       self.critic = self.critic.cuda()
@@ -121,13 +129,64 @@ class FrameProcessor(object):
         FLAGS.pretrained_model_path + '/celeste_model_critic_%s.pt' % FLAGS.pretrained_suffix))
       logging.info('Done!')
 
+  def savestate(self, index):
+    logging.info('Saving state %d!' % index)
+    self.env.savestate(index)
+    self.det.savestate(index)
+    self.actor.savestate(index)
+    self.critic.savestate(index)
+    self.saved_states[index] = (self.trajectory[-1:], self.frame_buffer[-1:])
+
+  def loadstate(self, index):
+    logging.info('Loading state %d!' % index)
+    self.env.loadstate(index)
+    self.det.loadstate(index)
+    self.actor.loadstate(index)
+    self.critic.loadstate(index)
+    trajectory, frame_buffer = self.saved_states[index]
+    self.trajectory = trajectory.copy()
+    self.frame_buffer = frame_buffer.copy()
+
   def _generate_goal_state(self):
-    if np.random.uniform() < FLAGS.random_goal_probability:
+    if np.random.uniform() < FLAGS.random_goal_prob:
       self.goal_y = np.random.randint(50, FLAGS.image_height - 50)
       self.goal_x = np.random.randint(50, FLAGS.image_width - 50)
     else:
       self.goal_y = FLAGS.goal_y
       self.goal_x = FLAGS.goal_x
+
+  def _set_inputs_from_frame(self, frame):
+    y, x, state = self.det.detect(frame, prior_coord=self.trajectory[-1] if self.trajectory else None)
+    self.trajectory.append((y, x))
+
+    window_shape = [FLAGS.image_height, FLAGS.image_width]
+    # generate the full frame input by concatenating gaussian heat maps.
+    if state == -1:
+      gaussian_current_position = torch.zeros(window_shape).unsqueeze(0)
+    else:
+      gaussian_current_position = generate_gaussian_heat_map(window_shape, y, x)
+
+    frame = frame.astype(np.float32).transpose([2, 0, 1]) / 255.0
+    self.frame_buffer.append(frame)
+    input_frame = torch.cat([torch.tensor(frame), gaussian_current_position], 0)
+    if FLAGS.use_cuda:
+      input_frame = input_frame.cuda()
+
+    gaussian_goal_position = generate_gaussian_heat_map(window_shape, self.goal_y, self.goal_x)
+
+    last_frame_buttons = torch.zeros([len(button_dict)] + window_shape)
+    if self.sampled_action:
+      pressed = utils.class2button(self.sampled_action[-1][0])
+      for i, button in enumerate(button_dict.keys()):
+        if button in pressed:
+          last_frame_buttons[i] = 1.0
+
+    extra_channels = torch.cat([gaussian_goal_position, last_frame_buttons], 0)
+    if FLAGS.use_cuda:
+      extra_channels = extra_channels.cuda()
+
+    self.actor.set_inputs(self.processed_frames, input_frame, extra_channels)
+    self.critic.set_inputs(self.processed_frames, input_frame, extra_channels)
 
   def _reward_for_current_state(self):
     """Returns (rewards, should_end_episode) given state."""
@@ -147,25 +206,10 @@ class FrameProcessor(object):
         should_end_episode = True
     return reward * FLAGS.reward_scale, should_end_episode
 
-  def _start_new_episode(self, frame):
-    logging.info('Starting episode %d', self.episode_number)
-    if self.start_frame is None:
-      self.env.savestate()
-    self.actor.reset()
-    self.critic.reset()
-    self.start_frame = frame
-    self.rewards = []
-    self.softmaxes = []
-    self.sampled_action = []
-    self.trajectory = []
-    self._generate_goal_state()
-    if FLAGS.use_cuda:
-      torch.cuda.empty_cache()
-
   def _finish_episode(self):
     assert self.processed_frames > 0
     utils.assert_equal(len(self.trajectory), self.processed_frames + 1)
-    utils.assert_equal(len(self.frame_buffer), self.processed_frames + FLAGS.context_frames)
+    utils.assert_equal(len(self.frame_buffer), self.processed_frames + 1)
     utils.assert_equal(len(self.rewards), self.processed_frames)
     utils.assert_equal(len(self.softmaxes), self.processed_frames)
     utils.assert_equal(len(self.sampled_action), self.processed_frames)
@@ -222,7 +266,7 @@ class FrameProcessor(object):
             'height_ratios' : [ax1_height_ratio, 1],
         })
         ax1.scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')
-        last_frame = self.frame_buffer[i + FLAGS.context_frames - 1]
+        last_frame = self.frame_buffer[i]
         trajectory_i = self.trajectory[max(0, i - FLAGS.context_frames):i+1]
         utils.plot_trajectory(last_frame, trajectory_i, ax=ax1)
         ax1.axis('off')
@@ -276,7 +320,6 @@ class FrameProcessor(object):
     GLOBAL.summary_writer.add_figure('loss/entropy', fig, self.episode_number)
 
     # Start next episode.
-    self.env.loadstate()
     self.processed_frames = 0
     self.episode_number += 1
     if self.episode_number % FLAGS.save_every == 0:
@@ -290,7 +333,7 @@ class FrameProcessor(object):
           'train/celeste_model_critic_latest.pt'))
     if self.episode_number >= FLAGS.max_episodes:
       return None
-    return self.process_frame(self.start_frame)
+    return self.process_frame(frame=None)
 
   def process_frame(self, frame):
     """Returns a list of button inputs for the next N frames."""
@@ -299,9 +342,9 @@ class FrameProcessor(object):
       while not button_input:
         button_input = input('Buttons please! (comma separated)').split(',')
         if button_input == ['save']:
-          self.env.savestate()
+          self.savestate(0)
         elif button_input == ['load']:
-          self.env.loadstate()
+          self.loadstate(0)
         elif button_input == ['start_episode']:
           FLAGS.interactive = False
           break
@@ -310,58 +353,51 @@ class FrameProcessor(object):
 
     if not FLAGS.interactive:
       if self.processed_frames == 0:
-        self._start_new_episode(frame)
+        logging.info('Starting episode %d', self.episode_number)
+        self.actor.reset()
+        self.critic.reset()
+        self.frame_buffer = []
+        self.rewards = []
+        self.softmaxes = []
+        self.sampled_action = []
+        self.trajectory = []
+        self._generate_goal_state()
+        if FLAGS.use_cuda:
+          torch.cuda.empty_cache()
 
-      y, x, state = self.det.detect(frame, prior_coord=self.trajectory[-1] if self.trajectory else None)
-      self.trajectory.append((y, x))
-
-      window_shape = [FLAGS.image_height, FLAGS.image_width]
-      # generate the full frame input by concatenating gaussian heat maps.
-      if y is None:
-        gaussian_current_position = torch.zeros(window_shape).unsqueeze(0)
+      if frame is None:
+        if np.random.uniform() < FLAGS.random_loadstate_prob:
+          custom_savestates = set(self.saved_states.keys())
+          custom_savestates.remove(0)
+          self.loadstate(int(np.random.choice(list(custom_savestates))))
+        else:
+          self.loadstate(0)
       else:
-        gaussian_current_position = generate_gaussian_heat_map(window_shape, y, x)
+        self._set_inputs_from_frame(frame)
+        if not self.saved_states:
+          assert self.det.death_clock == 0
+          # First (default) savestate.
+          self.savestate(0)
+        elif (FLAGS.num_custom_savestates
+              and self.det.death_clock == 0
+              and np.random.uniform() < FLAGS.random_savestate_prob):
+          self.savestate(1 + np.random.randint(FLAGS.num_custom_savestates))
 
-      frame = frame.astype(np.float32).transpose([2, 0, 1]) / 255.0
-      input_frame = torch.cat([torch.tensor(frame), gaussian_current_position], 0)
-      if FLAGS.use_cuda:
-        input_frame = input_frame.cuda()
-
-      gaussian_goal_position = generate_gaussian_heat_map(window_shape, self.goal_y, self.goal_x)
-
-      last_frame_buttons = torch.zeros([len(button_dict)] + window_shape)
-      if self.sampled_action:
-        pressed = utils.class2button(self.sampled_action[-1][0])
-        for i, button in enumerate(button_dict.keys()):
-          if button in pressed:
-            last_frame_buttons[i] = 1.0
-
-      extra_channels = torch.cat([gaussian_goal_position, last_frame_buttons], 0)
-      if FLAGS.use_cuda:
-        extra_channels = extra_channels.cuda()
-
-      self.actor.set_inputs(self.processed_frames, input_frame, extra_channels)
-      self.critic.set_inputs(self.processed_frames, input_frame, extra_channels)
-
-      if self.processed_frames == 0:
-        assert state != -1
-        self.frame_buffer = [frame] * FLAGS.context_frames
-      else:
-        self.frame_buffer.append(frame)
+      if self.processed_frames > 0:
         reward, should_end_episode = self._reward_for_current_state()
         self.rewards.append(reward)
         if should_end_episode:
           return self._finish_episode()
-      utils.assert_equal(self.processed_frames + FLAGS.context_frames, len(self.frame_buffer))
 
       with torch.no_grad():
         softmax = self.actor.forward(self.processed_frames).detach().cpu()
       self.softmaxes.append(softmax)
       idxs, button_inputs = sample_action(softmax)
-      # Predicted button_inputs include a batch dimension.
-      # Returned button_inputs should be for next N frames, but for now N==1.
-      button_inputs = [button_inputs[0]] * FLAGS.hold_buttons_for
       self.sampled_action.append(idxs)
+      # Predicted button_inputs include a batch dimension.
+      button_inputs = button_inputs[0]
+      # Returned button_inputs should be for next N frames, but for now N==1.
+      button_inputs = [button_inputs] * FLAGS.hold_buttons_for
 
     self.processed_frames += 1
     return button_inputs
