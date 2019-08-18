@@ -21,13 +21,13 @@ from torch import optim
 from GLOBALS import GLOBAL
 import celeste_detector
 import environment
-from model import ResNetIm2Value as Network
+from model import FPNNet as Network
 import utils
 
 
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
-flags.DEFINE_string('logdir', 'trained_models/truetest_higherdp_norandgoal2_dp3_rs10', 'logdir')
+flags.DEFINE_string('logdir', 'trained_models/fpntest', 'logdir')
 flags.DEFINE_boolean('use_cuda', True, 'Use cuda')
 flags.DEFINE_boolean('profile', False, 'Profile code')
 

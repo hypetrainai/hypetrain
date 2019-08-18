@@ -111,7 +111,7 @@ def upshuffle(in_planes, out_planes, upscale_factor):
     )
 
 class FPNNet(ConvModel):
-    def __init__(self, out_dim, pretrained=True, fixed_feature_weights=False):
+    def __init__(self, in_dim, out_dim, pretrained=True, fixed_feature_weights=False, use_softmax=True):
         super(FPNNet, self).__init__()
 
         resnet = resnet101(pretrained=pretrained)
@@ -120,6 +120,10 @@ class FPNNet(ConvModel):
         if fixed_feature_weights:
             for p in resnet.parameters():
                 p.requires_grad = False
+        self.use_softmax = use_softmax
+        separate_dims = in_dim - 3
+        self.layer0_sep = nn.Sequential(submodules.convbn(separate_dims, 64, kernel_size = 7, stride = 2, pad=3),
+                                        nn.MaxPool2d(2,2))
 
         self.layer0 = nn.Sequential(resnet.conv1, resnet.bn1, resnet.relu, resnet.maxpool)
         self.layer1 = nn.Sequential(resnet.layer1)
@@ -128,12 +132,12 @@ class FPNNet(ConvModel):
         self.layer4 = nn.Sequential(resnet.layer4)
 
         # Top layer
-        self.toplayer = nn.Conv2d(2048, 256, kernel_size=1, stride=1, padding=0)  # Reduce channels
+        self.toplayer = nn.Conv2d(2048, 256, kernel_size=1, stride=1, padding=1)  # Reduce channels
 
         # Lateral layers
-        self.latlayer1 = nn.Conv2d(1024, 256, kernel_size=1, stride=1, padding=0)
-        self.latlayer2 = nn.Conv2d( 512, 256, kernel_size=1, stride=1, padding=0)
-        self.latlayer3 = nn.Conv2d( 256, 256, kernel_size=1, stride=1, padding=0)
+        self.latlayer1 = nn.Conv2d(1024, 256, kernel_size=1, stride=1, padding=1)
+        self.latlayer2 = nn.Conv2d( 512, 256, kernel_size=1, stride=1, padding=1)
+        self.latlayer3 = nn.Conv2d( 256, 256, kernel_size=1, stride=1, padding=1)
 
         # Smooth layers
         self.smooth1 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1)
@@ -158,7 +162,7 @@ class FPNNet(ConvModel):
         self.predict4 = submodules.convbn(32, 32, kernel_size=3, pad=1, stride=1)
         self.predict5 = submodules.convbn(32, 8, kernel_size=3, pad=1, stride=1)
         
-        fc_input = 8*34*60
+        fc_input = 8*35*61
         layer_defs_linear = []
         layer_defs_linear.append(nn.Linear(fc_input, 512))
         layer_defs_linear.append(nn.ReLU())
@@ -187,11 +191,14 @@ class FPNNet(ConvModel):
         _,_,H,W = y.size()
         return F.upsample(x, size=(H,W), mode='bilinear') + y
 
-    def forward(self, x):
-        _,_,H,W = x.size()
+    def forward(self, i):
+        x, sep = self._get_inputs(i)
         
         # Bottom-up
         c1 = self.layer0(x)
+        
+        c1 += self.layer0_sep(sep)
+        
         c2 = self.layer1(c1)
         c3 = self.layer2(c2)
         c4 = self.layer3(c3)
@@ -210,6 +217,18 @@ class FPNNet(ConvModel):
         d5, d4, d3, d2 = self.up1(self.agg1(p5)), self.up2(self.agg2(p4)), self.up3(self.agg3(p3)), self.agg4(p2)
         _,_,H,W = d2.size()
         vol = torch.cat( [ F.upsample(d, size=(H,W), mode='bilinear') for d in [d5,d4,d3,d2] ], dim=1 )
-        vol = self.predict4(self.predict3(self.predict2(self.predict1(vol))))
-        # return self.predict2( self.up4(self.predict1(vol)) )
-        return self.linops(vol)     # img : depth = 4 : 1 
+        vol = self.predict5(self.predict4(self.predict3(self.predict2(self.predict1(vol))))).view(vol.shape[0],-1)
+        out = self.linops(vol)
+        
+        if self.use_softmax:
+          out = F.softmax(out, 1)
+        
+        return out
+    
+    def _get_inputs(self, i):
+        input_frames = self.frame_buffer[i:i+FLAGS.context_frames]
+        # [time, channels, height, width] -> [time * channels, height, width]
+        input_frames = torch.reshape(input_frames, [-1, FLAGS.image_height, FLAGS.image_width])
+        current_frame = input_frames[-4:-1]
+        other = torch.cat([input_frames[:-4], input_frames[-1].unsqueeze(0), self.extra_channels[i]])
+        return current_frame.unsqueeze(0), other.unsqueeze(0)
