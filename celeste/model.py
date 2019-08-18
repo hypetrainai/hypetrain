@@ -7,6 +7,8 @@ from torch.nn import functional as F
 import submodules
 import utils
 
+from torchvision.models.resnet import resnet101
+
 FLAGS = flags.FLAGS
 
 
@@ -91,9 +93,9 @@ def agg_node(in_planes, out_planes):
         submodules.convbn(in_planes, out_planes, kernel_size=3, stride=1, pad=1),
     )
 
-def smooth(in_planes, out_planes):
+def smooth(in_planes, out_planes, ks = 3):
     return nn.Sequential(
-        submodules.convbn(in_planes, out_planes, kernel_size=3, stride=1, pad=1)
+        submodules.convbn(in_planes, out_planes, kernel_size=ks, stride=1, pad=1)
     )
 
 def upshuffle(in_planes, out_planes, upscale_factor):
@@ -103,8 +105,8 @@ def upshuffle(in_planes, out_planes, upscale_factor):
         nn.ReLU()
     )
 
-class FPNNet(nn.Module):
-    def __init__(self, pretrained=True, fixed_feature_weights=False):
+class FPNNet(ConvModel):
+    def __init__(self, out_dim, pretrained=True, fixed_feature_weights=False):
         super(FPNNet, self).__init__()
 
         resnet = resnet101(pretrained=pretrained)
@@ -144,9 +146,22 @@ class FPNNet(nn.Module):
         self.up2 = upshuffle(128,128,4)
         self.up3 = upshuffle(128,128,2)
         
-        # Depth prediction
-        self.predict1 = smooth(512, 128)
-        self.predict2 = predict(128, 32)
+        # Predict layers
+        self.predict1 = submodules.convbn(512, 128, kernel_size=3, pad=1, stride=2)
+        self.predict2 = submodules.convbn(128, 128, kernel_size=3, pad=1, stride=1)
+        self.predict3 = submodules.convbn(128, 32, kernel_size=3, pad=1, stride=2)
+        self.predict4 = submodules.convbn(32, 32, kernel_size=3, pad=1, stride=1)
+        self.predict5 = submodules.convbn(32, 8, kernel_size=3, pad=1, stride=1)
+        
+        fc_input = 8*34*60
+        layer_defs_linear = []
+        layer_defs_linear.append(nn.Linear(fc_input, 512))
+        layer_defs_linear.append(nn.ReLU())
+        layer_defs_linear.append(nn.Linear(512, 256))
+        layer_defs_linear.append(nn.ReLU())
+        layer_defs_linear.append(nn.Linear(256, out_dim))
+
+        self.linops = nn.Sequential(*layer_defs_linear)
         
     def _upsample_add(self, x, y):
         '''Upsample and add two feature maps.
@@ -190,6 +205,6 @@ class FPNNet(nn.Module):
         d5, d4, d3, d2 = self.up1(self.agg1(p5)), self.up2(self.agg2(p4)), self.up3(self.agg3(p3)), self.agg4(p2)
         _,_,H,W = d2.size()
         vol = torch.cat( [ F.upsample(d, size=(H,W), mode='bilinear') for d in [d5,d4,d3,d2] ], dim=1 )
-        
+        vol = self.predict4(self.predict3(self.predict2(self.predict1(vol))))
         # return self.predict2( self.up4(self.predict1(vol)) )
-        return self.predict2( self.predict1(vol) )     # img : depth = 4 : 1 
+        return self.linops(vol)     # img : depth = 4 : 1 
