@@ -14,6 +14,9 @@ FLAGS = flags.FLAGS
 
 class Model(nn.Module):
 
+  def reset(self):
+    raise NotImplementedError()
+
   def set_inputs(self, i, input_frame, extra_channels):
     raise NotImplementedError()
 
@@ -23,13 +26,15 @@ class Model(nn.Module):
 
 class ConvModel(Model):
 
+  def reset(self):
+    self.frame_buffer = None
+    self.extra_channels = []
+
   def set_inputs(self, i, input_frame, extra_channels):
     if i == 0:
-      self.frame_buffer = torch.stack([input_frame] * FLAGS.context_frames, 0)
-      self.extra_channels = [extra_channels]
-    else:
-      self.frame_buffer = torch.cat([self.frame_buffer, input_frame.unsqueeze(0)], 0)
-      self.extra_channels.append(extra_channels)
+      self.frame_buffer = torch.stack([input_frame] * (FLAGS.context_frames - 1), 0)
+    self.frame_buffer = torch.cat([self.frame_buffer, input_frame.unsqueeze(0)], 0)
+    self.extra_channels.append(extra_channels)
     utils.assert_equal(i + FLAGS.context_frames, self.frame_buffer.shape[0])
     utils.assert_equal(i, len(self.extra_channels) - 1)
 
