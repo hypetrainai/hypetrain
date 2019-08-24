@@ -26,17 +26,6 @@ class ConvModel(Model):
     self.extra_channels = []
 
   def set_inputs(self, i, input_frame, extra_channels):
-    if FLAGS.image_height != FLAGS.input_height or FLAGS.image_width != FLAGS.input_width:
-      assert FLAGS.image_height % FLAGS.input_height == 0
-      assert FLAGS.image_width % FLAGS.input_width == 0
-      assert FLAGS.image_width * FLAGS.input_height == FLAGS.image_height * FLAGS.input_width
-      input_frame = F.interpolate(input_frame.unsqueeze(0), size=(FLAGS.input_height, FLAGS.input_width), mode='nearest').squeeze(0)
-      extra_channels = F.interpolate(extra_channels.unsqueeze(0), size=(FLAGS.input_height, FLAGS.input_width), mode='nearest').squeeze(0)
-
-    if FLAGS.use_cuda:
-      input_frame = input_frame.cuda()
-      extra_channels = extra_channels.cuda()
-
     if i == 0:
       self.frame_buffer = torch.stack([input_frame] * (FLAGS.context_frames - 1), 0)
     self.frame_buffer = torch.cat([self.frame_buffer, input_frame.unsqueeze(0)], 0)

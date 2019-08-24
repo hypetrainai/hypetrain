@@ -184,6 +184,17 @@ class FrameProcessor(object):
 
     extra_channels = torch.cat([torch.tensor(gaussian_goal_position).unsqueeze(0), last_frame_buttons], 0)
 
+    if FLAGS.image_height != FLAGS.input_height or FLAGS.image_width != FLAGS.input_width:
+      assert FLAGS.image_height % FLAGS.input_height == 0
+      assert FLAGS.image_width % FLAGS.input_width == 0
+      assert FLAGS.image_width * FLAGS.input_height == FLAGS.image_height * FLAGS.input_width
+      input_frame = F.interpolate(input_frame.unsqueeze(0), size=(FLAGS.input_height, FLAGS.input_width), mode='nearest').squeeze(0)
+      extra_channels = F.interpolate(extra_channels.unsqueeze(0), size=(FLAGS.input_height, FLAGS.input_width), mode='nearest').squeeze(0)
+
+    if FLAGS.use_cuda:
+      input_frame = input_frame.cuda()
+      extra_channels = extra_channels.cuda()
+
     self.actor.set_inputs(self.processed_frames, input_frame, extra_channels)
     self.critic.set_inputs(self.processed_frames, input_frame, extra_channels)
 
