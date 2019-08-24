@@ -52,6 +52,30 @@ class ConvModel(Model):
     self.extra_channels = [extra_channels.clone()]
 
 
+class RecurrentModel(Model):
+
+  def reset(self):
+    self.context = self.zero_state()
+    self.inputs = []
+
+  def set_inputs(self, i, input_frame, extra_channels):
+    self.inputs.append(torch.cat([input_frame, extra_channels], 0))
+    utils.assert_equal(i, len(self.inputs) - 1)
+
+  def _get_inputs(self, i):
+    return self.inputs[i].unsqueeze(0)
+
+  def savestate(self, index):
+    self.saved_states[index] = (
+        self.context.clone().detach(),
+        self.inputs[-1].clone().detach())
+
+  def loadstate(self, index):
+    context, inputs = self.saved_states[index]
+    self.context = frame_buffer.clone()
+    self.inputs = [inputs.clone()]
+
+
 class ResNetIm2Value(ConvModel):
 
   def __init__(self, frame_channels, extra_channels, out_dim, use_softmax=True):
@@ -246,3 +270,52 @@ class FPNNet(ConvModel):
       current_frame = input_frames[-4:-1]
       other = torch.cat([input_frames[:-4], input_frames[-1:], self.extra_channels[i]])
       return current_frame.unsqueeze(0), other.unsqueeze(0)
+
+
+class SimpleLSTMModel(RecurrentModel):
+
+  def __init__(self, frame_channels, extra_channels, out_dim, use_softmax=True):
+    super(SimpleLSTMModel, self).__init__()
+
+    self.hidden_dim = 512
+    self.lstm_layers = 2
+    self.use_softmax = use_softmax
+
+    in_dim = frame_channels + extra_channels
+
+    conv_stack = []
+    conv_stack.append(submodules.convbn(in_dim, 64, kernel_size=3, pad=1, stride=2))
+    conv_stack.append(submodules.convbn(64, 64, kernel_size=3, pad=1, stride=2))
+    conv_stack.append(submodules.convbn(64, 64, kernel_size=3, pad=1, stride=2))
+
+    for i in range(3):
+      conv_stack.append(submodules.ResNetModule(64, 64, kernel_size=3, pad=1))
+    conv_stack.append(submodules.convbn(64, 128, kernel_size=3, pad=1, stride=2))
+
+    for i in range(3):
+        conv_stack.append(submodules.ResNetModule(128, 128, kernel_size=3, pad=1))
+    conv_stack.append(submodules.convbn(128, 128, kernel_size=3, pad=1, stride=2))
+    conv_stack.append(submodules.convbn(128, 128, kernel_size=3, pad=1, stride=2))
+
+    self.conv_stack = nn.Sequential(*conv_stack)
+    self.conv_proj = nn.Linear(5120, self.hidden_dim)
+    self.rnn = nn.LSTM(input_size=self.hidden_dim, hidden_size=self.hidden_dim, num_layers=self.lstm_layers)
+    self.out_proj = nn.Linear(self.hidden_dim, out_dim)
+
+  def zero_state(self):
+    h0 = torch.zeros(self.lstm_layers, 1, self.hidden_dim)
+    c0 = torch.zeros(self.lstm_layers, 1, self.hidden_dim)
+    if FLAGS.use_cuda:
+      h0 = h0.cuda()
+      c0 = c0.cuda()
+    return h0, c0
+
+  def forward(self, i):
+    inputs = self._get_inputs(i)
+    out = self.conv_stack(inputs)
+    out = self.conv_proj(out.view(inputs.shape[0], -1))
+    out, self.context = self.rnn(out.unsqueeze(0), self.context)
+    out = self.out_proj(out.squeeze(0))
+    if self.use_softmax:
+      out = F.softmax(out, 1)
+    return out
