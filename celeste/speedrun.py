@@ -16,6 +16,7 @@ import subprocess
 from tensorboardX import SummaryWriter
 import torch
 from torch import nn
+from torch.nn import functional as F
 from torch import optim
 
 from GLOBALS import GLOBAL
@@ -47,6 +48,8 @@ flags.DEFINE_boolean('interactive', False, 'interactive mode (enter buttons on c
 
 flags.DEFINE_integer('image_height', 540, 'image height')
 flags.DEFINE_integer('image_width', 960, 'image width')
+flags.DEFINE_integer('input_height', 270, 'image height')
+flags.DEFINE_integer('input_width', 480, 'image height')
 
 flags.DEFINE_float('lr', 0.0005, 'learning rate')
 flags.DEFINE_float('actor_start_delay', 10, 'delay training of the actor for this many episodes')
@@ -96,7 +99,7 @@ def generate_gaussian_heat_map(image_shape, y, x, sigma=10, amplitude=1.0):
     x_grid, y_grid = np.meshgrid(x_range, y_range)
 
     result = amplitude * np.exp((-(y_grid - y)**2 + -(x_grid - x)**2) / (2 * sigma**2))
-    return torch.tensor(result).unsqueeze(0).float()
+    return result.astype(np.float32)
 
 
 class FrameProcessor(object):
@@ -162,15 +165,13 @@ class FrameProcessor(object):
     window_shape = [FLAGS.image_height, FLAGS.image_width]
     # generate the full frame input by concatenating gaussian heat maps.
     if state == -1:
-      gaussian_current_position = torch.zeros(window_shape).unsqueeze(0)
+      gaussian_current_position = np.zeros(window_shape, dtype=np.float32)
     else:
       gaussian_current_position = generate_gaussian_heat_map(window_shape, y, x)
 
     frame = frame.astype(np.float32).transpose([2, 0, 1]) / 255.0
     self.frame_buffer.append(frame)
-    input_frame = torch.cat([torch.tensor(frame), gaussian_current_position], 0)
-    if FLAGS.use_cuda:
-      input_frame = input_frame.cuda()
+    input_frame = torch.cat([torch.tensor(frame), torch.tensor(gaussian_current_position).unsqueeze(0)], 0)
 
     gaussian_goal_position = generate_gaussian_heat_map(window_shape, self.goal_y, self.goal_x)
 
@@ -181,9 +182,7 @@ class FrameProcessor(object):
         if button in pressed:
           last_frame_buttons[i] = 1.0
 
-    extra_channels = torch.cat([gaussian_goal_position, last_frame_buttons], 0)
-    if FLAGS.use_cuda:
-      extra_channels = extra_channels.cuda()
+    extra_channels = torch.cat([torch.tensor(gaussian_goal_position).unsqueeze(0), last_frame_buttons], 0)
 
     self.actor.set_inputs(self.processed_frames, input_frame, extra_channels)
     self.critic.set_inputs(self.processed_frames, input_frame, extra_channels)
