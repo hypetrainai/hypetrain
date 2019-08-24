@@ -26,10 +26,10 @@ class ConvModel(Model):
     self.extra_channels = []
 
   def set_inputs(self, i, input_frame, extra_channels):
-    if FLAGS.window_height != FLAGS.input_height or FLAGS.window_width != FLAGS.input_width:
-      assert FLAGS.window_height % FLAGS.input_height == 0
-      assert FLAGS.window_width % FLAGS.input_width == 0
-      assert FLAGS.window_width * FLAGS.input_height == FLAGS.window_height * FLAGS.input_width
+    if FLAGS.image_height != FLAGS.input_height or FLAGS.image_width != FLAGS.input_width:
+      assert FLAGS.image_height % FLAGS.input_height == 0
+      assert FLAGS.image_width % FLAGS.input_width == 0
+      assert FLAGS.image_width * FLAGS.input_height == FLAGS.image_height * FLAGS.input_width
       input_frame = F.interpolate(input_frame.unsqueeze(0), size=(FLAGS.input_height, FLAGS.input_width), mode='nearest').squeeze(0)
       extra_channels = F.interpolate(extra_channels.unsqueeze(0), size=(FLAGS.input_height, FLAGS.input_width), mode='nearest').squeeze(0)
 
@@ -90,7 +90,7 @@ class ResNetIm2Value(ConvModel):
 
     layer_defs.append(submodules.convbn(256, 256, kernel_size=3, pad=1, stride=2))
 
-    fc_input = 9 * 15 * 256
+    fc_input = 10240
     layer_defs_linear = []
     layer_defs_linear.append(nn.Linear(fc_input, 512))
     layer_defs_linear.append(nn.ReLU())
@@ -147,7 +147,7 @@ class FPNNet(ConvModel):
         p.requires_grad = False
     self.use_softmax = use_softmax
     separate_dims = in_dim - 3
-    self.layer0_sep = nn.Sequential(submodules.convbn(separate_dims, 64, kernel_size=7, stride=2, pad=3),
+    self.layer0_sep = nn.Sequential(submodules.convbn(separate_dims, 64, kernel_size=7, stride=2, pad=4),
                                     nn.MaxPool2d(2, 2))
 
     self.layer0 = nn.Sequential(resnet.conv1, resnet.bn1, resnet.relu, resnet.maxpool)
@@ -187,7 +187,7 @@ class FPNNet(ConvModel):
     self.predict4 = submodules.convbn(32, 32, kernel_size=3, pad=1, stride=1)
     self.predict5 = submodules.convbn(32, 8, kernel_size=3, pad=1, stride=1)
 
-    fc_input = 8*35*61
+    fc_input = 4464
     layer_defs_linear = []
     layer_defs_linear.append(nn.Linear(fc_input, 512))
     layer_defs_linear.append(nn.ReLU())

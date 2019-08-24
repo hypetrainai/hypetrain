@@ -26,8 +26,8 @@ import model
 import utils
 
 
-flags.DEFINE_string('actor_network', 'FPNNet', 'class for actor network')
-flags.DEFINE_string('critic_network', 'ResNetIm2Value', 'class for critic network')
+flags.DEFINE_string('actor_network', 'ResNetIm2Value', 'class for actor network')
+flags.DEFINE_string('critic_network', 'FPNNet', 'class for critic network')
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
 flags.DEFINE_string('logdir', 'trained_models/fpntest', 'logdir')
