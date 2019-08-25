@@ -55,25 +55,28 @@ class ConvModel(Model):
 class RecurrentModel(Model):
 
   def reset(self):
-    self.context = self.zero_state()
     self.inputs = []
+    self.contexts = []
 
   def set_inputs(self, i, input_frame, extra_channels):
     self.inputs.append(torch.cat([input_frame, extra_channels], 0))
+    if i == 0:
+      self.contexts.append(self.zero_state())
     utils.assert_equal(i, len(self.inputs) - 1)
+    utils.assert_equal(i, len(self.contexts) - 1)
 
   def _get_inputs(self, i):
-    return self.inputs[i].unsqueeze(0)
+    return self.inputs[i].unsqueeze(0), self.contexts[i]
 
   def savestate(self, index):
     self.saved_states[index] = (
-        self.context.clone().detach(),
-        self.inputs[-1].clone().detach())
+        self.inputs[-1].clone().detach(),
+        [x.clone().detach() for x in self.contexts[-1]])
 
   def loadstate(self, index):
-    context, inputs = self.saved_states[index]
-    self.context = frame_buffer.clone()
+    inputs, context = self.saved_states[index]
     self.inputs = [inputs.clone()]
+    self.contexts = [x.clone() for x in context]
 
 
 class ResNetIm2Value(ConvModel):
@@ -114,7 +117,7 @@ class ResNetIm2Value(ConvModel):
     self.operation_stack = nn.Sequential(*layer_defs)
     self.operation_stack_linear = nn.Sequential(*layer_defs_linear)
 
-  def forward(self, i):
+  def forward(self, i, second_pass=False):
     inputs = self._get_inputs(i)
     out = self.operation_stack(inputs)
     out = out.view(inputs.shape[0], -1)
@@ -229,7 +232,7 @@ class FPNNet(ConvModel):
     _, _, H, W = y.size()
     return F.interpolate(x, size=(H, W), mode='bilinear', align_corners=False) + y
 
-  def forward(self, i):
+  def forward(self, i, second_pass=False):
     x, sep = self._get_inputs(i)
 
     # Bottom-up
@@ -310,11 +313,14 @@ class SimpleLSTMModel(RecurrentModel):
       c0 = c0.cuda()
     return h0, c0
 
-  def forward(self, i):
-    inputs = self._get_inputs(i)
+  def forward(self, i, second_pass=False):
+    inputs, context = self._get_inputs(i)
     out = self.conv_stack(inputs)
     out = self.conv_proj(out.view(inputs.shape[0], -1))
-    out, self.context = self.rnn(out.unsqueeze(0), self.context)
+    out, new_context = self.rnn(out.unsqueeze(0), context)
+    if not second_pass:
+      utils.assert_equal(i, len(self.contexts) - 1)
+      self.contexts.append(new_context)
     out = self.out_proj(out.squeeze(0))
     if self.use_softmax:
       out = F.softmax(out, 1)

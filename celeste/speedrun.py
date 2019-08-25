@@ -26,11 +26,11 @@ import model
 import utils
 
 
-flags.DEFINE_string('actor_network', 'ResNetIm2Value', 'class for actor network')
-flags.DEFINE_string('critic_network', 'FPNNet', 'class for critic network')
+flags.DEFINE_string('actor_network', 'SimpleLSTMModel', 'class for actor network')
+flags.DEFINE_string('critic_network', 'SimpleLSTMModel', 'class for critic network')
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
-flags.DEFINE_string('logdir', 'trained_models/fpntest', 'logdir')
+flags.DEFINE_string('logdir', 'trained_models/lstmtest', 'logdir')
 flags.DEFINE_boolean('use_cuda', True, 'Use cuda')
 flags.DEFINE_boolean('profile', False, 'Profile code')
 
@@ -261,7 +261,7 @@ class FrameProcessor(object):
       Vs.append(V.cpu().numpy())
       As.append(A.cpu().numpy())
 
-      softmax = self.actor.forward(i)
+      softmax = self.actor.forward(i, second_pass=True)
       assert torch.eq(self.softmaxes[i], softmax.cpu()).all()
       entropy = -torch.sum(softmax * torch.log(softmax))
       actor_loss = -torch.log(softmax[0, self.sampled_action[i][0]]) * A
