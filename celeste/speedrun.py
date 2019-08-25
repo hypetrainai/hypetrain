@@ -70,43 +70,12 @@ flags.DEFINE_integer('action_summary_frames', 50, 'number of frames between acti
 FLAGS = flags.FLAGS
 
 
-goals = {
-    'level1_screen0': (152, 786),
-    'level1_screen4': (107, 611),
-}
-
-
-button_dict = {
-    'a': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_A,
-    'b': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_B,
-#    'x': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_X,
-#    'y': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_Y,
-    'rt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_RIGHTSHOULDER,
-#    'lt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_LEFTSHOULDER,
-    'u': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_UP,
-    'd': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_DOWN,
-    'l': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_LEFT,
-    'r': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_RIGHT,
-}
-
-
-def sample_action(softmax):
-    sample = torch.distributions.categorical.Categorical(probs=softmax).sample().numpy()
-    sample_mapped = [utils.class2button(sample[i]) for i in range(len(sample))]
-    return sample, sample_mapped
-
-
-def generate_gaussian_heat_map(image_shape, y, x, sigma=10, amplitude=1.0):
-    H, W = image_shape
-    y_range = np.arange(0, H)
-    x_range = np.arange(0, W)
-    x_grid, y_grid = np.meshgrid(x_range, y_range)
-
-    result = amplitude * np.exp((-(y_grid - y)**2 + -(x_grid - x)**2) / (2 * sigma**2))
-    return result.astype(np.float32)
-
-
 class FrameProcessor(object):
+
+  GOAL_MAP = {
+      'level1_screen0': (152, 786),
+      'level1_screen4': (107, 611),
+  }
 
   def __init__(self, env):
     self.env = env
@@ -117,7 +86,7 @@ class FrameProcessor(object):
     self.processed_frames = 0
 
     frame_channels = 4
-    extra_channels = 1 + len(button_dict)
+    extra_channels = 1 + len(utils.button_dict)
     actor_network = getattr(model, FLAGS.actor_network)
     self.actor = actor_network(frame_channels, extra_channels, out_dim=len(utils.class2button.dict))
     critic_network = getattr(model, FLAGS.critic_network)
@@ -163,8 +132,17 @@ class FrameProcessor(object):
     elif FLAGS.goal_y or FLAGS.goal_x:
       self.goal_y = FLAGS.goal_y
       self.goal_x = FLAGS.goal_x
-    else
-      self.goal_y, self.goal_x = goals[FLAGS.save_file]
+    else:
+      self.goal_y, self.goal_x = self.GOAL_MAP[FLAGS.save_file]
+
+  def _generate_gaussian_heat_map(self, image_shape, y, x, sigma=10, amplitude=1.0):
+      H, W = image_shape
+      y_range = np.arange(0, H)
+      x_range = np.arange(0, W)
+      x_grid, y_grid = np.meshgrid(x_range, y_range)
+
+      result = amplitude * np.exp((-(y_grid - y)**2 + -(x_grid - x)**2) / (2 * sigma**2))
+      return result.astype(np.float32)
 
   def _set_inputs_from_frame(self, frame):
     y, x, state = self.det.detect(frame, prior_coord=self.trajectory[-1] if self.trajectory else None)
@@ -175,18 +153,19 @@ class FrameProcessor(object):
     if state == -1:
       gaussian_current_position = np.zeros(window_shape, dtype=np.float32)
     else:
-      gaussian_current_position = generate_gaussian_heat_map(window_shape, y, x)
+      gaussian_current_position = self._generate_gaussian_heat_map(window_shape, y, x)
 
     frame = frame.astype(np.float32).transpose([2, 0, 1]) / 255.0
-    self.frame_buffer.append(frame)
+    if hasattr(self, 'frame_buffer'):
+      self.frame_buffer.append(frame)
     input_frame = torch.cat([torch.tensor(frame), torch.tensor(gaussian_current_position).unsqueeze(0)], 0)
 
-    gaussian_goal_position = generate_gaussian_heat_map(window_shape, self.goal_y, self.goal_x)
+    gaussian_goal_position = self._generate_gaussian_heat_map(window_shape, self.goal_y, self.goal_x)
 
-    last_frame_buttons = torch.zeros([len(button_dict)] + window_shape)
+    last_frame_buttons = torch.zeros([len(utils.button_dict)] + window_shape)
     if self.sampled_action:
       pressed = utils.class2button(self.sampled_action[-1][0])
-      for i, button in enumerate(button_dict.keys()):
+      for i, button in enumerate(utils.button_dict.keys()):
         if button in pressed:
           last_frame_buttons[i] = 1.0
 
@@ -204,7 +183,8 @@ class FrameProcessor(object):
       extra_channels = extra_channels.cuda()
 
     self.actor.set_inputs(self.processed_frames, input_frame, extra_channels)
-    self.critic.set_inputs(self.processed_frames, input_frame, extra_channels)
+    if hasattr(self, 'critic'):
+      self.critic.set_inputs(self.processed_frames, input_frame, extra_channels)
 
   def _reward_for_current_state(self):
     """Returns (rewards, should_end_episode) given state."""
@@ -414,7 +394,7 @@ class FrameProcessor(object):
       with torch.no_grad():
         softmax = self.actor.forward(self.processed_frames).detach().cpu()
       self.softmaxes.append(softmax)
-      idxs, button_inputs = sample_action(softmax)
+      idxs, button_inputs = utils.sample_action(softmax)
       self.sampled_action.append(idxs)
       # Predicted button_inputs include a batch dimension.
       button_inputs = button_inputs[0]
@@ -425,14 +405,14 @@ class FrameProcessor(object):
     return button_inputs
 
 
-def Speedrun(env):
+def Speedrun(env, processor_cls):
   moviefile = None
   if FLAGS.movie_file:
     moviefile = pylibtas.MovieFile()
     if moviefile.loadInputs(FLAGS.movie_file) != 0:
       raise ValueError('Could not load movie %s' % FLAGS.movie_file)
 
-  processor = FrameProcessor(env)
+  processor = processor_cls(env)
   action_queue = queue.Queue()
   while True:
     frame = env.start_frame()
@@ -444,16 +424,19 @@ def Speedrun(env):
       moviefile.getInputs(ai, env.frame_counter)
     else:
       if action_queue.empty():
-        for frame_actions in processor.process_frame(frame):
+        predicted_actions = processor.process_frame(frame)
+        if not predicted_actions:
+          break
+        for frame_actions in predicted_actions:
           action_queue.put(frame_actions)
       frame_actions = action_queue.get()
       assert isinstance(frame_actions, (list, tuple))
       for button in frame_actions:
-        if button not in button_dict:
+        if button not in utils.button_dict:
           logging.warning('Unknown button %s!' % button)
           continue
         si = pylibtas.SingleInput()
-        si.type = button_dict[button]
+        si.type = utils.button_dict[button]
         ai.setInput(si, 1)
     env.end_frame(ai)
 
@@ -475,9 +458,9 @@ def main(argv):
   try:
     if FLAGS.profile:
       FLAGS.max_episodes = 1
-      cProfile.run('Speedrun(env)')
+      cProfile.run('Speedrun(env, FrameProcessor)')
     else:
-      Speedrun(env)
+      Speedrun(env, FrameProcessor)
   finally:
     GLOBAL.summary_writer.close()
     if tensorboard:

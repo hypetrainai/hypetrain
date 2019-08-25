@@ -1,10 +1,25 @@
 import matplotlib.collections as mcoll
 import matplotlib.pyplot as plt
 import numpy as np
+import pylibtas
 
 
 def assert_equal(a, b):
   assert a == b, (a, b)
+
+
+button_dict = {
+    'a': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_A,
+    'b': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_B,
+#    'x': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_X,
+#    'y': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_Y,
+    'rt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_RIGHTSHOULDER,
+#    'lt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_LEFTSHOULDER,
+    'u': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_UP,
+    'd': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_DOWN,
+    'l': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_LEFT,
+    'r': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_RIGHT,
+}
 
 
 def class2button(key):
@@ -39,6 +54,15 @@ def class2button(key):
   return class2button.dict[key]
 class2button.dict = {}
 class2button(0)
+
+
+def sample_action(softmax, greedy=False):
+  if greedy:
+    sample = np.argmax(softmax.numpy(), axis=1)
+  else:
+    sample = torch.distributions.categorical.Categorical(probs=softmax).sample().numpy()
+  sample_mapped = [class2button(sample[i]) for i in range(len(sample))]
+  return sample, sample_mapped
 
 
 def colorline(x, y, z=None, ax=None, cmap='copper', norm=plt.Normalize(0.0, 1.0),
