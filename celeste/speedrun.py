@@ -248,7 +248,7 @@ class FrameProcessor(object):
     for i in reversed(range(self.processed_frames)):
       R = FLAGS.reward_decay_multiplier * R + self.rewards[i]
       V = self.critic.forward(i).view([])
-      ((R - V)**2).backward()
+      ((R - V)**2).backward(retain_graph=i != 0)
       V = V.detach()
 
       blf = min(FLAGS.bellman_lookahead_frames, self.processed_frames - i)
@@ -268,7 +268,7 @@ class FrameProcessor(object):
       actor_losses.append(actor_loss.detach().cpu().numpy())
       entropy_loss = FLAGS.entropy_weight / (entropy + 1e-6)
       entropy_losses.append(entropy_loss.detach().cpu().numpy())
-      (actor_loss + entropy_loss).backward()
+      (actor_loss + entropy_loss).backward(retain_graph=i != 0)
 
       if (i + 1) % FLAGS.action_summary_frames == 0:
         ax1_height_ratio = 3

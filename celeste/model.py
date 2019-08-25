@@ -78,7 +78,7 @@ class RecurrentModel(Model):
   def loadstate(self, index):
     inputs, context = self.saved_states[index]
     self.inputs = [inputs.clone()]
-    self.contexts = [x.clone() for x in context]
+    self.contexts = [[x.clone() for x in context]]
 
 
 class ResNetIm2Value(ConvModel):
@@ -320,7 +320,7 @@ class SimpleLSTMModel(RecurrentModel):
     out = self.conv_stack(inputs)
     out = self.conv_proj(out.view(inputs.shape[0], -1))
     out, new_context = self.rnn(out.unsqueeze(0), context)
-    if i == len(self.contexts):
+    if i == len(self.contexts) - 1:
       self.contexts.append(new_context)
     out = self.out_proj(out.squeeze(0))
     if self.use_softmax:
