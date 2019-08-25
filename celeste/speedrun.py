@@ -28,9 +28,9 @@ import utils
 
 flags.DEFINE_string('actor_network', 'SimpleLSTMModel', 'class for actor network')
 flags.DEFINE_string('critic_network', 'SimpleLSTMModel', 'class for critic network')
+flags.DEFINE_string('logdir', 'trained_models/lstmtest', 'logdir')
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
-flags.DEFINE_string('logdir', 'trained_models/lstmtest', 'logdir')
 flags.DEFINE_boolean('use_cuda', True, 'Use cuda')
 flags.DEFINE_boolean('profile', False, 'Profile code')
 
@@ -41,8 +41,6 @@ flags.DEFINE_string('movie_file', 'movie.ltm', 'if not empty string, load libTAS
 flags.DEFINE_string('save_file', 'level1_screen4', 'if not empty string, use save file.')
 flags.DEFINE_integer('goal_y', 107, 'goal pixel coordinate in y')
 flags.DEFINE_integer('goal_x', 611, 'goal pixel coordinate in x')
-#flags.DEFINE_integer('goal_y', 481, 'goal pixel coordinate in y')
-#flags.DEFINE_integer('goal_x', 604, 'goal pixel coordinate in x')
 
 flags.DEFINE_boolean('interactive', False, 'interactive mode (enter buttons on command line)')
 
@@ -126,10 +124,12 @@ class FrameProcessor(object):
 
     if FLAGS.pretrained_model_path:
       logging.info('Loading pretrained model from %s' % FLAGS.pretrained_model_path)
-      self.actor.load_state_dict(torch.load(
-        FLAGS.pretrained_model_path + '/celeste_model_actor_%s.pt' % FLAGS.pretrained_suffix))
-      self.critic.load_state_dict(torch.load(
-        FLAGS.pretrained_model_path + '/celeste_model_critic_%s.pt' % FLAGS.pretrained_suffix))
+      state = torch.load(os.path.join(FLAGS.pretrained_model_path, 'train/model_%s.tar' % FLAGS.pretrained_suffix))
+      self.episode_number = state['episode_number']
+      self.actor.load_state_dict(state['actor'])
+      self.optimizer_actor.load_state_dict(state['optimizer_actor'])
+      self.critic.load_state_dict(state['critic'])
+      self.optimizer_critic.load_state_dict(state['optimizer_critic'])
       logging.info('Done!')
 
   def savestate(self, index):
@@ -333,14 +333,17 @@ class FrameProcessor(object):
     self.processed_frames = 0
     self.episode_number += 1
     if self.episode_number % FLAGS.save_every == 0:
-      torch.save(self.actor.state_dict(), os.path.join(FLAGS.logdir,
-          'train/celeste_model_actor_%d.pt' % self.episode_number))
-      torch.save(self.critic.state_dict(), os.path.join(FLAGS.logdir,
-          'train/celeste_model_critic_%d.pt' % self.episode_number))
-      torch.save(self.actor.state_dict(), os.path.join(FLAGS.logdir,
-          'train/celeste_model_actor_latest.pt'))
-      torch.save(self.critic.state_dict(), os.path.join(FLAGS.logdir,
-          'train/celeste_model_critic_latest.pt'))
+      state = {
+          'episode_number': self.episode_number,
+          'actor': self.actor.state_dict(),
+          'optimizer_actor': self.optimizer_actor.state_dict(),
+          'critic': self.critic.state_dict(),
+          'optimizer_critic': self.optimizer_critic.state_dict()
+      }
+      savefile = os.path.join(FLAGS.logdir, 'train/model_%d.tar' % self.episode_number)
+      torch.save(state, savefile)
+      torch.save(state, os.path.join(FLAGS.logdir, 'train/model_latest.tar'))
+      logging.info('Saved %s', savefile)
     if self.episode_number >= FLAGS.max_episodes:
       return None
     return self.process_frame(frame=None)
