@@ -39,8 +39,8 @@ flags.DEFINE_integer('save_every', 100, 'every X number of steps save a model')
 
 flags.DEFINE_string('movie_file', 'movie.ltm', 'if not empty string, load libTAS input movie file')
 flags.DEFINE_string('save_file', 'level1_screen4', 'if not empty string, use save file.')
-flags.DEFINE_integer('goal_y', 107, 'goal pixel coordinate in y')
-flags.DEFINE_integer('goal_x', 611, 'goal pixel coordinate in x')
+flags.DEFINE_integer('goal_y', None, 'override goal y coordinate')
+flags.DEFINE_integer('goal_x', None, 'override goal x coordinate')
 
 flags.DEFINE_boolean('interactive', False, 'interactive mode (enter buttons on command line)')
 
@@ -68,6 +68,12 @@ flags.DEFINE_float('num_custom_savestates', 3, 'number of custom savestates, not
 flags.DEFINE_integer('action_summary_frames', 50, 'number of frames between action summaries')
 
 FLAGS = flags.FLAGS
+
+
+goals = {
+    'level1_screen0': (152, 786),
+    'level1_screen4': (107, 611),
+}
 
 
 button_dict = {
@@ -154,9 +160,11 @@ class FrameProcessor(object):
     if np.random.uniform() < FLAGS.random_goal_prob:
       self.goal_y = np.random.randint(50, FLAGS.image_height - 50)
       self.goal_x = np.random.randint(50, FLAGS.image_width - 50)
-    else:
+    elif FLAGS.goal_y or FLAGS.goal_x:
       self.goal_y = FLAGS.goal_y
       self.goal_x = FLAGS.goal_x
+    else
+      self.goal_y, self.goal_x = goals[FLAGS.save_file]
 
   def _set_inputs_from_frame(self, frame):
     y, x, state = self.det.detect(frame, prior_coord=self.trajectory[-1] if self.trajectory else None)
