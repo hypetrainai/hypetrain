@@ -2,6 +2,7 @@ import matplotlib.collections as mcoll
 import matplotlib.pyplot as plt
 import numpy as np
 import pylibtas
+import torch
 
 
 def assert_equal(a, b):
