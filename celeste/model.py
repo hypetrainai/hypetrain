@@ -59,19 +59,21 @@ class RecurrentModel(Model):
     self.contexts = []
 
   def set_inputs(self, i, input_frame, extra_channels):
-    self.inputs.append(torch.cat([input_frame, extra_channels], 0))
-    if i == 0:
-      self.contexts.append(self.zero_state())
+    self.inputs.append(torch.cat([input_frame, extra_channels], 0).unsqueeze(0))
     utils.assert_equal(i, len(self.inputs) - 1)
-    utils.assert_equal(i, len(self.contexts) - 1)
 
   def _get_inputs(self, i):
-    return self.inputs[i].unsqueeze(0), self.contexts[i]
+    if not self.contexts:
+      self.contexts = [self.zero_state()]
+    while len(self.contexts) <= i:
+      self.forward(len(self.contexts) - 1)
+    return self.inputs[i], self.contexts[i]
 
   def savestate(self, index):
+    inputs, context = self._get_inputs(len(self.inputs) - 1)
     self.saved_states[index] = (
-        self.inputs[-1].clone().detach(),
-        [x.clone().detach() for x in self.contexts[-1]])
+        inputs.clone().detach(),
+        [x.clone().detach() for x in context])
 
   def loadstate(self, index):
     inputs, context = self.saved_states[index]
@@ -117,7 +119,7 @@ class ResNetIm2Value(ConvModel):
     self.operation_stack = nn.Sequential(*layer_defs)
     self.operation_stack_linear = nn.Sequential(*layer_defs_linear)
 
-  def forward(self, i, second_pass=False):
+  def forward(self, i):
     inputs = self._get_inputs(i)
     out = self.operation_stack(inputs)
     out = out.view(inputs.shape[0], -1)
@@ -232,7 +234,7 @@ class FPNNet(ConvModel):
     _, _, H, W = y.size()
     return F.interpolate(x, size=(H, W), mode='bilinear', align_corners=False) + y
 
-  def forward(self, i, second_pass=False):
+  def forward(self, i):
     x, sep = self._get_inputs(i)
 
     # Bottom-up
@@ -313,13 +315,12 @@ class SimpleLSTMModel(RecurrentModel):
       c0 = c0.cuda()
     return h0, c0
 
-  def forward(self, i, second_pass=False):
+  def forward(self, i):
     inputs, context = self._get_inputs(i)
     out = self.conv_stack(inputs)
     out = self.conv_proj(out.view(inputs.shape[0], -1))
     out, new_context = self.rnn(out.unsqueeze(0), context)
-    if not second_pass:
-      utils.assert_equal(i, len(self.contexts) - 1)
+    if i == len(self.contexts):
       self.contexts.append(new_context)
     out = self.out_proj(out.squeeze(0))
     if self.use_softmax:

@@ -261,7 +261,7 @@ class FrameProcessor(object):
       Vs.append(V.cpu().numpy())
       As.append(A.cpu().numpy())
 
-      softmax = self.actor.forward(i, second_pass=True)
+      softmax = self.actor.forward(i)
       assert torch.eq(self.softmaxes[i], softmax.cpu()).all()
       entropy = -torch.sum(softmax * torch.log(softmax))
       actor_loss = -torch.log(softmax[0, self.sampled_action[i][0]]) * A
