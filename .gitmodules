@@ -4,3 +4,6 @@
 [submodule "celeste/cule"]
 	path = celeste/cule
 	url = https://github.com/NVLabs/cule
+[submodule "celeste/atari-py"]
+	path = celeste/atari-py
+	url = https://github.com/openai/atari-py
