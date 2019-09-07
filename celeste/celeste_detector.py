@@ -45,10 +45,13 @@ class CelesteDetector():
         col = color_dict['blue_shirt']
 
         mask = self._get_mask(im, col, prior_coord=prior_coord)
-        if np.sum(mask) == 0 and prior_coord is not None:
+        if np.sum(mask) == 0:
             mask = self._get_mask(im, col, prior_coord=None)
             if np.sum(mask) != 0:
                 prior_coord = None
+            if prior_coord is None:
+                return (None, None, -1)
+            
         if np.sum(mask) == 0:
             self.death_clock += 1
             if self.death_clock < self.death_clock_limit:
