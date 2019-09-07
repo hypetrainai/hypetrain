@@ -26,9 +26,9 @@ import model
 import utils
 
 
-flags.DEFINE_string('actor_network', 'SimpleLSTMModel', 'class for actor network')
-flags.DEFINE_string('critic_network', 'SimpleLSTMModel', 'class for critic network')
-flags.DEFINE_string('logdir', 'trained_models/lstmtest', 'logdir')
+flags.DEFINE_string('actor_network', 'ResNetIm2Value', 'class for actor network')
+flags.DEFINE_string('critic_network', 'ResNetIm2Value', 'class for critic network')
+flags.DEFINE_string('logdir', 'trained_models/asdf', 'logdir')
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
 flags.DEFINE_boolean('use_cuda', True, 'Use cuda')
@@ -38,7 +38,7 @@ flags.DEFINE_integer('max_episodes', 100000, 'stop after this many episodes')
 flags.DEFINE_integer('save_every', 100, 'every X number of steps save a model')
 
 flags.DEFINE_string('movie_file', 'movie.ltm', 'if not empty string, load libTAS input movie file')
-flags.DEFINE_string('save_file', 'level1_screen4', 'if not empty string, use save file.')
+flags.DEFINE_string('save_file', 'level1_screen0', 'if not empty string, use save file.')
 flags.DEFINE_integer('goal_y', None, 'override goal y coordinate')
 flags.DEFINE_integer('goal_x', None, 'override goal x coordinate')
 
@@ -421,6 +421,7 @@ def Speedrun(env, processor_cls):
     ai.emptyInputs()
 
     if moviefile and env.frame_counter < moviefile.nbFrames():
+      print('hello')
       moviefile.getInputs(ai, env.frame_counter)
     else:
       if action_queue.empty():
