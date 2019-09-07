@@ -1,3 +1,6 @@
 [submodule "celeste/libTAS"]
 	path = celeste/libTAS
 	url = git@github.com:hypetrainai/libTAS.git
+[submodule "celeste/cule"]
+	path = celeste/cule
+	url = https://github.com/NVLabs/cule
