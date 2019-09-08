@@ -62,6 +62,7 @@ flags.DEFINE_float('clip_grad_value', 0.0, 'value to clip gradients to.')
 flags.DEFINE_integer('hold_buttons_for', 4, 'hold all buttons for at least this number of frames')
 
 flags.DEFINE_float('random_goal_prob', 0.0, 'probability that we choose a random goal')
+flags.DEFINE_float('random_action_prob', 0.1, 'probability that we choose a random action')
 flags.DEFINE_float('random_savestate_prob', 1.0/1000.0, 'probability that we savestate each frame')
 flags.DEFINE_float('random_loadstate_prob', 0.3, 'probability that we load a custom state each episode')
 flags.DEFINE_float('num_custom_savestates', 3, 'number of custom savestates, not including the default one')

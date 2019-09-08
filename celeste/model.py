@@ -126,6 +126,8 @@ class ResNetIm2Value(ConvModel):
     out = self.operation_stack_linear(out)
     if self.use_softmax:
       out = F.softmax(out, 1)
+      out = torch.clamp(out, min=0.00001)
+      out /= torch.sum(out, 1)
     return out
 
 

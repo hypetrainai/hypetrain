@@ -4,6 +4,8 @@ import numpy as np
 import pylibtas
 import torch
 
+from absl import flags
+FLAGS = flags.FLAGS
 
 def assert_equal(a, b):
   assert a == b, (a, b)
@@ -58,10 +60,18 @@ class2button(0)
 
 
 def sample_action(softmax, greedy=False):
+    
+  N, n_classes = softmax.shape
+    
   if greedy:
     sample = np.argmax(softmax.numpy(), axis=1)
   else:
     sample = torch.distributions.categorical.Categorical(probs=softmax).sample().numpy()
+  
+  if FLAGS.random_action_prob > 0:
+    if np.random.random() <= FLAGS.random_action_prob:
+        sample = np.random.randint(0, n_classes, (N))
+        
   sample_mapped = [class2button(sample[i]) for i in range(len(sample))]
   return sample, sample_mapped
 
