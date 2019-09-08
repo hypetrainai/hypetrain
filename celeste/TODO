@@ -1,7 +1,8 @@
 P1:
-- Map scroll tracking system.
+- Alternating eval during training.
 
 P2:
 - Flow-based actor network.
 - Decrease FLAGS.hold_buttons_for on a schedule.
+- Map scroll tracking system.
 - Environment module should be in its own thread and not interact with each other. LibTAS socket files need to be random tempfiles shared through environ rather than hardcoded /tmp/libTAS.socket.
