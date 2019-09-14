@@ -28,7 +28,7 @@ import utils
 
 flags.DEFINE_string('actor_network', 'ResNetIm2Value', 'class for actor network')
 flags.DEFINE_string('critic_network', 'ResNetIm2Value', 'class for critic network')
-flags.DEFINE_string('logdir', 'trained_models/asdf', 'logdir')
+flags.DEFINE_string('logdir', 'trained_models/debug', 'logdir')
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
 flags.DEFINE_boolean('use_cuda', True, 'Use cuda')
@@ -36,6 +36,7 @@ flags.DEFINE_boolean('profile', False, 'Profile code')
 
 flags.DEFINE_integer('max_episodes', 100000, 'stop after this many episodes')
 flags.DEFINE_integer('save_every', 100, 'every X number of steps save a model')
+flags.DEFINE_integer('eval_every', 100, 'eval every X steps')
 
 flags.DEFINE_string('movie_file', 'movie.ltm', 'if not empty string, load libTAS input movie file')
 flags.DEFINE_string('save_file', 'level1_screen0', 'if not empty string, use save file.')
@@ -85,6 +86,8 @@ class FrameProcessor(object):
 
     self.episode_number = 0
     self.processed_frames = 0
+    
+    self.eval_mode = False
 
     frame_channels = 4
     extra_channels = 1 + len(utils.button_dict)
@@ -107,7 +110,17 @@ class FrameProcessor(object):
       self.critic.load_state_dict(state['critic'])
       self.optimizer_critic.load_state_dict(state['optimizer_critic'])
       logging.info('Done!')
-
+  
+  def eval(self):
+        self.actor.eval()
+        self.critic.eval()
+        self.eval_mode=True
+  
+  def train(self):
+        self.actor.train()
+        self.critic.train()
+        self.eval_mode=False
+  
   def savestate(self, index):
     logging.info('Saving state %d!' % index)
     self.env.savestate(index)
@@ -186,6 +199,9 @@ class FrameProcessor(object):
     self.actor.set_inputs(self.processed_frames, input_frame, extra_channels)
     if hasattr(self, 'critic'):
       self.critic.set_inputs(self.processed_frames, input_frame, extra_channels)
+    
+  def _rectangular_distance(self, y, x):
+    return np.maximum(y-self.goal_y, x-self.goal_x)
 
   def _reward_for_current_state(self):
     """Returns (rewards, should_end_episode) given state."""
@@ -195,33 +211,43 @@ class FrameProcessor(object):
 
     if y is None:
       # Assume death
-      reward -= 3
+      reward -= 10
       should_end_episode = True
       y, x = self.trajectory[-2]
-    dist_to_goal = np.sqrt((y - self.goal_y)**2 + (x - self.goal_x)**2)
-    reward += 50 - 10 * dist_to_goal**0.33
+    #dist_to_goal = np.sqrt((y - self.goal_y)**2 + (x - self.goal_x)**2)
+    dist_to_goal = self._rectangular_distance(y,x)
+    #reward += 50 - 10 * dist_to_goal**0.33
+    reward = -15 + 10*(float(dist_to_goal<450)) + 10*(float(dist_to_goal<250)) + 10*(float(dist_to_goal<50)) + 10*(float(dist_to_goal<5)) 
+    
     if not should_end_episode:
+      if reward >= 48:
+        should_end_episode = True
       if self.processed_frames >= FLAGS.episode_length:
         should_end_episode = True
     return reward * FLAGS.reward_scale, should_end_episode
 
   def _finish_episode(self):
+    prefix = ''
+    if self.eval_mode:
+        prefix = 'eval/'
+        
+        
     assert self.processed_frames > 0
     utils.assert_equal(len(self.trajectory), self.processed_frames + 1)
     utils.assert_equal(len(self.frame_buffer), self.processed_frames + 1)
     utils.assert_equal(len(self.rewards), self.processed_frames)
     utils.assert_equal(len(self.softmaxes), self.processed_frames)
     utils.assert_equal(len(self.sampled_action), self.processed_frames)
-
-    GLOBAL.summary_writer.add_scalar('episode_length', self.processed_frames, self.episode_number)
-    GLOBAL.summary_writer.add_scalar('final_reward', self.rewards[-1], self.episode_number)
-    GLOBAL.summary_writer.add_scalar('best_reward', max(self.rewards), self.episode_number)
+    
+    GLOBAL.summary_writer.add_scalar(prefix+'episode_length', self.processed_frames, self.episode_number)
+    GLOBAL.summary_writer.add_scalar(prefix+'final_reward', self.rewards[-1], self.episode_number)
+    GLOBAL.summary_writer.add_scalar(prefix+'best_reward', max(self.rewards), self.episode_number)
     # GLOBAL.summary_writer.add_video('input_frames', self.frame_buffer, self.episode_number, fps=60)
 
     fig = plt.figure()
     plt.scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')
     utils.plot_trajectory(self.frame_buffer[-1], self.trajectory)
-    GLOBAL.summary_writer.add_figure('trajectory', fig, self.episode_number)
+    GLOBAL.summary_writer.add_figure(prefix+'trajectory', fig, self.episode_number)
 
     R = self.rewards[self.processed_frames - 1]
     # reward = (1 + gamma + gamma^2 + ...) * reward
@@ -237,7 +263,8 @@ class FrameProcessor(object):
     for i in reversed(range(self.processed_frames)):
       R = FLAGS.reward_decay_multiplier * R + self.rewards[i]
       V = self.critic.forward(i).view([])
-      ((R - V)**2).backward(retain_graph=i != 0)
+      if not self.eval_mode:
+          ((R - V)**2).backward(retain_graph=i != 0)
       V = V.detach()
 
       blf = min(FLAGS.bellman_lookahead_frames, self.processed_frames - i)
@@ -257,7 +284,8 @@ class FrameProcessor(object):
       actor_losses.append(actor_loss.detach().cpu().numpy())
       entropy_loss = FLAGS.entropy_weight / (entropy + 1e-6)
       entropy_losses.append(entropy_loss.detach().cpu().numpy())
-      (actor_loss + entropy_loss).backward(retain_graph=i != 0)
+      if not self.eval_mode:
+          (actor_loss + entropy_loss).backward(retain_graph=i != 0)
 
       if (i + 1) % FLAGS.action_summary_frames == 0:
         ax1_height_ratio = 3
@@ -284,10 +312,11 @@ class FrameProcessor(object):
         ax2.set_title('Sampled: %s (%0.2f%%)' % (
             ','.join(utils.class2button(self.sampled_action[i][0])),
             softmax[0, self.sampled_action[i][0]] * 100.0))
-        GLOBAL.summary_writer.add_figure('action/frame_%03d' % i, fig, self.episode_number)
-
-    GLOBAL.summary_writer.add_scalar('actor_grad_norm', utils.grad_norm(self.actor), self.episode_number)
-    GLOBAL.summary_writer.add_scalar('critic_grad_norm', utils.grad_norm(self.critic), self.episode_number)
+        GLOBAL.summary_writer.add_figure(prefix+'action/frame_%03d' % i, fig, self.episode_number)
+    
+    if not self.eval_mode:
+        GLOBAL.summary_writer.add_scalar('actor_grad_norm', utils.grad_norm(self.actor), self.episode_number)
+        GLOBAL.summary_writer.add_scalar('critic_grad_norm', utils.grad_norm(self.critic), self.episode_number)
     assert not (FLAGS.clip_grad_value and FLAGS.clip_grad_norm)
     if FLAGS.clip_grad_value:
       nn.utils.clip_grad_value_(self.actor.parameters(), FLAGS.clip_grad_value)
@@ -295,28 +324,29 @@ class FrameProcessor(object):
     elif FLAGS.clip_grad_norm:
       nn.utils.clip_grad_norm_(self.actor.parameters(), FLAGS.clip_grad_norm)
       nn.utils.clip_grad_norm_(self.critic.parameters(), FLAGS.clip_grad_norm)
-    if self.episode_number >= FLAGS.actor_start_delay:
-      self.optimizer_actor.step()
-    self.optimizer_critic.step()
+    if not self.eval_mode:
+        if self.episode_number >= FLAGS.actor_start_delay:
+          self.optimizer_actor.step()
+        self.optimizer_critic.step()
 
     fig = plt.figure()
     plt.plot(self.rewards)
-    GLOBAL.summary_writer.add_figure('out/reward', fig, self.episode_number)
+    GLOBAL.summary_writer.add_figure(prefix+'out/reward', fig, self.episode_number)
     fig = plt.figure()
     plt.plot(list(reversed(Rs[1:])))
-    GLOBAL.summary_writer.add_figure('out/reward_cumul', fig, self.episode_number)
+    GLOBAL.summary_writer.add_figure(prefix+'out/reward_cumul', fig, self.episode_number)
     fig = plt.figure()
     plt.plot(list(reversed(Vs[1:])))
-    GLOBAL.summary_writer.add_figure('out/value', fig, self.episode_number)
+    GLOBAL.summary_writer.add_figure(prefix+'out/value', fig, self.episode_number)
     fig = plt.figure()
     plt.plot(list(reversed(As[1:])))
-    GLOBAL.summary_writer.add_figure('out/advantage', fig, self.episode_number)
+    GLOBAL.summary_writer.add_figure(prefix+'out/advantage', fig, self.episode_number)
     fig = plt.figure()
     plt.plot(list(reversed(actor_losses)))
-    GLOBAL.summary_writer.add_figure('loss/actor', fig, self.episode_number)
+    GLOBAL.summary_writer.add_figure(prefix+'loss/actor', fig, self.episode_number)
     fig = plt.figure()
     plt.plot(list(reversed(entropy_losses)))
-    GLOBAL.summary_writer.add_figure('loss/entropy', fig, self.episode_number)
+    GLOBAL.summary_writer.add_figure(prefix+'loss/entropy', fig, self.episode_number)
 
     # Start next episode.
     self.processed_frames = 0
@@ -333,6 +363,10 @@ class FrameProcessor(object):
       torch.save(state, savefile)
       torch.save(state, os.path.join(FLAGS.logdir, 'train/model_latest.tar'))
       logging.info('Saved %s', savefile)
+    
+    if self.eval_mode:
+        self.train()
+    
     if self.episode_number >= FLAGS.max_episodes:
       return None
     return self.process_frame(frame=None)
@@ -356,6 +390,8 @@ class FrameProcessor(object):
     if not FLAGS.interactive:
       if self.processed_frames == 0:
         logging.info('Starting episode %d', self.episode_number)
+        if self.episode_number%FLAGS.eval_every == 0:
+            self.eval()
         self.actor.reset()
         self.critic.reset()
         self.frame_buffer = []
@@ -422,7 +458,6 @@ def Speedrun(env, processor_cls):
     ai.emptyInputs()
 
     if moviefile and env.frame_counter < moviefile.nbFrames():
-      print('hello')
       moviefile.getInputs(ai, env.frame_counter)
     else:
       if action_queue.empty():
