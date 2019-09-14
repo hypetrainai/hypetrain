@@ -1,6 +1,3 @@
-P1:
-- Alternating eval during training.
-
 P2:
 - Flow-based actor network.
 - Decrease FLAGS.hold_buttons_for on a schedule.
