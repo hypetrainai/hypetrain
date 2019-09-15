@@ -28,7 +28,7 @@ import utils
 
 flags.DEFINE_string('actor_network', 'ResNetIm2Value', 'class for actor network')
 flags.DEFINE_string('critic_network', 'ResNetIm2Value', 'class for critic network')
-flags.DEFINE_string('logdir', 'trained_models/debug', 'logdir')
+flags.DEFINE_string('logdir', 'trained_models/discrete_rect_loss', 'logdir')
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
 flags.DEFINE_boolean('use_cuda', True, 'Use cuda')
@@ -201,7 +201,7 @@ class FrameProcessor(object):
       self.critic.set_inputs(self.processed_frames, input_frame, extra_channels)
 
   def _rectangular_distance(self, y, x):
-    return np.maximum(y - self.goal_y, x - self.goal_x)
+    return np.maximum(np.abs(y-self.goal_y), np.abs(x-self.goal_x))
 
   def _reward_for_current_state(self):
     """Returns (rewards, should_end_episode) given state."""
