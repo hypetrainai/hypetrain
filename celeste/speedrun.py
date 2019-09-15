@@ -25,6 +25,7 @@ import environment
 import model
 import utils
 
+flags.DEFINE_string('save_config', '', 'File to save the config for the current run into. Can be loaded using --flagfile.')
 
 flags.DEFINE_string('actor_network', 'ResNetIm2Value', 'class for actor network')
 flags.DEFINE_string('critic_network', 'ResNetIm2Value', 'class for critic network')
@@ -40,8 +41,8 @@ flags.DEFINE_integer('eval_every', 100, 'eval every X steps')
 
 flags.DEFINE_string('movie_file', 'movie.ltm', 'if not empty string, load libTAS input movie file')
 flags.DEFINE_string('save_file', 'level1_screen0', 'if not empty string, use save file.')
-flags.DEFINE_integer('goal_y', None, 'override goal y coordinate')
-flags.DEFINE_integer('goal_x', None, 'override goal x coordinate')
+flags.DEFINE_integer('goal_y', 0, 'override goal y coordinate')
+flags.DEFINE_integer('goal_x', 0, 'override goal x coordinate')
 
 flags.DEFINE_boolean('interactive', False, 'interactive mode (enter buttons on command line)')
 
@@ -477,7 +478,14 @@ def Speedrun(env, processor_cls):
 def main(argv):
   del argv  # unused
 
-  logging.info('\n%s', pprint.pformat(FLAGS.flag_values_dict()))
+  key_flags = FLAGS.get_key_flags_for_module(os.path.basename(__file__))
+  logging.info('\n%s', pprint.pformat({flag.name: flag.value for flag in key_flags}))
+
+  if FLAGS.save_config:
+    with open(FLAGS.save_config, 'w') as f:
+      for flag in sorted(key_flags, key=lambda x: x.name):
+        if flag.name != 'save_config':
+          f.write(flag.serialize() + '\n')
 
   os.makedirs(FLAGS.logdir, exist_ok=True)
   train_dir = os.path.join(FLAGS.logdir, 'train')
