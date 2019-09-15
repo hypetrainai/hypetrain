@@ -76,7 +76,7 @@ class Trainer(object):
 
     frame_channels = 4
     extra_channels = 1
-    self.actor = utils.import_class(FLAGS.actor)(frame_channels, extra_channels, out_dim=len(utils.class2button.dict))
+    self.actor = utils.import_class(FLAGS.actor)(frame_channels, extra_channels, out_dim=self.env.num_actions())
     self.critic = utils.import_class(FLAGS.critic)(frame_channels, extra_channels, out_dim=1, use_softmax=False)
     if FLAGS.use_cuda:
       self.actor = self.actor.cuda()
@@ -256,7 +256,7 @@ class Trainer(object):
 
     if frame is None:
       # Starting new episode, perform a loadstate.
-      if np.random.uniform() < FLAGS.random_loadstate_prob:
+      if np.random.uniform() < FLAGS.random_loadstate_prob and not GLOBAL.eval_mode:
         custom_savestates = set(self.env.saved_states.keys())
         if len(custom_savestates) > 1:
           custom_savestates.remove(0)
@@ -287,7 +287,7 @@ class Trainer(object):
     with torch.no_grad():
       softmax = self.actor.forward(self.processed_frames).detach().cpu()
     self.softmaxes.append(softmax)
-    idxs = utils.sample_softmax(softmax, greedy=GLOBAL.eval_mode)
+    idxs = utils.sample_softmax(softmax)
     self.sampled_idx.append(idxs)
     self.processed_frames += 1
 

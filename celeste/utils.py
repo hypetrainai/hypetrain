@@ -26,56 +26,8 @@ def add_summary(summary_type, name, value, **kwargs):
   summary_fn(summary_prefix + name, value, GLOBAL.episode_number, **kwargs)
 
 
-button_dict = {
-    'a': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_A,
-    'b': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_B,
-#    'x': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_X,
-#    'y': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_Y,
-    'rt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_RIGHTSHOULDER,
-#    'lt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_LEFTSHOULDER,
-    'u': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_UP,
-    'd': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_DOWN,
-    'l': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_LEFT,
-    'r': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_RIGHT,
-}
-
-
-def class2button(key):
-  if not class2button.dict:
-    action_button_dict = {
-      0: [''],
-      1: ['a'],
-      2: ['b'],
-      3: ['rt'],
-      4: ['a','b'],
-      5: ['a','rt'],
-      6: ['rt', 'b'],
-      7: ['a','b','rt']
-    }
-    dpad_button_dict = {
-      0: [''],
-      1: ['r'],
-      2: ['l'],
-      3: ['u'],
-      4: ['d'],
-      5: ['r','u'],
-      6: ['u','l'],
-      7: ['l','d'],
-      8: ['d','r']
-    }
-    for action_key in action_button_dict:
-      for dpad_key in dpad_button_dict:
-        final_key = action_key * len(dpad_button_dict) + dpad_key
-        final_value = action_button_dict[action_key] + dpad_button_dict[dpad_key]
-        final_value = [key for key in final_value if key]
-        class2button.dict[final_key] = final_value
-  return class2button.dict[key]
-class2button.dict = {}
-class2button(0)
-
-
-def sample_softmax(softmax, greedy=False):
-  if greedy:
+def sample_softmax(softmax):
+  if GLOBAL.eval_mode:
     return np.argmax(softmax.numpy(), axis=1)
   elif (FLAGS.random_action_prob > 0 and
         np.random.random() <= FLAGS.random_action_prob):

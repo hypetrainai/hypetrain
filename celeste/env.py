@@ -23,6 +23,10 @@ class Env(object):
     """Resets state for a new episode."""
     pass
 
+  def num_actions(self):
+    """Returns the size of the action space (softmax dim)."""
+    raise NotImplementedError()
+
   def start_frame(self):
     """Performs processing at the start of a frame.
 

@@ -15,23 +15,68 @@ import utils
 
 FLAGS = flags.FLAGS
 
-
 _SIZE_INT = 4
 _SIZE_FLOAT = 4
 _SIZE_UNSIGNED_LONG = 8
 _SIZE_TIMESPEC = 16
 _SIZE_GAMEINFO_STRUCT = 36
 
+_BUTTON_DICT = {
+    'a': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_A,
+    'b': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_B,
+#    'x': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_X,
+#    'y': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_Y,
+    'rt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_RIGHTSHOULDER,
+#    'lt': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_LEFTSHOULDER,
+    'u': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_UP,
+    'd': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_DOWN,
+    'l': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_LEFT,
+    'r': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_DPAD_RIGHT,
+}
+
+_ACTION_BUTTONS = [
+  [''],
+  ['a'],
+  ['b'],
+  ['rt'],
+  ['a','b'],
+  ['a','rt'],
+  ['rt', 'b'],
+  ['a','b','rt']
+]
+
+_DPAD_BUTTONS = [
+  [''],
+  ['r'],
+  ['l'],
+  ['u'],
+  ['d'],
+  ['r','u'],
+  ['u','l'],
+  ['l','d'],
+  ['d','r']
+]
+
+_GOAL_MAP = {
+    'level1_screen0': (152, 786),
+    'level1_screen4': (107, 611),
+}
+
 
 class Env(env.Env):
 
-  GOAL_MAP = {
-      'level1_screen0': (152, 786),
-      'level1_screen4': (107, 611),
-  }
-
   def __init__(self):
     super(Env, self).__init__()
+
+    self.frame_counter = 0
+    self.det = celeste_detector.CelesteDetector()
+
+    self.class2button = {}
+    for action_id, action_list in enumerate(_ACTION_BUTTONS):
+      for dpad_id, dpad_list in enumerate(_DPAD_BUTTONS):
+        final_id = action_id * len(_DPAD_BUTTONS) + dpad_id
+        buttons = [button for button in action_list + dpad_list if button]
+        self.class2button[final_id] = buttons
 
     os.system('mkdir -p /tmp/celeste/movies')
     os.system('cp -f settings.celeste ~/.local/share/Celeste/Saves/')
@@ -90,9 +135,6 @@ class Env(env.Env):
 
     pylibtas.sendMessage(pylibtas.MSGN_END_INIT)
 
-    self.det = celeste_detector.CelesteDetector()
-    self.frame_counter = 0
-
   def quit(self):
     if self.game_pid != -1:
       logging.info('killing game %d' % self.game_pid)
@@ -132,19 +174,22 @@ class Env(env.Env):
     self.frame_buffer = frame_buffer.copy()
 
   def _generate_goal_state(self):
-    if not GLOBAL.eval_mode and np.random.uniform() < FLAGS.random_goal_prob:
+    if np.random.uniform() < FLAGS.random_goal_prob and not GLOBAL.eval_mode:
       self.goal_y = np.random.randint(50, FLAGS.image_height - 50)
       self.goal_x = np.random.randint(50, FLAGS.image_width - 50)
     elif FLAGS.goal_y or FLAGS.goal_x:
       self.goal_y = FLAGS.goal_y
       self.goal_x = FLAGS.goal_x
     else:
-      self.goal_y, self.goal_x = self.GOAL_MAP[FLAGS.save_file]
+      self.goal_y, self.goal_x = _GOAL_MAP[FLAGS.save_file]
 
   def reset(self):
     self.frame_buffer = []
     self.trajectory = []
     self._generate_goal_state()
+
+  def num_actions(self):
+    return len(self.class2button)
 
   def start_frame(self):
     msg = pylibtas.receiveMessage()
@@ -255,12 +300,12 @@ class Env(env.Env):
   def index_to_action(self, idx):
     action = pylibtas.AllInputs()
     action.emptyInputs()
-    for button in utils.class2button(idx):
-      if button not in utils.button_dict:
+    for button in self.class2button[idx]:
+      if button not in _BUTTON_DICT:
         logging.warning('Unknown button %s!' % button)
         continue
       si = pylibtas.SingleInput()
-      si.type = utils.button_dict[button]
+      si.type = _BUTTON_DICT[button]
       action.setInput(si, 1)
     return action
 
@@ -292,7 +337,7 @@ class Env(env.Env):
 
     num_topk = 5
     topk_idxs = np.argsort(softmax)[::-1][:num_topk]
-    labels = [','.join(utils.class2button(idx)) for idx in topk_idxs]
+    labels = [','.join(self.class2button[idx]) for idx in topk_idxs]
     ax2.bar(np.arange(num_topk), softmax[topk_idxs], width=0.3)
     ax2.set_xticks(np.arange(num_topk))
     ax2.set_xticklabels(labels)
@@ -301,6 +346,6 @@ class Env(env.Env):
     asp /= np.abs(np.diff(ax1.get_xlim())[0] / np.diff(ax1.get_ylim())[0])
     ax2.set_aspect(asp / ax1_height_ratio)
     ax2.set_title('Sampled: %s (%0.2f%%)' % (
-        ','.join(utils.class2button(sampled_idx)),
+        ','.join(self.class2button[sampled_idx]),
         softmax[sampled_idx] * 100.0))
     utils.add_summary('figure', 'action/frame_%03d' % frame_number, fig)
