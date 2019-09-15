@@ -449,39 +449,29 @@ class FrameProcessor(object):
 
 
 def Speedrun(env, processor_cls):
-  moviefile = None
-  if FLAGS.movie_file:
-    moviefile = pylibtas.MovieFile()
-    if moviefile.loadInputs(FLAGS.movie_file) != 0:
-      raise ValueError('Could not load movie %s' % FLAGS.movie_file)
-
   processor = processor_cls(env)
   action_queue = queue.Queue()
   while True:
-    frame = env.start_frame()
-
-    ai = pylibtas.AllInputs()
-    ai.emptyInputs()
-
-    if moviefile and env.frame_counter < moviefile.nbFrames():
-      moviefile.getInputs(ai, env.frame_counter)
-    else:
-      if action_queue.empty():
-        predicted_actions = processor.process_frame(frame)
-        if not predicted_actions:
-          break
-        for frame_actions in predicted_actions:
-          action_queue.put(frame_actions)
-      frame_actions = action_queue.get()
-      assert isinstance(frame_actions, (list, tuple))
-      for button in frame_actions:
-        if button not in utils.button_dict:
-          logging.warning('Unknown button %s!' % button)
-          continue
-        si = pylibtas.SingleInput()
-        si.type = utils.button_dict[button]
-        ai.setInput(si, 1)
-    env.end_frame(ai)
+    frame, action = env.start_frame()
+    if action:
+      action_queue.put(action)
+    elif action_queue.empty():
+      predicted_actions = processor.process_frame(frame)
+      if not predicted_actions:
+        break
+      for frame_actions in predicted_actions:
+        assert isinstance(frame_actions, (list, tuple))
+        ai = pylibtas.AllInputs()
+        ai.emptyInputs()
+        for button in frame_actions:
+          if button not in utils.button_dict:
+            logging.warning('Unknown button %s!' % button)
+            continue
+          si = pylibtas.SingleInput()
+          si.type = utils.button_dict[button]
+          ai.setInput(si, 1)
+        action_queue.put(ai)
+    env.end_frame(action_queue.get())
 
 
 def main(argv):
@@ -497,8 +487,8 @@ def main(argv):
   tensorboard = subprocess.Popen(['tensorboard', '--logdir', os.path.abspath(FLAGS.logdir)],
                                  stderr=subprocess.DEVNULL)
 
-  env = environment.Environment()
   try:
+    env = environment.Environment()
     if FLAGS.profile:
       FLAGS.max_episodes = 1
       cProfile.run('Speedrun(env, FrameProcessor)')

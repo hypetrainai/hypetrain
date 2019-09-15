@@ -1,4 +1,5 @@
 from absl import flags
+from absl import logging
 import numpy as np
 import os
 
@@ -25,10 +26,16 @@ class Environment(object):
       savepath = 'savefiles/' + FLAGS.save_file
       os.system('cp -f %s ~/.local/share/Celeste/Saves/0.celeste' % savepath)
 
+    self.moviefile = None
+    if FLAGS.movie_file:
+      self.moviefile = pylibtas.MovieFile()
+      if self.moviefile.loadInputs(FLAGS.movie_file) != 0:
+        raise ValueError('Could not load movie %s' % FLAGS.movie_file)
+
     pylibtas.removeSocket()
     pylibtas.launchGameThread(
         'CelesteLinux/Celeste.bin.x86_64',
-        'libTAS/build64/libtas.so',
+        'third_party/libTAS/build64/libtas.so',
         '',  # gameargs
         0,  # startframe
         'lib64',
@@ -135,7 +142,13 @@ class Environment(object):
     utils.assert_equal(received, size)
 
     frame = np.reshape(frame, [FLAGS.image_height, FLAGS.image_width, 4])[:, :, :3]
-    return frame
+
+    ai = None
+    if self.moviefile and self.frame_counter < self.moviefile.nbFrames():
+      ai = pylibtas.AllInputs()
+      ai.emptyInputs()
+      self.moviefile.getInputs(ai, self.frame_counter)
+    return frame, ai
 
   def end_frame(self, all_inputs):
     pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)
