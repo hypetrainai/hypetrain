@@ -70,7 +70,7 @@ flags.DEFINE_integer('action_summary_frames', 50, 'number of frames between acti
 FLAGS = flags.FLAGS
 
 
-class FrameProcessor(object):
+class Trainer(object):
 
   GOAL_MAP = {
       'level1_screen0': (152, 786),
@@ -481,9 +481,9 @@ def main(argv):
     env = environment.Environment()
     if FLAGS.profile:
       FLAGS.max_episodes = 1
-      cProfile.run('Speedrun(env, FrameProcessor)')
+      cProfile.run('Speedrun(env, Trainer)')
     else:
-      Speedrun(env, FrameProcessor)
+      Speedrun(env, Trainer)
   finally:
     env.cleanup()
     GLOBAL.summary_writer.close()

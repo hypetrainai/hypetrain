@@ -16,7 +16,7 @@ import utils
 FLAGS = flags.FLAGS
 
 
-class Predictor(speedrun.FrameProcessor):
+class Predictor(speedrun.Trainer):
 
   def __init__(self, env):
     self.env = env
