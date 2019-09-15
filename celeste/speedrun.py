@@ -11,7 +11,6 @@ import os
 import pprint
 import pylibtas
 import queue
-import signal
 import subprocess
 from tensorboardX import SummaryWriter
 import torch
@@ -43,8 +42,6 @@ flags.DEFINE_string('movie_file', 'movie.ltm', 'if not empty string, load libTAS
 flags.DEFINE_string('save_file', 'level1_screen0', 'if not empty string, use save file.')
 flags.DEFINE_integer('goal_y', 0, 'override goal y coordinate')
 flags.DEFINE_integer('goal_x', 0, 'override goal x coordinate')
-
-flags.DEFINE_boolean('interactive', False, 'interactive mode (enter buttons on command line)')
 
 flags.DEFINE_integer('image_height', 540, 'image height')
 flags.DEFINE_integer('image_width', 960, 'image width')
@@ -382,68 +379,53 @@ class FrameProcessor(object):
 
   def process_frame(self, frame):
     """Returns a list of button inputs for the next N frames."""
-    if FLAGS.interactive:
-      button_input = []
-      while not button_input:
-        button_input = input('Buttons please! (comma separated)').split(',')
-        if button_input == ['save']:
-          self.savestate(0)
-        elif button_input == ['load']:
-          self.loadstate(0)
-        elif button_input == ['start_episode']:
-          FLAGS.interactive = False
-          break
-        else:
-          button_inputs = [button_input]
+    if self.processed_frames == 0:
+      logging.info('Starting episode %d', self.episode_number)
+      self.actor.reset()
+      self.critic.reset()
+      self.frame_buffer = []
+      self.rewards = []
+      self.softmaxes = []
+      self.sampled_action = []
+      self.trajectory = []
+      self._generate_goal_state()
+      if FLAGS.use_cuda:
+        torch.cuda.empty_cache()
 
-    if not FLAGS.interactive:
-      if self.processed_frames == 0:
-        logging.info('Starting episode %d', self.episode_number)
-        self.actor.reset()
-        self.critic.reset()
-        self.frame_buffer = []
-        self.rewards = []
-        self.softmaxes = []
-        self.sampled_action = []
-        self.trajectory = []
-        self._generate_goal_state()
-        if FLAGS.use_cuda:
-          torch.cuda.empty_cache()
-
-      if frame is None:
-        if np.random.uniform() < FLAGS.random_loadstate_prob:
-          custom_savestates = set(self.saved_states.keys())
-          if len(custom_savestates) > 1:
-            custom_savestates.remove(0)
-          self.loadstate(int(np.random.choice(list(custom_savestates))))
-        else:
-          self.loadstate(0)
+    if frame is None:
+      if np.random.uniform() < FLAGS.random_loadstate_prob:
+        custom_savestates = set(self.saved_states.keys())
+        if len(custom_savestates) > 1:
+          custom_savestates.remove(0)
+        self.loadstate(int(np.random.choice(list(custom_savestates))))
       else:
-        self._set_inputs_from_frame(frame)
-        if not self.saved_states:
-          assert self.det.death_clock == 0
-          # First (default) savestate.
-          self.savestate(0)
-        elif (FLAGS.num_custom_savestates
-              and self.det.death_clock == 0
-              and np.random.uniform() < FLAGS.random_savestate_prob):
-          self.savestate(1 + np.random.randint(FLAGS.num_custom_savestates))
+        self.loadstate(0)
+    else:
+      self._set_inputs_from_frame(frame)
+      if not self.saved_states:
+        assert self.det.death_clock == 0
+        # First (default) savestate.
+        self.savestate(0)
+      elif (FLAGS.num_custom_savestates
+            and self.det.death_clock == 0
+            and np.random.uniform() < FLAGS.random_savestate_prob):
+        self.savestate(1 + np.random.randint(FLAGS.num_custom_savestates))
 
-      if self.processed_frames > 0:
-        reward, should_end_episode = self._reward_for_current_state()
-        self.rewards.append(reward)
-        if should_end_episode:
-          return self._finish_episode()
+    if self.processed_frames > 0:
+      reward, should_end_episode = self._reward_for_current_state()
+      self.rewards.append(reward)
+      if should_end_episode:
+        return self._finish_episode()
 
-      with torch.no_grad():
-        softmax = self.actor.forward(self.processed_frames).detach().cpu()
-      self.softmaxes.append(softmax)
-      idxs, button_inputs = utils.sample_action(softmax, greedy=self.eval_mode)
-      self.sampled_action.append(idxs)
-      # Predicted button_inputs include a batch dimension.
-      button_inputs = button_inputs[0]
-      # Returned button_inputs should be for next N frames, but for now N==1.
-      button_inputs = [button_inputs] * FLAGS.hold_buttons_for
+    with torch.no_grad():
+      softmax = self.actor.forward(self.processed_frames).detach().cpu()
+    self.softmaxes.append(softmax)
+    idxs, button_inputs = utils.sample_action(softmax, greedy=self.eval_mode)
+    self.sampled_action.append(idxs)
+    # Predicted button_inputs include a batch dimension.
+    button_inputs = button_inputs[0]
+    # Returned button_inputs should be for next N frames, but for now N==1.
+    button_inputs = [button_inputs] * FLAGS.hold_buttons_for
 
     self.processed_frames += 1
     return button_inputs
@@ -503,12 +485,10 @@ def main(argv):
     else:
       Speedrun(env, FrameProcessor)
   finally:
+    env.cleanup()
     GLOBAL.summary_writer.close()
     if tensorboard:
       tensorboard.terminate()
-    if env.game_pid != -1:
-      logging.info('killing game %d' % env.game_pid)
-      os.kill(env.game_pid, signal.SIGKILL)
 
 
 if __name__ == '__main__':

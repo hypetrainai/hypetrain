@@ -81,9 +81,7 @@ def main(argv):
   try:
     speedrun.Speedrun(env, Predictor)
   finally:
-    if env.game_pid != -1:
-      logging.info('killing game %d' % env.game_pid)
-      os.kill(env.game_pid, signal.SIGKILL)
+    env.cleanup()
 
 
 if __name__ == '__main__':

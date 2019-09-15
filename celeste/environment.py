@@ -2,6 +2,7 @@ from absl import flags
 from absl import logging
 import numpy as np
 import os
+import signal
 
 import pylibtas
 import utils
@@ -76,6 +77,11 @@ class Environment(object):
     pylibtas.sendInt(0)
 
     pylibtas.sendMessage(pylibtas.MSGN_END_INIT)
+
+  def cleanup(self):
+    if self.game_pid != -1:
+      logging.info('killing game %d' % self.game_pid)
+      os.kill(self.game_pid, signal.SIGKILL)
 
   def savestate(self, index):
     pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_INDEX)
