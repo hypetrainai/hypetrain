@@ -1,15 +1,29 @@
+from absl import flags
+import importlib
 import matplotlib.collections as mcoll
 import matplotlib.pyplot as plt
 import numpy as np
 import pylibtas
 import torch
 
-from absl import flags
+from GLOBALS import GLOBAL
+
 FLAGS = flags.FLAGS
 
 
 def assert_equal(a, b):
   assert a == b, (a, b)
+
+
+def import_class(path):
+  module, class_name = path.rsplit('.', 1)
+  return getattr(importlib.import_module(module), class_name)
+
+
+def add_summary(summary_type, name, value, **kwargs):
+  summary_prefix = 'eval/' if GLOBAL.eval_mode else ''
+  summary_fn = getattr(GLOBAL.summary_writer, 'add_%s' % summary_type)
+  summary_fn(summary_prefix + name, value, GLOBAL.episode_number, **kwargs)
 
 
 button_dict = {
@@ -60,17 +74,26 @@ class2button.dict = {}
 class2button(0)
 
 
-def sample_action(softmax, greedy=False):
+def sample_softmax(softmax, greedy=False):
   if greedy:
-    sample = np.argmax(softmax.numpy(), axis=1)
+    return np.argmax(softmax.numpy(), axis=1)
   elif (FLAGS.random_action_prob > 0 and
         np.random.random() <= FLAGS.random_action_prob):
     N, n_classes = softmax.shape
-    sample = np.random.randint(0, n_classes, (N))
+    return np.random.randint(0, n_classes, (N))
   else:
-    sample = torch.distributions.categorical.Categorical(probs=softmax).sample().numpy()
-  sample_mapped = [class2button(sample[i]) for i in range(len(sample))]
-  return sample, sample_mapped
+    return torch.distributions.categorical.Categorical(probs=softmax).sample().numpy()
+  return sample
+
+
+def generate_gaussian_heat_map(image_shape, y, x, sigma=10, amplitude=1.0):
+  H, W = image_shape
+  y_range = np.arange(0, H)
+  x_range = np.arange(0, W)
+  x_grid, y_grid = np.meshgrid(x_range, y_range)
+
+  result = amplitude * np.exp((-(y_grid - y)**2 + -(x_grid - x)**2) / (2 * sigma**2))
+  return result.astype(np.float32)
 
 
 def colorline(x, y, z=None, ax=None, cmap='copper', norm=plt.Normalize(0.0, 1.0),

@@ -1,9 +1,14 @@
 from absl import flags
 from absl import logging
+import matplotlib.pyplot as plt
 import numpy as np
 import os
 import signal
+import torch
+from torch.nn import functional as F
 
+from GLOBALS import GLOBAL
+import celeste_detector
 import pylibtas
 import utils
 
@@ -18,9 +23,12 @@ _SIZE_GAMEINFO_STRUCT = 36
 
 class Environment(object):
 
-  def __init__(self):
-    self.frame_counter = 0
+  GOAL_MAP = {
+      'level1_screen0': (152, 786),
+      'level1_screen4': (107, 611),
+  }
 
+  def __init__(self):
     os.system('mkdir -p /tmp/celeste/movies')
     os.system('cp -f settings.celeste ~/.local/share/Celeste/Saves/')
     if FLAGS.save_file is not None:
@@ -78,16 +86,26 @@ class Environment(object):
 
     pylibtas.sendMessage(pylibtas.MSGN_END_INIT)
 
-  def cleanup(self):
+    self.frame_counter = 0
+    self.saved_states = {}
+    self.det = celeste_detector.CelesteDetector()
+
+  def quit(self):
     if self.game_pid != -1:
       logging.info('killing game %d' % self.game_pid)
       os.kill(self.game_pid, signal.SIGKILL)
+
+  def can_savestate(self):
+    return self.det.death_clock == 0
 
   def savestate(self, index):
     pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_INDEX)
     pylibtas.sendInt(index)
     pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE)
     utils.assert_equal(pylibtas.receiveMessage(), pylibtas.MSGB_SAVING_SUCCEEDED)
+
+    self.det.savestate(index)
+    self.saved_states[index] = (self.trajectory[-1:], self.frame_buffer[-1:])
 
   def loadstate(self, index):
     pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_INDEX)
@@ -104,6 +122,11 @@ class Environment(object):
     _, self.frame_counter = pylibtas.receiveULong()
     pylibtas.ignoreData(_SIZE_TIMESPEC)
     pylibtas.sendMessage(pylibtas.MSGN_EXPOSE)
+
+    self.det.loadstate(index)
+    trajectory, frame_buffer = self.saved_states[index]
+    self.trajectory = trajectory.copy()
+    self.frame_buffer = frame_buffer.copy()
 
   def start_frame(self):
     msg = pylibtas.receiveMessage()
@@ -161,3 +184,121 @@ class Environment(object):
     pylibtas.sendAllInputs(all_inputs)
     pylibtas.sendMessage(pylibtas.MSGN_END_FRAMEBOUNDARY)
     self.frame_counter += 1
+
+  def _generate_goal_state(self):
+    if not GLOBAL.eval_mode and np.random.uniform() < FLAGS.random_goal_prob:
+      self.goal_y = np.random.randint(50, FLAGS.image_height - 50)
+      self.goal_x = np.random.randint(50, FLAGS.image_width - 50)
+    elif FLAGS.goal_y or FLAGS.goal_x:
+      self.goal_y = FLAGS.goal_y
+      self.goal_x = FLAGS.goal_x
+    else:
+      self.goal_y, self.goal_x = self.GOAL_MAP[FLAGS.save_file]
+
+  def reset(self):
+    self.frame_buffer = []
+    self.trajectory = []
+    self._generate_goal_state()
+
+  def get_inputs_for_frame(self, frame):
+    y, x, state = self.det.detect(frame, prior_coord=self.trajectory[-1] if self.trajectory else None)
+    self.trajectory.append((y, x))
+
+    window_shape = [FLAGS.image_height, FLAGS.image_width]
+    # generate the full frame input by concatenating gaussian heat maps.
+    if state == -1:
+      gaussian_current_position = np.zeros(window_shape, dtype=np.float32)
+    else:
+      gaussian_current_position = utils.generate_gaussian_heat_map(window_shape, y, x)
+
+    frame = frame.astype(np.float32).transpose([2, 0, 1]) / 255.0
+    if hasattr(self, 'frame_buffer'):
+      self.frame_buffer.append(frame)
+    input_frame = torch.cat([torch.tensor(frame), torch.tensor(gaussian_current_position).unsqueeze(0)], 0)
+
+    gaussian_goal_position = utils.generate_gaussian_heat_map(window_shape, self.goal_y, self.goal_x)
+    extra_channels = torch.tensor(gaussian_goal_position).unsqueeze(0)
+
+    if FLAGS.image_height != FLAGS.input_height or FLAGS.image_width != FLAGS.input_width:
+      assert FLAGS.image_height % FLAGS.input_height == 0
+      assert FLAGS.image_width % FLAGS.input_width == 0
+      assert FLAGS.image_width * FLAGS.input_height == FLAGS.image_height * FLAGS.input_width
+      input_frame = F.interpolate(input_frame.unsqueeze(0), size=(FLAGS.input_height, FLAGS.input_width), mode='nearest').squeeze(0)
+      extra_channels = F.interpolate(extra_channels.unsqueeze(0), size=(FLAGS.input_height, FLAGS.input_width), mode='nearest').squeeze(0)
+
+    if FLAGS.use_cuda:
+      input_frame = input_frame.cuda()
+      extra_channels = extra_channels.cuda()
+
+    return input_frame, extra_channels
+
+  def _rectangular_distance(self, y, x):
+    return np.maximum(np.abs(y - self.goal_y), np.abs(x - self.goal_x))
+
+  def get_reward(self):
+    """Returns (rewards, should_end_episode) for the current state."""
+    reward = 0
+    should_end_episode = False
+
+    y, x = self.trajectory[-1]
+    if y is None:
+      # Assume death
+      should_end_episode = True
+      reward -= 10
+      y, x = self.trajectory[-2]
+
+    # dist_to_goal = np.sqrt((y - self.goal_y)**2 + (x - self.goal_x)**2)
+    dist_to_goal = self._rectangular_distance(y,x)
+    # reward += 50 - 10 * dist_to_goal**0.33
+    reward += -15 + 10*(float(dist_to_goal<450)) + 10*(float(dist_to_goal<250)) + 10*(float(dist_to_goal<50)) + 10*(float(dist_to_goal<5))
+
+    if reward >= 48:
+      should_end_episode = True
+    return reward * FLAGS.reward_scale, should_end_episode
+
+  def finish_episode(self, processed_frames):
+    utils.assert_equal(len(self.frame_buffer), processed_frames + 1)
+    utils.assert_equal(len(self.trajectory), processed_frames + 1)
+    # utils.add_summary('video', 'input_frames', self.frame_buffer, fps=60)
+
+    fig = plt.figure()
+    plt.scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')
+    utils.plot_trajectory(self.frame_buffer[-(self.det.death_clock_limit + 1)], self.trajectory)
+    utils.add_summary('figure', 'trajectry', fig)
+
+  def add_action_summaries(self, frame_number, softmax, sampled_idx):
+    ax1_height_ratio = 3
+    fig, (ax1, ax2) = plt.subplots(2, gridspec_kw={
+        'height_ratios' : [ax1_height_ratio, 1],
+    })
+    ax1.scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')
+    trajectory_i = self.trajectory[max(0, frame_number - FLAGS.context_frames):frame_number + 1]
+    utils.plot_trajectory(self.frame_buffer[frame_number], trajectory_i, ax=ax1)
+    ax1.axis('off')
+
+    num_topk = 5
+    topk_idxs = np.argsort(softmax)[::-1][:num_topk]
+    labels = [','.join(utils.class2button(idx)) for idx in topk_idxs]
+    ax2.bar(np.arange(num_topk), softmax[topk_idxs], width=0.3)
+    ax2.set_xticks(np.arange(num_topk))
+    ax2.set_xticklabels(labels)
+    ax2.set_ylim(0.0, 1.0)
+    asp = np.diff(ax2.get_xlim())[0] / np.diff(ax2.get_ylim())[0]
+    asp /= np.abs(np.diff(ax1.get_xlim())[0] / np.diff(ax1.get_ylim())[0])
+    ax2.set_aspect(asp / ax1_height_ratio)
+    ax2.set_title('Sampled: %s (%0.2f%%)' % (
+        ','.join(utils.class2button(sampled_idx)),
+        softmax[sampled_idx] * 100.0))
+    utils.add_summary('figure', 'action/frame_%03d' % frame_number, fig)
+
+  def index_to_action(self, idx):
+    ai = pylibtas.AllInputs()
+    ai.emptyInputs()
+    for button in utils.class2button(idx):
+      if button not in utils.button_dict:
+        logging.warning('Unknown button %s!' % button)
+        continue
+      si = pylibtas.SingleInput()
+      si.type = utils.button_dict[button]
+      ai.setInput(si, 1)
+    return ai
