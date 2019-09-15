@@ -17,13 +17,13 @@ from torch import nn
 from torch import optim
 
 from GLOBALS import GLOBAL
-import environment
+import env
 import model
 import utils
 
 flags.DEFINE_string('save_config', '', 'File to save the config for the current run into. Can be loaded using --flagfile.')
 
-flags.DEFINE_string('env', 'environment.Environment', 'class for environment')
+flags.DEFINE_string('env', 'envs.celeste.Env', 'class for environment')
 flags.DEFINE_string('actor', 'model.ResNetIm2Value', 'class for actor network')
 flags.DEFINE_string('critic', 'model.ResNetIm2Value', 'class for critic network')
 flags.DEFINE_string('logdir', 'trained_models/discrete_rect_loss', 'logdir')

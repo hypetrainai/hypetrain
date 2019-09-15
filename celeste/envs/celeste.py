@@ -9,10 +9,12 @@ from torch.nn import functional as F
 
 from GLOBALS import GLOBAL
 import celeste_detector
+import env
 import pylibtas
 import utils
 
 FLAGS = flags.FLAGS
+
 
 _SIZE_INT = 4
 _SIZE_FLOAT = 4
@@ -21,7 +23,7 @@ _SIZE_TIMESPEC = 16
 _SIZE_GAMEINFO_STRUCT = 36
 
 
-class Environment(object):
+class Env(env.Env):
 
   GOAL_MAP = {
       'level1_screen0': (152, 786),
@@ -29,6 +31,8 @@ class Environment(object):
   }
 
   def __init__(self):
+    super(Env, self).__init__()
+
     os.system('mkdir -p /tmp/celeste/movies')
     os.system('cp -f settings.celeste ~/.local/share/Celeste/Saves/')
     if FLAGS.save_file is not None:
@@ -43,8 +47,8 @@ class Environment(object):
 
     pylibtas.removeSocket()
     pylibtas.launchGameThread(
-        'CelesteLinux/Celeste.bin.x86_64',
-        'third_party/libTAS/build64/libtas.so',
+        '../CelesteLinux/Celeste.bin.x86_64',
+        '../third_party/libTAS/build64/libtas.so',
         '',  # gameargs
         0,  # startframe
         'lib64',
@@ -86,9 +90,8 @@ class Environment(object):
 
     pylibtas.sendMessage(pylibtas.MSGN_END_INIT)
 
-    self.frame_counter = 0
-    self.saved_states = {}
     self.det = celeste_detector.CelesteDetector()
+    self.frame_counter = 0
 
   def quit(self):
     if self.game_pid != -1:
@@ -127,6 +130,21 @@ class Environment(object):
     trajectory, frame_buffer = self.saved_states[index]
     self.trajectory = trajectory.copy()
     self.frame_buffer = frame_buffer.copy()
+
+  def _generate_goal_state(self):
+    if not GLOBAL.eval_mode and np.random.uniform() < FLAGS.random_goal_prob:
+      self.goal_y = np.random.randint(50, FLAGS.image_height - 50)
+      self.goal_x = np.random.randint(50, FLAGS.image_width - 50)
+    elif FLAGS.goal_y or FLAGS.goal_x:
+      self.goal_y = FLAGS.goal_y
+      self.goal_x = FLAGS.goal_x
+    else:
+      self.goal_y, self.goal_x = self.GOAL_MAP[FLAGS.save_file]
+
+  def reset(self):
+    self.frame_buffer = []
+    self.trajectory = []
+    self._generate_goal_state()
 
   def start_frame(self):
     msg = pylibtas.receiveMessage()
@@ -172,33 +190,12 @@ class Environment(object):
 
     frame = np.reshape(frame, [FLAGS.image_height, FLAGS.image_width, 4])[:, :, :3]
 
-    ai = None
+    action = None
     if self.moviefile and self.frame_counter < self.moviefile.nbFrames():
-      ai = pylibtas.AllInputs()
-      ai.emptyInputs()
-      self.moviefile.getInputs(ai, self.frame_counter)
-    return frame, ai
-
-  def end_frame(self, all_inputs):
-    pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)
-    pylibtas.sendAllInputs(all_inputs)
-    pylibtas.sendMessage(pylibtas.MSGN_END_FRAMEBOUNDARY)
-    self.frame_counter += 1
-
-  def _generate_goal_state(self):
-    if not GLOBAL.eval_mode and np.random.uniform() < FLAGS.random_goal_prob:
-      self.goal_y = np.random.randint(50, FLAGS.image_height - 50)
-      self.goal_x = np.random.randint(50, FLAGS.image_width - 50)
-    elif FLAGS.goal_y or FLAGS.goal_x:
-      self.goal_y = FLAGS.goal_y
-      self.goal_x = FLAGS.goal_x
-    else:
-      self.goal_y, self.goal_x = self.GOAL_MAP[FLAGS.save_file]
-
-  def reset(self):
-    self.frame_buffer = []
-    self.trajectory = []
-    self._generate_goal_state()
+      action = pylibtas.AllInputs()
+      action.emptyInputs()
+      self.moviefile.getInputs(action, self.frame_counter)
+    return frame, action
 
   def get_inputs_for_frame(self, frame):
     y, x, state = self.det.detect(frame, prior_coord=self.trajectory[-1] if self.trajectory else None)
@@ -236,7 +233,6 @@ class Environment(object):
     return np.maximum(np.abs(y - self.goal_y), np.abs(x - self.goal_x))
 
   def get_reward(self):
-    """Returns (rewards, should_end_episode) for the current state."""
     reward = 0
     should_end_episode = False
 
@@ -255,6 +251,24 @@ class Environment(object):
     if reward >= 48:
       should_end_episode = True
     return reward * FLAGS.reward_scale, should_end_episode
+
+  def index_to_action(self, idx):
+    action = pylibtas.AllInputs()
+    action.emptyInputs()
+    for button in utils.class2button(idx):
+      if button not in utils.button_dict:
+        logging.warning('Unknown button %s!' % button)
+        continue
+      si = pylibtas.SingleInput()
+      si.type = utils.button_dict[button]
+      action.setInput(si, 1)
+    return action
+
+  def end_frame(self, action):
+    pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)
+    pylibtas.sendAllInputs(action)
+    pylibtas.sendMessage(pylibtas.MSGN_END_FRAMEBOUNDARY)
+    self.frame_counter += 1
 
   def finish_episode(self, processed_frames):
     utils.assert_equal(len(self.frame_buffer), processed_frames + 1)
@@ -290,15 +304,3 @@ class Environment(object):
         ','.join(utils.class2button(sampled_idx)),
         softmax[sampled_idx] * 100.0))
     utils.add_summary('figure', 'action/frame_%03d' % frame_number, fig)
-
-  def index_to_action(self, idx):
-    ai = pylibtas.AllInputs()
-    ai.emptyInputs()
-    for button in utils.class2button(idx):
-      if button not in utils.button_dict:
-        logging.warning('Unknown button %s!' % button)
-        continue
-      si = pylibtas.SingleInput()
-      si.type = utils.button_dict[button]
-      ai.setInput(si, 1)
-    return ai
