@@ -25,7 +25,7 @@ class ConvModel(Model):
     self.frame_buffer = None
     self.extra_channels = []
 
-  def set_inputs(self, i, input_frame, extra_channels):
+  def set_inputs(self, i, input_frame, extra_channels=None):
     if i == 0:
       self.frame_buffer = torch.stack([input_frame] * (FLAGS.context_frames - 1), 0)
     self.frame_buffer = torch.cat([self.frame_buffer, input_frame.unsqueeze(0)], 0)
@@ -37,19 +37,24 @@ class ConvModel(Model):
     input_frames = self.frame_buffer[i:i+FLAGS.context_frames]
     # [time, channels, height, width] -> [time * channels, height, width]
     input_frames = torch.reshape(input_frames, [-1, FLAGS.input_height, FLAGS.input_width])
-    input_frames = torch.cat([input_frames, self.extra_channels[i]], 0)
+    if self.extra_channels[i] is not None:
+      input_frames = torch.cat([input_frames, self.extra_channels[i]], 0)
     # Add batch dim.
     return input_frames.unsqueeze(0)
 
   def savestate(self, index):
-    self.saved_states[index] = (
-        self.frame_buffer[-FLAGS.context_frames:].clone().detach(),
-        self.extra_channels[-1].clone().detach())
+    state = {
+        'frame_buffer': self.frame_buffer[-FLAGS.context_frames:].clone().detach()
+    }
+    if self.extra_channels[-1] is not None:
+      state['extra_channels'] = self.extra_channels[-1].clone().detach()
+    self.saved_states[index] = state
 
   def loadstate(self, index):
-    frame_buffer, extra_channels = self.saved_states[index]
-    self.frame_buffer = frame_buffer.clone()
-    self.extra_channels = [extra_channels.clone()]
+    state = self.saved_states[index]
+    self.frame_buffer = state['frame_buffer'].clone()
+    if 'extra_channels' in state:
+      self.extra_channels = [state['extra_channels'].clone()]
 
 
 class RecurrentModel(Model):
@@ -58,8 +63,10 @@ class RecurrentModel(Model):
     self.inputs = []
     self.contexts = []
 
-  def set_inputs(self, i, input_frame, extra_channels):
-    self.inputs.append(torch.cat([input_frame, extra_channels], 0).unsqueeze(0))
+  def set_inputs(self, i, input_frame, extra_channels=None):
+    if extra_channels is not None:
+      input_frame = torch.cat([input_frame, extra_channels], 0)
+    self.inputs.append(input_frame.unsqueeze(0))
     utils.assert_equal(i, len(self.inputs) - 1)
 
   def _get_inputs(self, i):

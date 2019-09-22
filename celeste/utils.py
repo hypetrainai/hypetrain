@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pylibtas
 import torch
+from torch.nn import functional as F
 
 from GLOBALS import GLOBAL
 
@@ -46,6 +47,16 @@ def generate_gaussian_heat_map(image_shape, y, x, sigma=10, amplitude=1.0):
 
   result = amplitude * np.exp((-(y_grid - y)**2 + -(x_grid - x)**2) / (2 * sigma**2))
   return result.astype(np.float32)
+
+
+def downsample_image_to_input(image):
+  if FLAGS.image_height != FLAGS.input_height or FLAGS.image_width != FLAGS.input_width:
+    assert FLAGS.image_height % FLAGS.input_height == 0
+    assert FLAGS.image_width % FLAGS.input_width == 0
+    assert FLAGS.image_width * FLAGS.input_height == FLAGS.image_height * FLAGS.input_width
+    output_size = FLAGS.input_height, FLAGS.input_width
+    image = F.interpolate(image.unsqueeze(0), size=output_size, mode='nearest').squeeze(0)
+  return image
 
 
 def colorline(x, y, z=None, ax=None, cmap='copper', norm=plt.Normalize(0.0, 1.0),

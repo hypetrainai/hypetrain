@@ -5,7 +5,6 @@ import numpy as np
 import os
 import signal
 import torch
-from torch.nn import functional as F
 
 from GLOBALS import GLOBAL
 import celeste_detector
@@ -188,6 +187,12 @@ class Env(env.Env):
     self.trajectory = []
     self._generate_goal_state()
 
+  def frame_channels(self):
+    return 4
+
+  def extra_channels(self):
+    return 1
+
   def num_actions(self):
     return len(self.class2button)
 
@@ -261,12 +266,8 @@ class Env(env.Env):
     gaussian_goal_position = utils.generate_gaussian_heat_map(window_shape, self.goal_y, self.goal_x)
     extra_channels = torch.tensor(gaussian_goal_position).unsqueeze(0)
 
-    if FLAGS.image_height != FLAGS.input_height or FLAGS.image_width != FLAGS.input_width:
-      assert FLAGS.image_height % FLAGS.input_height == 0
-      assert FLAGS.image_width % FLAGS.input_width == 0
-      assert FLAGS.image_width * FLAGS.input_height == FLAGS.image_height * FLAGS.input_width
-      input_frame = F.interpolate(input_frame.unsqueeze(0), size=(FLAGS.input_height, FLAGS.input_width), mode='nearest').squeeze(0)
-      extra_channels = F.interpolate(extra_channels.unsqueeze(0), size=(FLAGS.input_height, FLAGS.input_width), mode='nearest').squeeze(0)
+    input_frame = utils.downsample_image_to_input(input_frame)
+    extra_channels = utils.downsample_image_to_input(extra_channels)
 
     if FLAGS.use_cuda:
       input_frame = input_frame.cuda()
@@ -295,7 +296,7 @@ class Env(env.Env):
 
     if reward >= 48:
       should_end_episode = True
-    return reward * FLAGS.reward_scale, should_end_episode
+    return reward, should_end_episode
 
   def index_to_action(self, idx):
     action = pylibtas.AllInputs()

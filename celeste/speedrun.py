@@ -24,6 +24,7 @@ import utils
 flags.DEFINE_string('save_config', '', 'File to save the config for the current run into. Can be loaded using --flagfile.')
 
 flags.DEFINE_string('env', 'envs.celeste.Env', 'class for environment')
+flags.DEFINE_string('env_name', 'PongNoFrameskip-v4', 'environment name (for envs.atari.Env)')
 flags.DEFINE_string('actor', 'model.ResNetIm2Value', 'class for actor network')
 flags.DEFINE_string('critic', 'model.ResNetIm2Value', 'class for critic network')
 flags.DEFINE_string('logdir', 'trained_models/discrete_rect_loss', 'logdir')
@@ -74,9 +75,10 @@ class Trainer(object):
   def __init__(self):
     self.env = utils.import_class(FLAGS.env)()
 
-    frame_channels = 4
-    extra_channels = 1
-    self.actor = utils.import_class(FLAGS.actor)(frame_channels, extra_channels, out_dim=self.env.num_actions())
+    frame_channels = self.env.frame_channels()
+    extra_channels = self.env.extra_channels()
+    num_actions = self.env.num_actions()
+    self.actor = utils.import_class(FLAGS.actor)(frame_channels, extra_channels, out_dim=num_actions)
     self.critic = utils.import_class(FLAGS.critic)(frame_channels, extra_channels, out_dim=1, use_softmax=False)
     if FLAGS.use_cuda:
       self.actor = self.actor.cuda()
@@ -280,7 +282,7 @@ class Trainer(object):
 
     if self.processed_frames > 0:
       reward, should_end_episode = self.env.get_reward()
-      self.rewards.append(reward)
+      self.rewards.append(reward * FLAGS.reward_scale)
       if should_end_episode or self.processed_frames >= FLAGS.episode_length:
         return self._finish_episode()
 
