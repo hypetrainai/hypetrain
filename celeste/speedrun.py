@@ -3,6 +3,7 @@ from absl import flags
 from absl import logging
 logging.set_verbosity(logging.INFO)
 import cProfile
+import inspect
 import matplotlib
 matplotlib.rcParams['axes.formatter.useoffset'] = False
 import matplotlib.pyplot as plt
@@ -101,31 +102,42 @@ class Trainer(object):
       logging.info('Done!')
 
   def quit(self):
+    print('entering %s'%inspect.stack()[0][3])
     self.env.quit()
+    print('exiting %s'%inspect.stack()[0][3])
 
   def eval(self):
+    print('entering %s'%inspect.stack()[0][3])
     self.actor.eval()
     self.critic.eval()
     GLOBAL.eval_mode = True
+    print('exiting %s'%inspect.stack()[0][3])
 
   def train(self):
+    print('entering %s'%inspect.stack()[0][3])
     self.actor.train()
     self.critic.train()
     GLOBAL.eval_mode = False
+    print('exiting %s'%inspect.stack()[0][3])
 
   def savestate(self, index):
+    print('entering %s'%inspect.stack()[0][3])
     logging.info('Saving state %d!' % index)
     self.env.savestate(index)
     self.actor.savestate(index)
     self.critic.savestate(index)
+    print('exiting %s'%inspect.stack()[0][3])
 
   def loadstate(self, index):
+    print('entering %s'%inspect.stack()[0][3])
     logging.info('Loading state %d!' % index)
     self.env.loadstate(index)
     self.actor.loadstate(index)
     self.critic.loadstate(index)
+    print('exiting %s'%inspect.stack()[0][3])
 
   def _start_episode(self):
+    print('entering %s'%inspect.stack()[0][3])
     if GLOBAL.episode_number % FLAGS.save_every == 0 and not GLOBAL.eval_mode:
       state = {
           'episode_number': GLOBAL.episode_number,
@@ -150,8 +162,10 @@ class Trainer(object):
     self.sampled_idx = []
     if FLAGS.use_cuda:
       torch.cuda.empty_cache()
+    print('exiting %s'%inspect.stack()[0][3])
 
   def _finish_episode(self):
+    print('entering %s'%inspect.stack()[0][3])
     assert self.processed_frames > 0
     self.env.finish_episode(self.processed_frames)
 
@@ -249,10 +263,12 @@ class Trainer(object):
       return None
 
     self.processed_frames = 0
+    print('exiting %s'%inspect.stack()[0][3])
     return self.process_frame(frame=None)
 
   def process_frame(self, frame):
     """Returns a list of button inputs for the next N frames."""
+    print('entering %s'%inspect.stack()[0][3])
     if self.processed_frames == 0:
       self._start_episode()
 
@@ -296,9 +312,11 @@ class Trainer(object):
     # Predicted idxs include a batch dimension.
     action = self.env.index_to_action(idxs[0])
     # Returned action is for next N frames.
+    print('exiting %s'%inspect.stack()[0][3])
     return [action] * FLAGS.hold_buttons_for
 
   def Run(self):
+    print('entering %s'%inspect.stack()[0][3])
     action_queue = queue.Queue()
     while True:
       frame, action = self.env.start_frame()
@@ -312,6 +330,7 @@ class Trainer(object):
         for predicted_action in predicted_actions:
           action_queue.put(predicted_action)
       self.env.end_frame(action_queue.get())
+    print('exiting %s'%inspect.stack()[0][3])
 
 
 def main(argv):
