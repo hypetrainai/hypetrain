@@ -52,7 +52,8 @@ flags.DEFINE_integer('input_width', 480, 'image height')
 
 flags.DEFINE_float('lr', 0.0005, 'learning rate')
 flags.DEFINE_float('actor_start_delay', 10, 'delay training of the actor for this many episodes')
-flags.DEFINE_float('entropy_weight', 0.0001, 'weight for entropy loss')
+flags.DEFINE_float('value_loss_weight', 1.0, 'weight for value loss')
+flags.DEFINE_float('entropy_loss_weight', 0.0001, 'weight for entropy loss')
 flags.DEFINE_float('reward_scale', 1.0/10.0, 'multiplicative scale for the reward function')
 flags.DEFINE_float('reward_decay_multiplier', 0.95, 'reward time decay multiplier')
 flags.DEFINE_integer('episode_length', 150, 'episode length')
@@ -177,6 +178,7 @@ class Trainer(object):
     final_V = self.critic.forward(self.processed_frames).view([]).detach().cpu().numpy()
     Vs = [final_V]
     As = [0]
+    value_losses = []
     actor_losses = []
     entropy_losses = []
     self.optimizer_actor.zero_grad()
@@ -189,26 +191,26 @@ class Trainer(object):
       assert blf > 0
       V_bellman = (R - (FLAGS.reward_decay_multiplier**blf) * Rs[-blf]
                    + (FLAGS.reward_decay_multiplier**blf) * Vs[-blf])
-
-      if not GLOBAL.eval_mode:
-        ((V_bellman - V)**2).backward(retain_graph=i != 0)
-      V = V.detach()
-
       A = V_bellman - V
 
+      value_loss = FLAGS.value_loss_weight * A**2
+      value_losses.append(value_loss.detach().cpu().numpy())
+      if not GLOBAL.eval_mode:
+        value_loss.backward(retain_graph=True)
+
       Rs.append(R)
-      Vs.append(V.cpu().numpy())
-      As.append(A.cpu().numpy())
+      Vs.append(V.detach().cpu().numpy())
+      As.append(A.detach().cpu().numpy())
 
       softmax = self.actor.forward(i)
       assert torch.eq(self.softmaxes[i], softmax.cpu()).all()
       entropy = -torch.sum(softmax * torch.log(softmax))
       actor_loss = -torch.log(softmax[0, self.sampled_idx[i][0]]) * A
       actor_losses.append(actor_loss.detach().cpu().numpy())
-      entropy_loss = FLAGS.entropy_weight / (entropy + 1e-6)
+      entropy_loss = FLAGS.entropy_loss_weight / (entropy + 1e-6)
       entropy_losses.append(entropy_loss.detach().cpu().numpy())
       if not GLOBAL.eval_mode:
-        (actor_loss + entropy_loss).backward(retain_graph=i != 0)
+        (actor_loss + entropy_loss).backward(retain_graph=True)
 
       if (i + 1) % FLAGS.action_summary_frames == 0:
         self.env.add_action_summaries(
@@ -240,6 +242,9 @@ class Trainer(object):
     fig = plt.figure()
     plt.plot(list(reversed(As[1:])))
     utils.add_summary('figure', 'out/advantage', fig)
+    fig = plt.figure()
+    plt.plot(list(reversed(value_losses)))
+    utils.add_summary('figure', 'loss/value', fig)
     fig = plt.figure()
     plt.plot(list(reversed(actor_losses)))
     utils.add_summary('figure', 'loss/actor', fig)
