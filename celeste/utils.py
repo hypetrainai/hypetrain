@@ -33,10 +33,9 @@ def sample_softmax(softmax):
   elif (FLAGS.random_action_prob > 0 and
         np.random.random() <= FLAGS.random_action_prob):
     N, n_classes = softmax.shape
-    return np.random.randint(0, n_classes, (N))
+    return np.random.randint(n_classes, size=N)
   else:
     return torch.distributions.categorical.Categorical(probs=softmax).sample().numpy()
-  return sample
 
 
 def generate_gaussian_heat_map(image_shape, y, x, sigma=10, amplitude=1.0):

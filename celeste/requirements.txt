@@ -3,6 +3,7 @@ imageio
 matplotlib
 moviepy
 pillow
+pygame==2.0.0.dev3
 scipy
 tensorboardX
 tensorflow
