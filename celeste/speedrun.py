@@ -157,6 +157,7 @@ class Trainer(object):
     self.softmaxes = []
     self.sampled_idx = []
     if FLAGS.use_cuda:
+      torch.cuda.synchronize()
       torch.cuda.empty_cache()
 
   def _finish_episode(self):
@@ -171,8 +172,10 @@ class Trainer(object):
     utils.add_summary('scalar', 'avg_reward', sum(self.rewards) / self.processed_frames)
 
     R = self.rewards[self.processed_frames - 1]
-    # reward = (1 + gamma + gamma^2 + ...) * reward
-    R *= 1.0 / (1.0 - FLAGS.reward_decay_multiplier)
+    # Only enable for dense rewards.
+    # "Fixes" truncation at end by adopting
+    #   final_reward *= 1 + gamma + gamma^2 + ...
+    # R *= 1.0 / (1.0 - FLAGS.reward_decay_multiplier)
     Rs = [R]
     final_V = self.critic.forward(self.processed_frames).view([]).detach().cpu().numpy()
     Vs = [final_V]
@@ -187,19 +190,23 @@ class Trainer(object):
       V = self.critic.forward(i).view([])
 
       blf = min(FLAGS.bellman_lookahead_frames, self.processed_frames - i)
-      assert blf > 0
-      V_bellman = (R - (FLAGS.reward_decay_multiplier**blf) * Rs[-blf]
-                   + (FLAGS.reward_decay_multiplier**blf) * Vs[-blf])
-      A = V_bellman - V
+      if blf == 0:
+        A = R - V
+      else:
+        A = (R - (FLAGS.reward_decay_multiplier**blf) * Rs[-blf]
+             + (FLAGS.reward_decay_multiplier**blf) * Vs[-blf] - V)
 
       value_loss = FLAGS.value_loss_weight * A**2
       value_losses.append(value_loss.detach().cpu().numpy())
       if not GLOBAL.eval_mode:
-        value_loss.backward(retain_graph=True)
+        value_loss.backward()
+
+      V = V.detach()
+      A = A.detach()
 
       Rs.append(R)
-      Vs.append(V.detach().cpu().numpy())
-      As.append(A.detach().cpu().numpy())
+      Vs.append(V.cpu().numpy())
+      As.append(A.cpu().numpy())
 
       softmax = self.actor.forward(i)
       assert torch.eq(self.softmaxes[i], softmax.cpu()).all()
@@ -209,7 +216,7 @@ class Trainer(object):
       entropy_loss = FLAGS.entropy_loss_weight / (entropy + 1e-6)
       entropy_losses.append(entropy_loss.detach().cpu().numpy())
       if not GLOBAL.eval_mode:
-        (actor_loss + entropy_loss).backward(retain_graph=True)
+        (actor_loss + entropy_loss).backward()
 
       if (i + 1) % FLAGS.action_summary_frames == 0:
         self.env.add_action_summaries(
