@@ -14,6 +14,12 @@ import utils
 
 FLAGS = flags.FLAGS
 
+_ACTION_NAMES = [
+    'NOOP', 'RIGHT', 'LEFT', 'DOWN', 'UP', 'FIRE', 'UPRIGHT',
+    'UPLEFT', 'DOWNRIGHT', 'DOWNLEFT', 'UPFIRE', 'RIGHTFIRE',
+    'LEFTFIRE', 'DOWNFIRE', 'UPRIGHTFIRE', 'UPLEFTFIRE',
+    'DOWNRIGHTFIRE', 'DOWNLEFTFIRE']
+
 
 class Env(env.Env):
 
@@ -81,6 +87,9 @@ class Env(env.Env):
 
   def indices_to_actions(self, idxs):
     return idxs
+
+  def indices_to_labels(self, idxs):
+    return [_ACTION_NAMES[idxs[i]] for i in range(len(idxs))]
 
   def end_frame(self, action):
     # speedrun.py only supports single element batches. Add back the batch dim here.

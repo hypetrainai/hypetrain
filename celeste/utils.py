@@ -88,10 +88,22 @@ def colorline(x, y, z=None, ax=None, cmap='copper', norm=plt.Normalize(0.0, 1.0)
   return lc
 
 
-def plot_trajectory(bg, trajectory, ax=None):
+def imshow(image, ax=None):
+  """Shows the image taking care of any transposes needed."""
+  if image.shape[-1] != FLAGS.image_channels:
+    image = image.transpose([1, 2, 0])
+  assert image.shape[-1] == FLAGS.image_channels, image.shape
+  if FLAGS.image_channels == 1:
+    image = image.squeeze(-1)
+  ax = ax or plt.gca()
+  ax.imshow(image)
+
+
+def plot_trajectory(trajectory, bg=None, ax=None):
   """Plots trajectory list of (y, x) coordinates over bg."""
   ax = ax or plt.gca()
-  ax.imshow(np.transpose(bg, [1, 2, 0]))
+  if bg is not None:
+    imshow(bg, ax)
   y, x = zip(*trajectory)
   colorline(x, y, ax=ax, cmap='autumn')
 

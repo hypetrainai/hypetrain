@@ -46,6 +46,7 @@ flags.DEFINE_integer('goal_x', 0, 'override goal x coordinate')
 
 flags.DEFINE_integer('image_height', 540, 'image height')
 flags.DEFINE_integer('image_width', 960, 'image width')
+flags.DEFINE_integer('image_channels', 3, 'image width')
 flags.DEFINE_integer('input_height', 270, 'image height')
 flags.DEFINE_integer('input_width', 480, 'image height')
 
@@ -75,6 +76,10 @@ class Trainer(object):
 
   def __init__(self):
     self.env = utils.import_class(FLAGS.env)()
+    self.env.reset()
+
+    self.saved_states = {}
+    self.frame_buffer = []
 
     frame_channels = self.env.frame_channels()
     extra_channels = self.env.extra_channels()
@@ -87,8 +92,6 @@ class Trainer(object):
     self.optimizer_actor = optim.Adam(list(self.actor.parameters()), lr=FLAGS.lr)
     self.optimizer_critic = optim.Adam(list(self.critic.parameters()), lr=FLAGS.lr)
 
-    GLOBAL.eval_mode = False
-    GLOBAL.episode_number = 0
     self.processed_frames = 0
 
     if FLAGS.pretrained_model_path:
@@ -119,12 +122,14 @@ class Trainer(object):
     self.env.savestate(index)
     self.actor.savestate(index)
     self.critic.savestate(index)
+    self.saved_states[index] = self.frame_buffer[-1:]
 
   def loadstate(self, index):
     logging.info('Loading state %d!' % index)
     self.env.loadstate(index)
     self.actor.loadstate(index)
     self.critic.loadstate(index)
+    self.frame_buffer = self.saved_states[index].copy()
 
   def _start_episode(self):
     if GLOBAL.episode_number % FLAGS.save_every == 0 and not GLOBAL.eval_mode:
@@ -146,6 +151,7 @@ class Trainer(object):
     self.actor.reset()
     self.critic.reset()
     self.env.reset()
+    self.frame_buffer = []
     self.rewards = []
     self.softmaxes = []
     self.sampled_idx = []
@@ -154,7 +160,7 @@ class Trainer(object):
 
   def _finish_episode(self):
     assert self.processed_frames > 0
-    self.env.finish_episode(self.processed_frames)
+    self.env.finish_episode(self.processed_frames, self.frame_buffer)
 
     utils.assert_equal(len(self.rewards), self.processed_frames)
     utils.assert_equal(len(self.softmaxes), self.processed_frames)
@@ -205,7 +211,8 @@ class Trainer(object):
         (actor_loss + entropy_loss).backward(retain_graph=i != 0)
 
       if (i + 1) % FLAGS.action_summary_frames == 0:
-        self.env.add_action_summaries(i, softmax[0].detach().cpu().numpy(), self.sampled_idx[i][0])
+        self.env.add_action_summaries(
+            i, self.frame_buffer, softmax[0].detach().cpu().numpy(), self.sampled_idx[i][0])
 
     if not GLOBAL.eval_mode:
       utils.add_summary('scalar', 'actor_grad_norm', utils.grad_norm(self.actor))
@@ -262,19 +269,25 @@ class Trainer(object):
     if frame is None:
       # Starting new episode, perform a loadstate.
       if np.random.uniform() < FLAGS.random_loadstate_prob and not GLOBAL.eval_mode:
-        custom_savestates = set(self.env.saved_states.keys())
+        custom_savestates = set(self.saved_states.keys())
         if len(custom_savestates) > 1:
           custom_savestates.remove(0)
         self.loadstate(int(np.random.choice(list(custom_savestates))))
       else:
         self.loadstate(0)
     else:
+      assert frame.shape == (FLAGS.image_channels, FLAGS.image_height, FLAGS.image_width), frame.shape
+      if isinstance(frame, torch.Tensor):
+        frame_np = frame.clone().cpu().numpy()
+      else:
+        frame_np = frame
+      self.frame_buffer.append(frame_np)
       inputs = self.env.get_inputs_for_frame(frame)
       self.actor.set_inputs(self.processed_frames, *inputs)
       if hasattr(self, 'critic'):
         self.critic.set_inputs(self.processed_frames, *inputs)
 
-      if not self.env.saved_states:
+      if not self.saved_states:
         assert self.env.can_savestate()
         # First (default) savestate.
         self.savestate(0)
@@ -304,10 +317,6 @@ class Trainer(object):
     return [action] * FLAGS.hold_buttons_for
 
   def Run(self):
-    self.actor.reset()
-    self.critic.reset()
-    self.env.reset()
-
     action_queue = queue.Queue()
     while True:
       frame, action = self.env.start_frame()
@@ -345,6 +354,9 @@ def main(argv):
   tensorboard = subprocess.Popen(['tensorboard', '--logdir', os.path.abspath(FLAGS.logdir)],
                                  stderr=subprocess.DEVNULL)
 
+  GLOBAL.eval_mode = False
+  GLOBAL.episode_number = 0
+
   try:
     trainer = Trainer()
     if FLAGS.evaluate:
@@ -357,10 +369,10 @@ def main(argv):
     else:
       trainer.Run()
   finally:
-    trainer.quit()
     GLOBAL.summary_writer.close()
     if tensorboard:
       tensorboard.terminate()
+    trainer.quit()
 
 
 if __name__ == '__main__':

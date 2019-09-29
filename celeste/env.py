@@ -1,3 +1,9 @@
+import matplotlib.pyplot as plt
+import numpy as np
+
+import utils
+
+
 class Env(object):
 
   def __init__(self):
@@ -48,18 +54,47 @@ class Env(object):
     """Returns (rewards, should_end_episode) for the current state."""
     raise NotImplementedError()
 
-  def index_to_action(self, idx):
-    """Given a softmax index, return an action to be provided to end_frame."""
+  def indices_to_actions(self, idxs):
+    """Given softmax indices, return a batch of actions to be provided to end_frame."""
+    raise NotImplementedError()
+
+  def indices_to_labels(self, idxs):
+    """Given softmax indices, return a batch of string action names."""
     raise NotImplementedError()
 
   def end_frame(self, action):
-    """Performs processing at the end of a frame given an action."""
+    """Performs processing at the end of a frame given a single action. (batch not yet supported)"""
     raise NotImplementedError()
 
-  def finish_episode(self, processed_frames):
+  def finish_episode(self, processed_frames, frame_buffer):
     """Called at the end of an episode with the number of frames processed."""
     pass
 
-  def add_action_summaries(self, frame_number, softmax, sampled_idx):
+  def _add_action_summaries_image(self, ax, frame_number, frame_buffer):
+    utils.imshow(frame_buffer[frame_number], ax)
+    ax.axis('off')
+
+  def _add_action_summaries_actions(self, ax, softmax, sampled_idx):
+    num_topk = 5
+    topk_idxs = np.argsort(softmax)[::-1][:num_topk]
+    ax.bar(np.arange(num_topk), softmax[topk_idxs], width=0.3)
+    ax.set_xticks(np.arange(num_topk))
+    ax.set_xticklabels(self.indices_to_labels(topk_idxs))
+    ax.set_ylim(0.0, 1.0)
+    ax.set_title('Sampled: %s (%0.2f%%)' % (
+        self.indices_to_labels([sampled_idx])[0],
+        softmax[sampled_idx] * 100.0))
+
+  def add_action_summaries(self, frame_number, frame_buffer, softmax, sampled_idx):
     """Called with the intermediate frame softmaxes and sampled idxs."""
-    pass
+    ax1_height_ratio = 3
+    fig, (ax1, ax2) = plt.subplots(2, gridspec_kw={
+        'height_ratios' : [ax1_height_ratio, 1],
+    })
+    self._add_action_summaries_image(ax1, frame_number, frame_buffer)
+    self._add_action_summaries_actions(ax2, softmax, sampled_idx)
+
+    asp = np.diff(ax2.get_xlim())[0] / np.diff(ax2.get_ylim())[0]
+    asp /= np.abs(np.diff(ax1.get_xlim())[0] / np.diff(ax1.get_ylim())[0])
+    ax2.set_aspect(asp / ax1_height_ratio)
+    utils.add_summary('figure', 'action/frame_%03d' % frame_number, fig)

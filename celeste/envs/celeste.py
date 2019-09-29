@@ -121,7 +121,7 @@ class Env(env.Env):
     shared_config.nb_controllers = 1
     shared_config.audio_mute = True
     shared_config.incremental_savestates = False
-    shared_config.savestates_in_ram = True
+    shared_config.savestates_in_ram = False
     shared_config.backtrack_savestate = False
     shared_config.prevent_savefiles = False
     shared_config.recycle_threads = False
@@ -151,7 +151,7 @@ class Env(env.Env):
     utils.assert_equal(pylibtas.receiveMessage(), pylibtas.MSGB_SAVING_SUCCEEDED)
 
     self.det.savestate(index)
-    self.saved_states[index] = (self.trajectory[-1:], self.frame_buffer[-1:])
+    self.saved_states[index] = self.trajectory[-1:]
 
   def loadstate(self, index):
     pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_INDEX)
@@ -170,9 +170,7 @@ class Env(env.Env):
     pylibtas.sendMessage(pylibtas.MSGN_EXPOSE)
 
     self.det.loadstate(index)
-    trajectory, frame_buffer = self.saved_states[index]
-    self.trajectory = trajectory.copy()
-    self.frame_buffer = frame_buffer.copy()
+    self.trajectory = self.saved_states[index].copy()
 
   def _generate_goal_state(self):
     if np.random.uniform() < FLAGS.random_goal_prob and not GLOBAL.eval_mode:
@@ -185,7 +183,6 @@ class Env(env.Env):
       self.goal_y, self.goal_x = _GOAL_MAP[FLAGS.save_file]
 
   def reset(self):
-    self.frame_buffer = []
     self.trajectory = []
     self._generate_goal_state()
 
@@ -241,6 +238,7 @@ class Env(env.Env):
     utils.assert_equal(received, size)
 
     frame = np.reshape(frame, [FLAGS.image_height, FLAGS.image_width, 4])[:, :, :3]
+    frame = frame.transpose([2, 0, 1])
 
     action = None
     if self.moviefile and self.frame_counter < self.moviefile.nbFrames():
@@ -260,9 +258,7 @@ class Env(env.Env):
     else:
       gaussian_current_position = utils.generate_gaussian_heat_map(window_shape, y, x)
 
-    frame = frame.astype(np.float32).transpose([2, 0, 1]) / 255.0
-    if hasattr(self, 'frame_buffer'):
-      self.frame_buffer.append(frame)
+    frame = frame.astype(np.float32) / 255.0
     input_frame = torch.cat([torch.tensor(frame), torch.tensor(gaussian_current_position).unsqueeze(0)], 0)
 
     gaussian_goal_position = utils.generate_gaussian_heat_map(window_shape, self.goal_y, self.goal_x)
@@ -315,43 +311,26 @@ class Env(env.Env):
       actions.append(action)
     return actions
 
+  def indices_to_labels(self, idxs):
+    return [','.join(self.class2button[idxs[i]]) for i in range(len(idxs))]
+
   def end_frame(self, action):
     pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)
     pylibtas.sendAllInputs(action)
     pylibtas.sendMessage(pylibtas.MSGN_END_FRAMEBOUNDARY)
     self.frame_counter += 1
 
-  def finish_episode(self, processed_frames):
-    utils.assert_equal(len(self.frame_buffer), processed_frames + 1)
+  def finish_episode(self, processed_frames, frame_buffer):
+    utils.assert_equal(len(frame_buffer), processed_frames + 1)
     utils.assert_equal(len(self.trajectory), processed_frames + 1)
-    # utils.add_summary('video', 'input_frames', self.frame_buffer, fps=60)
 
     fig = plt.figure()
     plt.scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')
-    utils.plot_trajectory(self.frame_buffer[-(self.det.death_clock_limit + 1)], self.trajectory)
-    utils.add_summary('figure', 'trajectry', fig)
+    utils.plot_trajectory(self.trajectory, frame_buffer[-(self.det.death_clock_limit + 1)])
+    utils.add_summary('figure', 'trajectory', fig)
 
-  def add_action_summaries(self, frame_number, softmax, sampled_idx):
-    ax1_height_ratio = 3
-    fig, (ax1, ax2) = plt.subplots(2, gridspec_kw={
-        'height_ratios' : [ax1_height_ratio, 1],
-    })
-    ax1.scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')
-    trajectory_i = self.trajectory[max(0, frame_number - FLAGS.context_frames):frame_number + 1]
-    utils.plot_trajectory(self.frame_buffer[frame_number], trajectory_i, ax=ax1)
-    ax1.axis('off')
-
-    num_topk = 5
-    topk_idxs = np.argsort(softmax)[::-1][:num_topk]
-    labels = [','.join(self.class2button[idx]) for idx in topk_idxs]
-    ax2.bar(np.arange(num_topk), softmax[topk_idxs], width=0.3)
-    ax2.set_xticks(np.arange(num_topk))
-    ax2.set_xticklabels(labels)
-    ax2.set_ylim(0.0, 1.0)
-    asp = np.diff(ax2.get_xlim())[0] / np.diff(ax2.get_ylim())[0]
-    asp /= np.abs(np.diff(ax1.get_xlim())[0] / np.diff(ax1.get_ylim())[0])
-    ax2.set_aspect(asp / ax1_height_ratio)
-    ax2.set_title('Sampled: %s (%0.2f%%)' % (
-        ','.join(self.class2button[sampled_idx]),
-        softmax[sampled_idx] * 100.0))
-    utils.add_summary('figure', 'action/frame_%03d' % frame_number, fig)
+  def _add_action_summaries_image(self, ax, frame_number, frame_buffer):
+    super(Env, self)._add_action_summaries_image(ax, frame_number, frame_buffer)
+    trajectory_i = self.trajectory[max(0, frame_number - FLAGS.action_summary_frames):frame_number + 1]
+    utils.plot_trajectory(trajectory_i, ax=ax)
+    ax.scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')
