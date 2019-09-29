@@ -294,14 +294,22 @@ class Trainer(object):
     self.processed_frames += 1
 
     # Predicted idxs include a batch dimension.
-    action = self.env.index_to_action(idxs[0])
-    # Returned action is for next N frames.
+    actions = self.env.indices_to_actions(idxs)
+    # Currently we have only 1 env = batch_size 1.
+    action = actions[0]
+    # Returned actions is for next N frames.
     return [action] * FLAGS.hold_buttons_for
 
   def Run(self):
+    self.actor.reset()
+    self.critic.reset()
+    self.env.reset()
+
     action_queue = queue.Queue()
     while True:
       frame, action = self.env.start_frame()
+      if frame is None:
+        break
       if action:
         action_queue.put(action)
       if action_queue.empty():

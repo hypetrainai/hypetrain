@@ -298,17 +298,20 @@ class Env(env.Env):
       should_end_episode = True
     return reward, should_end_episode
 
-  def index_to_action(self, idx):
-    action = pylibtas.AllInputs()
-    action.emptyInputs()
-    for button in self.class2button[idx]:
-      if button not in _BUTTON_DICT:
-        logging.warning('Unknown button %s!' % button)
-        continue
-      si = pylibtas.SingleInput()
-      si.type = _BUTTON_DICT[button]
-      action.setInput(si, 1)
-    return action
+  def indices_to_actions(self, idxs):
+    actions = []
+    for i in range(len(idxs)):
+      action = pylibtas.AllInputs()
+      action.emptyInputs()
+      for button in self.class2button[idxs[i]]:
+        if button not in _BUTTON_DICT:
+          logging.warning('Unknown button %s!' % button)
+          continue
+        si = pylibtas.SingleInput()
+        si.type = _BUTTON_DICT[button]
+        action.setInput(si, 1)
+      actions.append(action)
+    return actions
 
   def end_frame(self, action):
     pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)

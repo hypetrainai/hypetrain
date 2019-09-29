@@ -1,8 +1,8 @@
 from absl import flags
 from absl import logging
-import matplotlib.pyplot as plt
 import numpy as np
 import os
+import pygame
 import signal
 import torch
 from torch.nn import functional as F
@@ -21,35 +21,32 @@ class Env(env.Env):
     super(Env, self).__init__()
 
     # See https://github.com/NVlabs/cule/blob/master/examples/utils/launcher.py for description.
-    self.train_env = AtariEnv(FLAGS.env_name, num_envs=1, color_mode='gray', device='gpu',
+    self.train_env = AtariEnv(FLAGS.env_name, num_envs=1, color_mode='gray', device='cpu',
                               rescale=True, frameskip=4, repeat_prob=0.0, clip_rewards=False,
                               episodic_life=False)
     self.train_env.train()
 
-    self.test_env = AtariEnv(FLAGS.env_name, num_envs=10, color_mode='gray', device='cpu',
+    self.test_env = AtariEnv(FLAGS.env_name, num_envs=1, color_mode='gray', device='cpu',
                              rescale=True, frameskip=4, repeat_prob=0.0, clip_rewards=False,
                              episodic_life=False)
 
     height, width = self.train_env.screen_shape()
     utils.assert_equal(height, FLAGS.image_height)
-    utils.assert_equal(width, FLAGS.image_height)
+    utils.assert_equal(width, FLAGS.image_width)
+
+    pygame.init()
+    self.screen = pygame.display.set_mode([width, height], pygame.SCALED, depth=8)
+
+  def quit(self):
+    pygame.quit()
 
   def reset(self):
     if GLOBAL.eval_mode:
       self.next_frame = self.test_env.reset(initial_steps=400).squeeze(-1)
     else:
       self.next_frame = self.train_env.reset(initial_steps=400).squeeze(-1)
-    print(self.next_frame.shape)
     self.next_reward = None
     self.should_end_episode = False
-
-    plt.close('all')
-    plt.ion()
-    fig = plt.figure()
-    self.visualization = fig.imshow(self.next_frame.numpy(), animated=True)
-    fig.axis('off')
-    plt.tight_layout()
-    plt.show()
 
   def frame_channels(self):
     return 1
@@ -58,31 +55,41 @@ class Env(env.Env):
     return 0
 
   def num_actions(self):
-    return self.train_env.minimal_actions.size(0)
+    return self.train_env.minimal_actions().size(0)
 
   def start_frame(self):
-    self.visualization.set_data(self.next_frame)
+    for event in pygame.event.get():
+      if event.type == pygame.QUIT:
+        return None, None
+    frame = self.next_frame.squeeze(0).cpu().numpy().T
+    frame = np.tile(np.expand_dims(frame, -1), [1, 1, 3])
+    self.screen.blit(pygame.surfarray.make_surface(frame), (0, 0))
+    pygame.display.flip()
     return self.next_frame, None
 
   def get_inputs_for_frame(self, frame):
+    frame = frame.float() / 255.0
     frame = utils.downsample_image_to_input(frame)
+    if FLAGS.use_cuda:
+      frame = frame.cuda()
     return frame, None
 
   def get_reward(self):
+    if FLAGS.use_cuda:
+      self.next_reward = self.next_reward.cuda()
     return self.next_reward, self.should_end_episode
 
-  def index_to_action(self, idx):
-    return idx
+  def indices_to_actions(self, idxs):
+    return idxs
 
   def end_frame(self, action):
+    # speedrun.py only supports single element batches. Add back the batch dim here.
+    actions = torch.Tensor([action])
     if GLOBAL.eval_mode:
-      observation, reward, should_end_episode, _ = eval_env.step(action)
+      observation, reward, should_end_episode, _ = self.test_env.step(actions)
     else:
-      observation, reward, should_end_episode, _ = train_env.step(action)
-    print(observation.shape)
-    print(reward.shape)
-    print(should_end_episode.shape)
+      observation, reward, should_end_episode, _ = self.train_env.step(actions)
     self.next_frame = observation.squeeze(-1)
-    self.next_reward = reward
-    self.should_end_episode = should_end_episode
+    self.next_reward = torch.sum(reward)
+    self.should_end_episode = should_end_episode.all()
 

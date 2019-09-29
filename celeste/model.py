@@ -1,4 +1,5 @@
 from absl import flags
+import math
 import numpy as np
 import torch
 from torch import nn
@@ -55,6 +56,8 @@ class ConvModel(Model):
     self.frame_buffer = state['frame_buffer'].clone()
     if 'extra_channels' in state:
       self.extra_channels = [state['extra_channels'].clone()]
+    else:
+      self.extra_channels = [None]
 
 
 class RecurrentModel(Model):
@@ -96,26 +99,33 @@ class ResNetIm2Value(ConvModel):
     self.use_softmax = use_softmax
 
     in_dim = frame_channels * FLAGS.context_frames + extra_channels
+    feat_height, feat_width = FLAGS.input_height, FLAGS.input_width
 
     layer_defs = []
     layer_defs.append(submodules.convbn(in_dim, 64, kernel_size=3, pad=1, stride=2))
+    feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
     layer_defs.append(submodules.convbn(64, 64, kernel_size=3, pad=1, stride=2))
+    feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
     layer_defs.append(submodules.convbn(64, 64, kernel_size=3, pad=1, stride=2))
+    feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
 
     for i in range(3):
       layer_defs.append(submodules.ResNetModule(64, 64, kernel_size=3, pad=1))
     layer_defs.append(submodules.convbn(64, 128, kernel_size=3, pad=1, stride=2))
+    feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
 
     for i in range(3):
         layer_defs.append(submodules.ResNetModule(128, 128, kernel_size=3, pad=1))
     layer_defs.append(submodules.convbn(128, 256, kernel_size=3, pad=1, stride=2))
+    feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
 
     for i in range(3):
       layer_defs.append(submodules.ResNetModule(256, 256, kernel_size=3, pad=1))
 
     layer_defs.append(submodules.convbn(256, 256, kernel_size=3, pad=1, stride=2))
+    feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
 
-    fc_input = 10240
+    fc_input = feat_height * feat_width * 256
     layer_defs_linear = []
     layer_defs_linear.append(nn.Linear(fc_input, 512))
     layer_defs_linear.append(nn.ReLU())
@@ -145,12 +155,6 @@ def agg_node(in_planes, out_planes):
   )
 
 
-def smooth(in_planes, out_planes, ks=3):
-  return nn.Sequential(
-    submodules.convbn(in_planes, out_planes, kernel_size=ks, stride=1, pad=1)
-  )
-
-
 def upshuffle(in_planes, out_planes, upscale_factor):
   return nn.Sequential(
     nn.Conv2d(in_planes, out_planes*upscale_factor**2, kernel_size=3, stride=1, padding=1),
@@ -165,6 +169,7 @@ class FPNNet(ConvModel):
     super(FPNNet, self).__init__()
 
     in_dim = frame_channels * FLAGS.context_frames + extra_channels
+    feat_height, feat_width = FLAGS.input_height, FLAGS.input_width
 
     resnet = resnet101(pretrained=pretrained)
 
@@ -176,6 +181,8 @@ class FPNNet(ConvModel):
     separate_dims = in_dim - 3
     self.layer0_sep = nn.Sequential(submodules.convbn(separate_dims, 64, kernel_size=7, stride=2, pad=4),
                                     nn.MaxPool2d(2, 2))
+    feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
+    feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
 
     self.layer0 = nn.Sequential(resnet.conv1, resnet.bn1, resnet.relu, resnet.maxpool)
     self.layer1 = nn.Sequential(resnet.layer1)
@@ -184,12 +191,12 @@ class FPNNet(ConvModel):
     self.layer4 = nn.Sequential(resnet.layer4)
 
     # Top layer
-    self.toplayer = nn.Conv2d(2048, 256, kernel_size=1, stride=1, padding=1)  # Reduce channels
+    self.toplayer = nn.Conv2d(2048, 256, kernel_size=1, stride=1)  # Reduce channels
 
     # Lateral layers
-    self.latlayer1 = nn.Conv2d(1024, 256, kernel_size=1, stride=1, padding=1)
-    self.latlayer2 = nn.Conv2d(512, 256, kernel_size=1, stride=1, padding=1)
-    self.latlayer3 = nn.Conv2d(256, 256, kernel_size=1, stride=1, padding=1)
+    self.latlayer1 = nn.Conv2d(1024, 256, kernel_size=1, stride=1)
+    self.latlayer2 = nn.Conv2d(512, 256, kernel_size=1, stride=1)
+    self.latlayer3 = nn.Conv2d(256, 256, kernel_size=1, stride=1)
 
     # Smooth layers
     self.smooth1 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1)
@@ -203,18 +210,20 @@ class FPNNet(ConvModel):
     self.agg4 = agg_node(256, 128)
 
     # Upshuffle layers
-    self.up1 = upshuffle(128,128,8)
-    self.up2 = upshuffle(128,128,4)
-    self.up3 = upshuffle(128,128,2)
+    self.up1 = upshuffle(128, 128, 8)
+    self.up2 = upshuffle(128, 128, 4)
+    self.up3 = upshuffle(128, 128, 2)
 
     # Predict layers
     self.predict1 = submodules.convbn(512, 128, kernel_size=3, pad=1, stride=2)
+    feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
     self.predict2 = submodules.convbn(128, 128, kernel_size=3, pad=1, stride=1)
     self.predict3 = submodules.convbn(128, 32, kernel_size=3, pad=1, stride=2)
+    feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
     self.predict4 = submodules.convbn(32, 32, kernel_size=3, pad=1, stride=1)
     self.predict5 = submodules.convbn(32, 8, kernel_size=3, pad=1, stride=1)
 
-    fc_input = 4464
+    fc_input = feat_height * feat_width * 8
     layer_defs_linear = []
     layer_defs_linear.append(nn.Linear(fc_input, 512))
     layer_defs_linear.append(nn.ReLU())
@@ -296,23 +305,31 @@ class SimpleLSTMModel(RecurrentModel):
     self.use_softmax = use_softmax
 
     in_dim = frame_channels + extra_channels
+    feat_height, feat_width = FLAGS.input_height, FLAGS.input_width
 
     conv_stack = []
     conv_stack.append(submodules.convbn(in_dim, 64, kernel_size=3, pad=1, stride=2))
+    feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
     conv_stack.append(submodules.convbn(64, 64, kernel_size=3, pad=1, stride=2))
+    feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
     conv_stack.append(submodules.convbn(64, 64, kernel_size=3, pad=1, stride=2))
+    feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
 
     for i in range(3):
       conv_stack.append(submodules.ResNetModule(64, 64, kernel_size=3, pad=1))
     conv_stack.append(submodules.convbn(64, 128, kernel_size=3, pad=1, stride=2))
+    feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
 
     for i in range(3):
         conv_stack.append(submodules.ResNetModule(128, 128, kernel_size=3, pad=1))
     conv_stack.append(submodules.convbn(128, 128, kernel_size=3, pad=1, stride=2))
+    feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
     conv_stack.append(submodules.convbn(128, 128, kernel_size=3, pad=1, stride=2))
+    feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
 
+    fc_input = feat_height * feat_width * 128
     self.conv_stack = nn.Sequential(*conv_stack)
-    self.conv_proj = nn.Linear(5120, self.hidden_dim)
+    self.conv_proj = nn.Linear(fc_input, self.hidden_dim)
     self.rnn = nn.LSTM(input_size=self.hidden_dim, hidden_size=self.hidden_dim, num_layers=self.lstm_layers)
     self.out_proj = nn.Linear(self.hidden_dim, out_dim)
 
