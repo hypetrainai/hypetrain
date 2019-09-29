@@ -184,12 +184,12 @@ class Trainer(object):
     for i in reversed(range(self.processed_frames)):
       R = FLAGS.reward_decay_multiplier * R + self.rewards[i]
       V = self.critic.forward(i).view([])
-      
+
       blf = min(FLAGS.bellman_lookahead_frames, self.processed_frames - i)
       assert blf > 0
       V_bellman = (R - (FLAGS.reward_decay_multiplier**blf) * Rs[-blf]
                    + (FLAGS.reward_decay_multiplier**blf) * Vs[-blf])
-        
+
       if not GLOBAL.eval_mode:
         ((V_bellman - V)**2).backward(retain_graph=i != 0)
       V = V.detach()
@@ -298,6 +298,7 @@ class Trainer(object):
 
     if self.processed_frames > 0:
       reward, should_end_episode = self.env.get_reward()
+      assert isinstance(reward, float), type(reward)
       self.rewards.append(reward * FLAGS.reward_scale)
       if should_end_episode or self.processed_frames >= FLAGS.episode_length:
         return self._finish_episode()

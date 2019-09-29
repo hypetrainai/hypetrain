@@ -81,8 +81,6 @@ class Env(env.Env):
     return frame, None
 
   def get_reward(self):
-    if FLAGS.use_cuda:
-      self.next_reward = self.next_reward.cuda()
     return self.next_reward, self.should_end_episode
 
   def indices_to_actions(self, idxs):
@@ -99,6 +97,6 @@ class Env(env.Env):
     else:
       observation, reward, should_end_episode, _ = self.train_env.step(actions)
     self.next_frame = observation.squeeze(-1)
-    self.next_reward = torch.sum(reward)
+    self.next_reward = float(torch.sum(reward).cpu().numpy())
     self.should_end_episode = should_end_episode.all()
 
