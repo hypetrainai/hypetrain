@@ -28,7 +28,7 @@ flags.DEFINE_string('env', 'envs.celeste.Env', 'class for environment')
 flags.DEFINE_string('env_name', 'PongNoFrameskip-v4', 'environment name (for envs.atari.Env)')
 flags.DEFINE_string('actor', 'model.ResNetIm2Value', 'class for actor network')
 flags.DEFINE_string('critic', 'model.ResNetIm2Value', 'class for critic network')
-flags.DEFINE_string('logdir', 'trained_models/discrete_rect_loss', 'logdir')
+flags.DEFINE_string('logdir', 'trained_models/vbellman', 'logdir')
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
 flags.DEFINE_boolean('use_cuda', True, 'Use cuda')
@@ -56,7 +56,7 @@ flags.DEFINE_float('reward_scale', 1.0/10.0, 'multiplicative scale for the rewar
 flags.DEFINE_float('reward_decay_multiplier', 0.95, 'reward time decay multiplier')
 flags.DEFINE_integer('episode_length', 150, 'episode length')
 flags.DEFINE_integer('context_frames', 30, 'number of frames passed to the network')
-flags.DEFINE_integer('bellman_lookahead_frames', 5, 'number of frames to consider for bellman rollout')
+flags.DEFINE_integer('bellman_lookahead_frames', 10, 'number of frames to consider for bellman rollout')
 flags.DEFINE_float('clip_grad_norm', 1000.0, 'value to clip gradient norm to.')
 flags.DEFINE_float('clip_grad_value', 0.0, 'value to clip gradients to.')
 flags.DEFINE_integer('hold_buttons_for', 4, 'hold all buttons for at least this number of frames')
@@ -102,42 +102,31 @@ class Trainer(object):
       logging.info('Done!')
 
   def quit(self):
-    print('entering %s'%inspect.stack()[0][3])
     self.env.quit()
-    print('exiting %s'%inspect.stack()[0][3])
 
   def eval(self):
-    print('entering %s'%inspect.stack()[0][3])
     self.actor.eval()
     self.critic.eval()
     GLOBAL.eval_mode = True
-    print('exiting %s'%inspect.stack()[0][3])
 
   def train(self):
-    print('entering %s'%inspect.stack()[0][3])
     self.actor.train()
     self.critic.train()
     GLOBAL.eval_mode = False
-    print('exiting %s'%inspect.stack()[0][3])
 
   def savestate(self, index):
-    print('entering %s'%inspect.stack()[0][3])
     logging.info('Saving state %d!' % index)
     self.env.savestate(index)
     self.actor.savestate(index)
     self.critic.savestate(index)
-    print('exiting %s'%inspect.stack()[0][3])
 
   def loadstate(self, index):
-    print('entering %s'%inspect.stack()[0][3])
     logging.info('Loading state %d!' % index)
     self.env.loadstate(index)
     self.actor.loadstate(index)
     self.critic.loadstate(index)
-    print('exiting %s'%inspect.stack()[0][3])
 
   def _start_episode(self):
-    print('entering %s'%inspect.stack()[0][3])
     if GLOBAL.episode_number % FLAGS.save_every == 0 and not GLOBAL.eval_mode:
       state = {
           'episode_number': GLOBAL.episode_number,
@@ -162,10 +151,8 @@ class Trainer(object):
     self.sampled_idx = []
     if FLAGS.use_cuda:
       torch.cuda.empty_cache()
-    print('exiting %s'%inspect.stack()[0][3])
 
   def _finish_episode(self):
-    print('entering %s'%inspect.stack()[0][3])
     assert self.processed_frames > 0
     self.env.finish_episode(self.processed_frames)
 
@@ -191,14 +178,16 @@ class Trainer(object):
     for i in reversed(range(self.processed_frames)):
       R = FLAGS.reward_decay_multiplier * R + self.rewards[i]
       V = self.critic.forward(i).view([])
-      if not GLOBAL.eval_mode:
-        ((R - V)**2).backward(retain_graph=i != 0)
-      V = V.detach()
-
+      
       blf = min(FLAGS.bellman_lookahead_frames, self.processed_frames - i)
       assert blf > 0
       V_bellman = (R - (FLAGS.reward_decay_multiplier**blf) * Rs[-blf]
                    + (FLAGS.reward_decay_multiplier**blf) * Vs[-blf])
+        
+      if not GLOBAL.eval_mode:
+        ((V_bellman - V)**2).backward(retain_graph=i != 0)
+      V = V.detach()
+
       A = V_bellman - V
 
       Rs.append(R)
@@ -263,12 +252,10 @@ class Trainer(object):
       return None
 
     self.processed_frames = 0
-    print('exiting %s'%inspect.stack()[0][3])
     return self.process_frame(frame=None)
 
   def process_frame(self, frame):
     """Returns a list of button inputs for the next N frames."""
-    print('entering %s'%inspect.stack()[0][3])
     if self.processed_frames == 0:
       self._start_episode()
 
@@ -312,11 +299,9 @@ class Trainer(object):
     # Predicted idxs include a batch dimension.
     action = self.env.index_to_action(idxs[0])
     # Returned action is for next N frames.
-    print('exiting %s'%inspect.stack()[0][3])
     return [action] * FLAGS.hold_buttons_for
 
   def Run(self):
-    print('entering %s'%inspect.stack()[0][3])
     action_queue = queue.Queue()
     while True:
       frame, action = self.env.start_frame()
@@ -330,7 +315,6 @@ class Trainer(object):
         for predicted_action in predicted_actions:
           action_queue.put(predicted_action)
       self.env.end_frame(action_queue.get())
-    print('exiting %s'%inspect.stack()[0][3])
 
 
 def main(argv):
