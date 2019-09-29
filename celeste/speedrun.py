@@ -168,8 +168,7 @@ class Trainer(object):
     utils.assert_equal(len(self.sampled_idx), self.processed_frames)
 
     utils.add_summary('scalar', 'episode_length', self.processed_frames)
-    utils.add_summary('scalar', 'final_reward', self.rewards[-1])
-    utils.add_summary('scalar', 'best_reward', max(self.rewards))
+    utils.add_summary('scalar', 'avg_reward', sum(self.rewards) / self.processed_frames)
 
     R = self.rewards[self.processed_frames - 1]
     # reward = (1 + gamma + gamma^2 + ...) * reward
