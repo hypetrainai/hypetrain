@@ -111,7 +111,8 @@ def plot_trajectory(trajectory, bg=None, ax=None):
 def grad_norm(network):
   total_norm = 0
   for p in network.parameters():
-    param_norm = p.grad.data.norm(2)
-    total_norm += param_norm.item()**2
+    if p.grad is not None:
+      param_norm = p.grad.data.norm(2)
+      total_norm += param_norm.item()**2
   return total_norm**0.5
 
