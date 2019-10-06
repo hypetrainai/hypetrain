@@ -22,6 +22,9 @@ _SIZE_UNSIGNED_LONG = 8
 _SIZE_TIMESPEC = 16
 _SIZE_GAMEINFO_STRUCT = 36
 
+_INIT_REWARD = -100000.0
+_INIT_REWARD_THRESHOLD = -100000.0
+
 _BUTTON_DICT = {
     'a': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_A,
     'b': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_B,
@@ -71,6 +74,9 @@ class Env(env.Env):
 
     self.frame_counter = 0
     self.det = celeste_detector.CelesteDetector()
+    self.differential_reward = FLAGS.differential_reward
+    self.prev_reward = None
+    self.min_reward = None
 
     self.class2button = {}
     for action_id, action_list in enumerate(_ACTION_BUTTONS):
@@ -225,7 +231,7 @@ class Env(env.Env):
 
     if self.frame_counter == 0:
       pylibtas.sendMessage(pylibtas.MSGN_SAVESTATE_PATH)
-      pylibtas.sendString('/tmp/celeste/savestate')
+      pylibtas.sendString(FLAGS.savestate_path)
 
     msg = pylibtas.receiveMessage()
     utils.assert_equal(msg, pylibtas.MSGB_FRAME_DATA)
@@ -276,25 +282,50 @@ class Env(env.Env):
   def _rectangular_distance(self, y, x):
     return np.maximum(np.abs(y - self.goal_y), np.abs(x - self.goal_x))
 
+  def get_differential_reward(self, curr_reward):
+    prev_reward = self.prev_reward
+    if not prev_reward:
+      self.prev_reward = curr_reward
+      self.min_reward = curr_reward
+      return 0.0
+    
+    if curr_reward > self.min_reward and curr_reward > prev_reward:
+      reward = curr_reward - prev_reward
+    else:
+      reward = 0.0
+    
+    self.prev_reward = curr_reward
+    self.min_reward = np.maximum(self.min_reward, curr_reward)
+    
+    return reward
+    
+  def dist_reward(self, x, y):
+    return 50 - 10 * (np.sqrt((y - self.goal_y)**2 + (x - self.goal_x)**2))**0.33
+    
   def get_reward(self):
     reward = 0
+    final_reward = 0
     should_end_episode = False
 
     y, x = self.trajectory[-1]
     if y is None:
       # Assume death
       should_end_episode = True
-      reward -= 10
+      final_reward -= 10
       y, x = self.trajectory[-2]
 
-    # dist_to_goal = np.sqrt((y - self.goal_y)**2 + (x - self.goal_x)**2)
-    dist_to_goal = self._rectangular_distance(y,x)
-    # reward += 50 - 10 * dist_to_goal**0.33
-    reward += -15 + 10*(float(dist_to_goal<450)) + 10*(float(dist_to_goal<250)) + 10*(float(dist_to_goal<50)) + 10*(float(dist_to_goal<5))
+    curr_reward = self.dist_reward(x,y)    
+    if self.differential_reward:
+        final_reward += self.get_differential_reward(curr_reward)
+    else:
+        final_reward += curr_reward
+    #dist_to_goal = self._rectangular_distance(y,x)
+    #reward += -15 + 10*(float(dist_to_goal<450)) + 10*(float(dist_to_goal<250)) + 10*(float(dist_to_goal<50)) + 10*(float(dist_to_goal<5))
 
-    if reward >= 48:
+    if curr_reward >= 48:
       should_end_episode = True
-    return reward, should_end_episode
+        
+    return final_reward, should_end_episode
 
   def indices_to_actions(self, idxs):
     actions = []
@@ -323,6 +354,8 @@ class Env(env.Env):
   def finish_episode(self, processed_frames, frame_buffer):
     utils.assert_equal(len(frame_buffer), processed_frames + 1)
     utils.assert_equal(len(self.trajectory), processed_frames + 1)
+    self.prev_reward = None
+    self.min_reward = None
 
     fig = plt.figure()
     plt.scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')
