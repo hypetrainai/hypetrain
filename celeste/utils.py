@@ -53,8 +53,7 @@ def downsample_image_to_input(image):
     assert FLAGS.image_height % FLAGS.input_height == 0
     assert FLAGS.image_width % FLAGS.input_width == 0
     assert FLAGS.image_width * FLAGS.input_height == FLAGS.image_height * FLAGS.input_width
-    output_size = FLAGS.input_height, FLAGS.input_width
-    image = F.interpolate(image.unsqueeze(0), size=output_size, mode='nearest').squeeze(0)
+    image = F.interpolate(image, size=(FLAGS.input_height, FLAGS.input_width), mode='nearest')
   return image
 
 

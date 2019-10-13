@@ -34,6 +34,13 @@ flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most re
 flags.DEFINE_boolean('use_cuda', True, 'Use cuda')
 flags.DEFINE_boolean('profile', False, 'Profile code')
 
+flags.DEFINE_integer('batch_size', 1, 'batch size')
+flags.DEFINE_integer('image_height', 540, 'image height')
+flags.DEFINE_integer('image_width', 960, 'image width')
+flags.DEFINE_integer('image_channels', 3, 'image width')
+flags.DEFINE_integer('input_height', 270, 'image height')
+flags.DEFINE_integer('input_width', 480, 'image height')
+
 flags.DEFINE_integer('max_episodes', 100000, 'stop after this many episodes')
 flags.DEFINE_integer('save_every', 100, 'every X number of steps save a model')
 flags.DEFINE_integer('eval_every', 100, 'eval every X steps')
@@ -44,12 +51,6 @@ flags.DEFINE_string('save_file', 'level1_screen0', 'if not empty string, use sav
 flags.DEFINE_string('savestate_path', '/home/joe/projects/hypetrain/celeste/savestates/', 'where to put savestates')
 flags.DEFINE_integer('goal_y', 0, 'override goal y coordinate')
 flags.DEFINE_integer('goal_x', 0, 'override goal x coordinate')
-
-flags.DEFINE_integer('image_height', 540, 'image height')
-flags.DEFINE_integer('image_width', 960, 'image width')
-flags.DEFINE_integer('image_channels', 3, 'image width')
-flags.DEFINE_integer('input_height', 270, 'image height')
-flags.DEFINE_integer('input_width', 480, 'image height')
 
 flags.DEFINE_float('lr', 0.0005, 'learning rate')
 flags.DEFINE_float('actor_start_delay', 10, 'delay training of the actor for this many episodes')
@@ -86,8 +87,7 @@ class Trainer(object):
 
     frame_channels = self.env.frame_channels()
     extra_channels = self.env.extra_channels()
-    num_actions = self.env.num_actions()
-    self.actor = utils.import_class(FLAGS.actor)(frame_channels, extra_channels, out_dim=num_actions)
+    self.actor = utils.import_class(FLAGS.actor)(frame_channels, extra_channels, out_dim=self.env.num_actions())
     self.critic = utils.import_class(FLAGS.critic)(frame_channels, extra_channels, out_dim=1, use_softmax=False)
     if FLAGS.use_cuda:
       self.actor = self.actor.cuda()
@@ -155,41 +155,51 @@ class Trainer(object):
     self.critic.reset()
     self.env.reset()
     self.frame_buffer = []
-    self.rewards = []
-    self.softmaxes = []
-    self.sampled_idx = []
+    self.rewards = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
+    self.mask = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
+    self.softmaxes = np.empty((FLAGS.episode_length, FLAGS.batch_size, self.env.num_actions()),
+                              dtype=np.float32)
+    self.sampled_idx = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.int64)
     if FLAGS.use_cuda:
       torch.cuda.synchronize()
       torch.cuda.empty_cache()
 
   def _finish_episode(self):
     assert self.processed_frames > 0
+    self.rewards.resize((self.processed_frames, FLAGS.batch_size))
+    self.mask.resize((self.processed_frames, FLAGS.batch_size))
+    self.softmaxes.resize((self.processed_frames, FLAGS.batch_size, self.env.num_actions()))
+    self.sampled_idx.resize((self.processed_frames, FLAGS.batch_size))
+
     self.env.finish_episode(self.processed_frames, self.frame_buffer)
 
-    utils.assert_equal(len(self.rewards), self.processed_frames)
-    utils.assert_equal(len(self.softmaxes), self.processed_frames)
-    utils.assert_equal(len(self.sampled_idx), self.processed_frames)
+    utils.add_summary('scalar', 'avg_episode_length', np.sum(self.mask) / FLAGS.batch_size)
+    utils.add_summary('scalar', 'avg_reward', np.mean(self.rewards))
 
-    utils.add_summary('scalar', 'episode_length', self.processed_frames)
-    utils.add_summary('scalar', 'avg_reward', sum(self.rewards) / self.processed_frames)
-
-    R = self.rewards[self.processed_frames - 1]
+    rewards_tensor = torch.from_numpy(self.rewards)
+    mask_tensor = torch.from_numpy(self.mask)
+    sampled_idx_tensor = torch.from_numpy(self.sampled_idx)
+    if FLAGS.use_cuda:
+      rewards_tensor = rewards_tensor.cuda()
+      mask_tensor = mask_tensor.cuda()
+      sampled_idx_tensor = sampled_idx_tensor.cuda()
+    R = rewards_tensor[self.processed_frames - 1]
     # Only enable for dense rewards.
     # "Fixes" truncation at end by adopting
     #   final_reward *= 1 + gamma + gamma^2 + ...
     # R *= 1.0 / (1.0 - FLAGS.reward_decay_multiplier)
     Rs = [R]
-    final_V = self.critic.forward(self.processed_frames).view([]).detach().cpu().numpy()
-    Vs = [final_V]
-    As = [0]
+    final_V = self.critic.forward(self.processed_frames)
+    Vs = [final_V.detach()]
+    As = [np.zeros_like(self.rewards[0])]
     value_losses = []
     actor_losses = []
     entropy_losses = []
     self.optimizer_actor.zero_grad()
     self.optimizer_critic.zero_grad()
     for i in reversed(range(self.processed_frames)):
-      R = FLAGS.reward_decay_multiplier * R + self.rewards[i]
-      V = self.critic.forward(i).view([])
+      R = FLAGS.reward_decay_multiplier * R + rewards_tensor[i]
+      V = self.critic.forward(i)
 
       blf = min(FLAGS.bellman_lookahead_frames, self.processed_frames - i)
       if blf == 0:
@@ -198,7 +208,7 @@ class Trainer(object):
         A = (R - (FLAGS.reward_decay_multiplier**blf) * Rs[-blf]
              + (FLAGS.reward_decay_multiplier**blf) * Vs[-blf] - V)
 
-      value_loss = FLAGS.value_loss_weight * A**2
+      value_loss = FLAGS.value_loss_weight * torch.mean(mask_tensor[i] * A**2)
       value_losses.append(value_loss.detach().cpu().numpy())
       if not GLOBAL.eval_mode:
         value_loss.backward()
@@ -207,22 +217,23 @@ class Trainer(object):
       A = A.detach()
 
       Rs.append(R)
-      Vs.append(V.cpu().numpy())
+      Vs.append(V)
       As.append(A.cpu().numpy())
 
       softmax = self.actor.forward(i)
-      assert torch.eq(self.softmaxes[i], softmax.cpu()).all()
-      entropy = -torch.sum(softmax * torch.log(softmax))
-      actor_loss = -torch.log(softmax[0, self.sampled_idx[i][0]]) * A
+      assert np.array_equal(self.softmaxes[i], softmax.detach().cpu().numpy())
+      action_probs = softmax.gather(1, sampled_idx_tensor[i].unsqueeze(-1))
+      actor_loss = torch.mean(mask_tensor[i] * -torch.log(action_probs) * A)
       actor_losses.append(actor_loss.detach().cpu().numpy())
-      entropy_loss = FLAGS.entropy_loss_weight / (entropy + 1e-6)
+      entropy = mask_tensor[i].unsqueeze(-1) * -softmax * torch.log(softmax) / FLAGS.batch_size
+      entropy_loss = FLAGS.entropy_loss_weight * torch.sum(entropy)
       entropy_losses.append(entropy_loss.detach().cpu().numpy())
       if not GLOBAL.eval_mode:
         (actor_loss + entropy_loss).backward()
 
       if (i + 1) % FLAGS.action_summary_frames == 0:
         self.env.add_action_summaries(
-            i, self.frame_buffer, softmax[0].detach().cpu().numpy(), self.sampled_idx[i][0])
+            i, self.frame_buffer, softmax.detach().cpu().numpy(), self.sampled_idx[i])
 
     if not GLOBAL.eval_mode:
       utils.add_summary('scalar', 'actor_grad_norm', utils.grad_norm(self.actor))
@@ -239,16 +250,16 @@ class Trainer(object):
       self.optimizer_critic.step()
 
     fig = plt.figure()
-    plt.plot(self.rewards)
+    plt.plot(self.rewards[:, 0])
     utils.add_summary('figure', 'out/reward', fig)
     fig = plt.figure()
-    plt.plot(list(reversed(Rs[1:])))
+    plt.plot([R.cpu().numpy()[0] for R in reversed(Rs[1:])])
     utils.add_summary('figure', 'out/reward_cumul', fig)
     fig = plt.figure()
-    plt.plot(list(reversed(Vs[1:])))
+    plt.plot([V.cpu().numpy()[0] for V in reversed(Vs[1:])])
     utils.add_summary('figure', 'out/value', fig)
     fig = plt.figure()
-    plt.plot(list(reversed(As[1:])))
+    plt.plot([A[0] for A in reversed(As[1:])])
     utils.add_summary('figure', 'out/advantage', fig)
     fig = plt.figure()
     plt.plot(list(reversed(value_losses)))
@@ -289,7 +300,8 @@ class Trainer(object):
       else:
         self.loadstate(0)
     else:
-      assert frame.shape == (FLAGS.image_channels, FLAGS.image_height, FLAGS.image_width), frame.shape
+      assert frame.shape == (FLAGS.batch_size, FLAGS.image_channels,
+                             FLAGS.image_height, FLAGS.image_width), frame.shape
       if isinstance(frame, torch.Tensor):
         frame_np = frame.clone().cpu().numpy()
       else:
@@ -310,34 +322,33 @@ class Trainer(object):
         self.savestate(1 + np.random.randint(FLAGS.num_custom_savestates))
 
     if self.processed_frames > 0:
-      reward, should_end_episode = self.env.get_reward()
-      assert isinstance(reward, float), type(reward)
-      self.rewards.append(reward * FLAGS.reward_scale)
-      if should_end_episode or self.processed_frames >= FLAGS.episode_length:
+      reward, done = self.env.get_reward()
+      assert isinstance(reward, np.ndarray), type(reward)
+      self.rewards[self.processed_frames - 1] = FLAGS.reward_scale * reward
+      self.mask[self.processed_frames - 1] = 1.0 - done
+      if done.all() or self.processed_frames >= FLAGS.episode_length:
         return self._finish_episode()
 
     with torch.no_grad():
       softmax = self.actor.forward(self.processed_frames).detach().cpu()
-    self.softmaxes.append(softmax)
+    self.softmaxes[self.processed_frames] = softmax
     idxs = utils.sample_softmax(softmax)
-    self.sampled_idx.append(idxs)
+    self.sampled_idx[self.processed_frames] = idxs
     self.processed_frames += 1
 
     # Predicted idxs include a batch dimension.
     actions = self.env.indices_to_actions(idxs)
-    # Currently we have only 1 env = batch_size 1.
-    action = actions[0]
     # Returned actions is for next N frames.
-    return [action] * FLAGS.hold_buttons_for
+    return [actions] * FLAGS.hold_buttons_for
 
   def Run(self):
     action_queue = queue.Queue()
     while True:
-      frame, action = self.env.start_frame()
+      frame, actions = self.env.start_frame()
       if frame is None:
         break
-      if action:
-        action_queue.put(action)
+      if actions:
+        action_queue.put(actions)
       if action_queue.empty():
         predicted_actions = self.process_frame(frame)
         if not predicted_actions:

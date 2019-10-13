@@ -37,9 +37,10 @@ class Env(object):
     """Performs processing at the start of a frame.
 
     Returns:
-      (frame, action) pair, where frame is passed into get_inputs_for_frame
-      and action, if not None, will bypass the network and provide the given
-      action to end_frame directly.
+      (frame, actions) pair, where frame is passed into get_inputs_for_frame
+      and actions, if not None, will bypass the network and provide the given
+      actions to end_frame directly. If actions is not None it must be for the
+      entire batch.
     """
     raise NotImplementedError()
 
@@ -51,7 +52,7 @@ class Env(object):
     raise NotImplementedError()
 
   def get_reward(self):
-    """Returns (rewards, should_end_episode) for the current state."""
+    """Returns (rewards, done) for the current state."""
     raise NotImplementedError()
 
   def indices_to_actions(self, idxs):
@@ -62,19 +63,20 @@ class Env(object):
     """Given softmax indices, return a batch of string action names."""
     raise NotImplementedError()
 
-  def end_frame(self, action):
-    """Performs processing at the end of a frame given a single action. (batch not yet supported)"""
+  def end_frame(self, actions):
+    """Performs processing at the end of a frame given a batch of actions."""
     raise NotImplementedError()
 
   def finish_episode(self, processed_frames, frame_buffer):
     """Called at the end of an episode with the number of frames processed."""
     pass
 
-  def _add_action_summaries_image(self, ax, frame_number, frame_buffer):
-    utils.imshow(frame_buffer[frame_number], ax)
+  def _add_action_summaries_image(self, ax, frame_number, frame):
+    utils.imshow(frame, ax)
     ax.axis('off')
 
   def _add_action_summaries_actions(self, ax, softmax, sampled_idx):
+    assert softmax.ndim == 1
     num_topk = 5
     topk_idxs = np.argsort(softmax)[::-1][:num_topk]
     ax.bar(np.arange(num_topk), softmax[topk_idxs], width=0.3)
@@ -91,8 +93,8 @@ class Env(object):
     fig, (ax1, ax2) = plt.subplots(2, gridspec_kw={
         'height_ratios' : [ax1_height_ratio, 1],
     })
-    self._add_action_summaries_image(ax1, frame_number, frame_buffer)
-    self._add_action_summaries_actions(ax2, softmax, sampled_idx)
+    self._add_action_summaries_image(ax1, frame_number, frame_buffer[frame_number][0])
+    self._add_action_summaries_actions(ax2, softmax[0], sampled_idx[0])
 
     asp = np.diff(ax2.get_xlim())[0] / np.diff(ax2.get_ylim())[0]
     asp /= np.abs(np.diff(ax1.get_xlim())[0] / np.diff(ax1.get_ylim())[0])

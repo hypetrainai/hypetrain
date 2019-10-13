@@ -1,5 +1,6 @@
 from absl import flags
 from absl import logging
+import math
 import numpy as np
 import os
 import pygame
@@ -27,12 +28,12 @@ class Env(env.Env):
     super(Env, self).__init__()
 
     # See https://github.com/NVlabs/cule/blob/master/examples/utils/launcher.py for description.
-    self.train_env = AtariEnv(FLAGS.env_name, num_envs=1, color_mode='gray', device='cpu',
+    self.train_env = AtariEnv(FLAGS.env_name, num_envs=FLAGS.batch_size, color_mode='gray', device='cpu',
                               rescale=True, frameskip=4, repeat_prob=0.0, clip_rewards=False,
                               episodic_life=False)
     self.train_env.train()
 
-    self.test_env = AtariEnv(FLAGS.env_name, num_envs=1, color_mode='gray', device='cpu',
+    self.test_env = AtariEnv(FLAGS.env_name, num_envs=FLAGS.batch_size, color_mode='gray', device='cpu',
                              rescale=True, frameskip=4, repeat_prob=0.0, clip_rewards=False,
                              episodic_life=False)
 
@@ -41,18 +42,20 @@ class Env(env.Env):
     utils.assert_equal(width, FLAGS.image_width)
 
     pygame.init()
-    self.screen = pygame.display.set_mode([width, height], pygame.SCALED, depth=8)
+    tile_height = int(math.sqrt(FLAGS.batch_size))
+    tile_width = int(math.ceil(FLAGS.batch_size / tile_height))
+    self.screen = pygame.display.set_mode([width * tile_width, height * tile_height], pygame.SCALED, depth=8)
 
   def quit(self):
     pygame.quit()
 
   def reset(self):
     if GLOBAL.eval_mode:
-      self.next_frame = self.test_env.reset(initial_steps=400).squeeze(-1)
+      self.next_frame = self.test_env.reset(initial_steps=400).squeeze(-1).unsqueeze(1)
     else:
-      self.next_frame = self.train_env.reset(initial_steps=400).squeeze(-1)
+      self.next_frame = self.train_env.reset(initial_steps=400).squeeze(-1).unsqueeze(1)
     self.next_reward = None
-    self.should_end_episode = False
+    self.done = None
 
   def frame_channels(self):
     return 1
@@ -67,9 +70,15 @@ class Env(env.Env):
     for event in pygame.event.get():
       if event.type == pygame.QUIT:
         return None, None
-    frame = self.next_frame.squeeze(0).cpu().numpy().T
-    frame = np.tile(np.expand_dims(frame, -1), [1, 1, 3])
-    self.screen.blit(pygame.surfarray.make_surface(frame), (0, 0))
+    frame = self.next_frame.cpu().numpy()
+    # [batch, channel, height, width] -> [batch, width, height, channel].
+    frame = np.tile(np.transpose(frame, [0, 3, 2, 1]), [1, 1, 1, 3])
+    for i in range(len(frame)):
+      tile_height = int(math.sqrt(FLAGS.batch_size))
+      tile_width = int(math.ceil(FLAGS.batch_size / tile_height))
+      start_x = (i % tile_width) * FLAGS.image_width
+      start_y = (i // tile_width) * FLAGS.image_height
+      self.screen.blit(pygame.surfarray.make_surface(frame[i]), (start_x, start_y))
     pygame.display.flip()
     return self.next_frame, None
 
@@ -81,7 +90,7 @@ class Env(env.Env):
     return frame, None
 
   def get_reward(self):
-    return self.next_reward, self.should_end_episode
+    return self.next_reward, self.done
 
   def indices_to_actions(self, idxs):
     return idxs
@@ -89,14 +98,12 @@ class Env(env.Env):
   def indices_to_labels(self, idxs):
     return [_ACTION_NAMES[idxs[i]] for i in range(len(idxs))]
 
-  def end_frame(self, action):
-    # speedrun.py only supports single element batches. Add back the batch dim here.
-    actions = torch.Tensor([action])
+  def end_frame(self, actions):
+    actions = torch.Tensor(actions)
     if GLOBAL.eval_mode:
-      observation, reward, should_end_episode, _ = self.test_env.step(actions)
+      observation, reward, done, _ = self.test_env.step(actions)
     else:
-      observation, reward, should_end_episode, _ = self.train_env.step(actions)
-    self.next_frame = observation.squeeze(-1)
-    self.next_reward = float(torch.sum(reward).cpu().numpy())
-    self.should_end_episode = should_end_episode.all()
-
+      observation, reward, done, _ = self.train_env.step(actions)
+    self.next_frame = observation.squeeze(-1).unsqueeze(1)
+    self.next_reward = torch.sum(reward).cpu().numpy()
+    self.done = done

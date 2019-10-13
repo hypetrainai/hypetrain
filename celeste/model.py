@@ -19,14 +19,47 @@ class Model(nn.Module):
     super(Model, self).__init__()
     self.saved_states = {}
 
+  def reset(self):
+    """Resets the model for a new episode."""
+    pass
+
+  def set_inputs(self, i, input_frame, extra_channels=None):
+    """Sets the inputs for step i.
+
+    Args:
+      i: The step to set.
+      input_frame: Input frames of size [batch, channel, height, width].
+      extra_channels: Extra channels used for this step only.
+    """
+    raise NotImplementedException()
+
+  def _get_inputs(self, i):
+    """Returns the inputs to use for step i.
+
+    This may include inputs from previous steps.
+    """
+    raise NotImplementedException()
+
+  def savestate(self, index):
+    """Create savestate at given index."""
+    pass
+
+  def loadstate(self, index):
+    """Load the state at given index."""
+    pass
+
 
 class ConvModel(Model):
 
   def reset(self):
+    # shape [time, batch, channel, height, width].
     self.frame_buffer = None
     self.extra_channels = []
 
   def set_inputs(self, i, input_frame, extra_channels=None):
+    assert input_frame.dim() == 4
+    if extra_channels is not None:
+      assert extra_channels.dim() == 4
     if i == 0:
       self.frame_buffer = torch.stack([input_frame] * (FLAGS.context_frames - 1), 0)
     self.frame_buffer = torch.cat([self.frame_buffer, input_frame.unsqueeze(0)], 0)
@@ -36,12 +69,13 @@ class ConvModel(Model):
 
   def _get_inputs(self, i):
     input_frames = self.frame_buffer[i:i+FLAGS.context_frames]
-    # [time, channels, height, width] -> [time * channels, height, width]
-    input_frames = torch.reshape(input_frames, [-1, FLAGS.input_height, FLAGS.input_width])
+    # [time, batch, channels, height, width] -> [batch, time * channels, height, width]
+    input_frames = torch.reshape(
+        input_frames.transpose(0, 1),
+        [FLAGS.batch_size, -1, FLAGS.input_height, FLAGS.input_width])
     if self.extra_channels[i] is not None:
-      input_frames = torch.cat([input_frames, self.extra_channels[i]], 0)
-    # Add batch dim.
-    return input_frames.unsqueeze(0)
+      input_frames = torch.cat([input_frames, self.extra_channels[i]], 1)
+    return input_frames
 
   def savestate(self, index):
     state = {
@@ -67,9 +101,11 @@ class RecurrentModel(Model):
     self.contexts = []
 
   def set_inputs(self, i, input_frame, extra_channels=None):
+    assert input_frame.dim() == 4
     if extra_channels is not None:
-      input_frame = torch.cat([input_frame, extra_channels], 0)
-    self.inputs.append(input_frame.unsqueeze(0))
+      assert extra_channels.dim() == 4
+      input_frame = torch.cat([input_frame, extra_channels], 1)
+    self.inputs.append(input_frame)
     utils.assert_equal(i, len(self.inputs) - 1)
 
   def _get_inputs(self, i):
@@ -144,7 +180,7 @@ class ResNetIm2Value(ConvModel):
     if self.use_softmax:
       out = F.softmax(out, 1)
       out = torch.clamp(out, min=0.00001)
-      out /= torch.sum(out, 1)
+      out /= torch.sum(out, 1, keepdims=True)
     return out
 
 

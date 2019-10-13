@@ -22,9 +22,6 @@ _SIZE_UNSIGNED_LONG = 8
 _SIZE_TIMESPEC = 16
 _SIZE_GAMEINFO_STRUCT = 36
 
-_INIT_REWARD = -100000.0
-_INIT_REWARD_THRESHOLD = -100000.0
-
 _BUTTON_DICT = {
     'a': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_A,
     'b': pylibtas.SingleInput.IT_CONTROLLER1_BUTTON_B,
@@ -71,6 +68,7 @@ class Env(env.Env):
 
   def __init__(self):
     super(Env, self).__init__()
+    assert FLAGS.batch_size == 1
 
     self.frame_counter = 0
     self.det = celeste_detector.CelesteDetector()
@@ -243,17 +241,19 @@ class Env(env.Env):
     received, frame = pylibtas.receiveArray(size)
     utils.assert_equal(received, size)
 
-    frame = np.reshape(frame, [FLAGS.image_height, FLAGS.image_width, 4])[:, :, :3]
-    frame = frame.transpose([2, 0, 1])
+    frame = np.reshape(frame, [1, FLAGS.image_height, FLAGS.image_width, 4])[..., :3]
+    frame = frame.transpose([0, 3, 1, 2])
 
-    action = None
+    actions = None
     if self.moviefile and self.frame_counter < self.moviefile.nbFrames():
       action = pylibtas.AllInputs()
       action.emptyInputs()
       self.moviefile.getInputs(action, self.frame_counter)
-    return frame, action
+      actions = [action]
+    return frame, actions
 
   def get_inputs_for_frame(self, frame):
+    frame = frame[0]
     y, x, state = self.det.detect(frame, prior_coord=self.trajectory[-1] if self.trajectory else None)
     self.trajectory.append((y, x))
 
@@ -270,8 +270,8 @@ class Env(env.Env):
     gaussian_goal_position = utils.generate_gaussian_heat_map(window_shape, self.goal_y, self.goal_x)
     extra_channels = torch.tensor(gaussian_goal_position).unsqueeze(0)
 
-    input_frame = utils.downsample_image_to_input(input_frame)
-    extra_channels = utils.downsample_image_to_input(extra_channels)
+    input_frame = utils.downsample_image_to_input(input_frame.unsqueeze(0))
+    extra_channels = utils.downsample_image_to_input(extra_channels.unsqueeze(0))
 
     if FLAGS.use_cuda:
       input_frame = input_frame.cuda()
@@ -288,33 +288,33 @@ class Env(env.Env):
       self.prev_reward = curr_reward
       self.min_reward = curr_reward
       return 0.0
-    
+
     if curr_reward > self.min_reward and curr_reward > prev_reward:
       reward = curr_reward - prev_reward
     else:
       reward = 0.0
-    
+
     self.prev_reward = curr_reward
     self.min_reward = np.maximum(self.min_reward, curr_reward)
-    
+
     return reward
-    
+
   def dist_reward(self, x, y):
     return 50 - 10 * (np.sqrt((y - self.goal_y)**2 + (x - self.goal_x)**2))**0.33
-    
+
   def get_reward(self):
     reward = 0
     final_reward = 0
-    should_end_episode = False
+    done = False
 
     y, x = self.trajectory[-1]
     if y is None:
       # Assume death
-      should_end_episode = True
+      done = True
       final_reward -= 10
       y, x = self.trajectory[-2]
 
-    curr_reward = 50.0*self.dist_reward(x,y)    
+    curr_reward = 50.0*self.dist_reward(x, y)    
     if self.differential_reward:
         final_reward += self.get_differential_reward(curr_reward)
     else:
@@ -322,10 +322,10 @@ class Env(env.Env):
     #dist_to_goal = self._rectangular_distance(y,x)
     #reward += -15 + 10*(float(dist_to_goal<450)) + 10*(float(dist_to_goal<250)) + 10*(float(dist_to_goal<50)) + 10*(float(dist_to_goal<5))
 
-    if curr_reward >= 48*50.0:
-      should_end_episode = True
-        
-    return final_reward, should_end_episode
+    if curr_reward >= 48 * 50.0:
+      done = True
+
+    return np.array([final_reward]), np.array([done])
 
   def indices_to_actions(self, idxs):
     actions = []
@@ -345,9 +345,9 @@ class Env(env.Env):
   def indices_to_labels(self, idxs):
     return [','.join(self.class2button[idxs[i]]) for i in range(len(idxs))]
 
-  def end_frame(self, action):
+  def end_frame(self, actions):
     pylibtas.sendMessage(pylibtas.MSGN_ALL_INPUTS)
-    pylibtas.sendAllInputs(action)
+    pylibtas.sendAllInputs(actions[0])
     pylibtas.sendMessage(pylibtas.MSGN_END_FRAMEBOUNDARY)
     self.frame_counter += 1
 
@@ -359,11 +359,11 @@ class Env(env.Env):
 
     fig = plt.figure()
     plt.scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')
-    utils.plot_trajectory(self.trajectory, frame_buffer[-(self.det.death_clock_limit + 1)])
+    utils.plot_trajectory(self.trajectory, frame_buffer[-(self.det.death_clock_limit + 1)][0])
     utils.add_summary('figure', 'trajectory', fig)
 
-  def _add_action_summaries_image(self, ax, frame_number, frame_buffer):
-    super(Env, self)._add_action_summaries_image(ax, frame_number, frame_buffer)
+  def _add_action_summaries_image(self, ax, frame_number, frame):
+    super(Env, self)._add_action_summaries_image(ax, frame_number, frame)
     trajectory_i = self.trajectory[max(0, frame_number - FLAGS.action_summary_frames):frame_number + 1]
     utils.plot_trajectory(trajectory_i, ax=ax)
     ax.scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')
