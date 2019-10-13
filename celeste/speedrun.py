@@ -28,7 +28,7 @@ flags.DEFINE_string('env', 'envs.celeste.Env', 'class for environment')
 flags.DEFINE_string('env_name', 'PongNoFrameskip-v4', 'environment name (for envs.atari.Env)')
 flags.DEFINE_string('actor', 'model.ResNetIm2Value', 'class for actor network')
 flags.DEFINE_string('critic', 'model.ResNetIm2Value', 'class for critic network')
-flags.DEFINE_string('logdir', 'trained_models/diffreward', 'logdir')
+flags.DEFINE_string('logdir', 'trained_models/diffreward_50xreward_2', 'logdir')
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
 flags.DEFINE_boolean('use_cuda', True, 'Use cuda')
@@ -41,7 +41,7 @@ flags.DEFINE_boolean('evaluate', False, 'if true, run a single step of eval and 
 
 flags.DEFINE_string('movie_file', 'movie.ltm', 'if not empty string, load libTAS input movie file')
 flags.DEFINE_string('save_file', 'level1_screen0', 'if not empty string, use save file.')
-flags.DEFINE_string('savestate_path', '/home/joe/projects/hypetrain/celeste/savestates', 'where to put savestates')
+flags.DEFINE_string('savestate_path', '/home/joe/projects/hypetrain/celeste/savestates/', 'where to put savestates')
 flags.DEFINE_integer('goal_y', 0, 'override goal y coordinate')
 flags.DEFINE_integer('goal_x', 0, 'override goal x coordinate')
 

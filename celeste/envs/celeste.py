@@ -127,7 +127,7 @@ class Env(env.Env):
     shared_config.nb_controllers = 1
     shared_config.audio_mute = True
     shared_config.incremental_savestates = False
-    shared_config.savestates_in_ram = False
+    shared_config.savestates_in_ram = True
     shared_config.backtrack_savestate = False
     shared_config.prevent_savefiles = False
     shared_config.recycle_threads = False
@@ -314,7 +314,7 @@ class Env(env.Env):
       final_reward -= 10
       y, x = self.trajectory[-2]
 
-    curr_reward = self.dist_reward(x,y)    
+    curr_reward = 50.0*self.dist_reward(x,y)    
     if self.differential_reward:
         final_reward += self.get_differential_reward(curr_reward)
     else:
@@ -322,7 +322,7 @@ class Env(env.Env):
     #dist_to_goal = self._rectangular_distance(y,x)
     #reward += -15 + 10*(float(dist_to_goal<450)) + 10*(float(dist_to_goal<250)) + 10*(float(dist_to_goal<50)) + 10*(float(dist_to_goal<5))
 
-    if curr_reward >= 48:
+    if curr_reward >= 48*50.0:
       should_end_episode = True
         
     return final_reward, should_end_episode
