@@ -7,3 +7,6 @@
 [submodule "celeste/third_party/cule"]
 	path = celeste/third_party/cule
 	url = https://github.com/NVLabs/cule
+[submodule "celeste/third_party/rl-baselines-zoo"]
+	path = celeste/third_party/rl-baselines-zoo
+	url = https://github.com/araffin/rl-baselines-zoo.git
