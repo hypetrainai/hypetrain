@@ -28,7 +28,7 @@ flags.DEFINE_string('env', 'envs.celeste.Env', 'class for environment')
 flags.DEFINE_string('env_name', 'PongNoFrameskip-v4', 'environment name (for envs.atari.Env)')
 flags.DEFINE_string('actor', 'model.ResNetIm2Value', 'class for actor network')
 flags.DEFINE_string('critic', 'model.ResNetIm2Value', 'class for critic network')
-flags.DEFINE_string('logdir', 'trained_models/diffreward_50xreward_2', 'logdir')
+flags.DEFINE_string('logdir', 'trained_models/diffreward_50xreward_mtl', 'logdir')
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
 flags.DEFINE_boolean('use_cuda', True, 'Use cuda')
@@ -65,6 +65,7 @@ flags.DEFINE_integer('bellman_lookahead_frames', 10, 'number of frames to consid
 flags.DEFINE_float('clip_grad_norm', 1000.0, 'value to clip gradient norm to.')
 flags.DEFINE_float('clip_grad_value', 0.0, 'value to clip gradients to.')
 flags.DEFINE_integer('hold_buttons_for', 4, 'hold all buttons for at least this number of frames')
+flags.DEFINE_boolean('multitask', True, 'do we use the same network for both A and C?')
 
 flags.DEFINE_float('random_goal_prob', 0.0, 'probability that we choose a random goal')
 flags.DEFINE_float('random_action_prob', 0.1, 'probability that we choose a random action')
@@ -87,13 +88,22 @@ class Trainer(object):
 
     frame_channels = self.env.frame_channels()
     extra_channels = self.env.extra_channels()
-    self.actor = utils.import_class(FLAGS.actor)(frame_channels, extra_channels, out_dim=self.env.num_actions())
-    self.critic = utils.import_class(FLAGS.critic)(frame_channels, extra_channels, out_dim=1, use_softmax=False)
-    if FLAGS.use_cuda:
-      self.actor = self.actor.cuda()
-      self.critic = self.critic.cuda()
-    self.optimizer_actor = optim.Adam(list(self.actor.parameters()), lr=FLAGS.lr)
-    self.optimizer_critic = optim.Adam(list(self.critic.parameters()), lr=FLAGS.lr)
+    if FLAGS.multitask:
+        self.actor = utils.import_class(FLAGS.actor)(frame_channels, extra_channels, out_dim=[1,self.env.num_actions()],
+                                                    use_softmax=[False, True])
+        self.critic = self.actor
+        if FLAGS.use_cuda:
+            self.actor.cuda()
+        self.optimizer_actor = optim.Adam(list(self.actor.parameters()), lr=FLAGS.lr)
+        self.optimizer_critic = self.optimizer_actor
+    else:
+        self.actor = utils.import_class(FLAGS.actor)(frame_channels, extra_channels, out_dim=self.env.num_actions())
+        self.critic = utils.import_class(FLAGS.critic)(frame_channels, extra_channels, out_dim=1, use_softmax=False)
+        if FLAGS.use_cuda:
+          self.actor = self.actor.cuda()
+          self.critic = self.critic.cuda()
+        self.optimizer_actor = optim.Adam(list(self.actor.parameters()), lr=FLAGS.lr)
+        self.optimizer_critic = optim.Adam(list(self.critic.parameters()), lr=FLAGS.lr)
 
     self.processed_frames = 0
 
@@ -190,6 +200,8 @@ class Trainer(object):
     # R *= 1.0 / (1.0 - FLAGS.reward_decay_multiplier)
     Rs = [R]
     final_V = self.critic.forward(self.processed_frames)
+    if isinstance(final_V,list):
+        final_V = final_V[0]
     Vs = [final_V.detach()]
     As = [np.zeros_like(self.rewards[0])]
     value_losses = []
@@ -200,6 +212,8 @@ class Trainer(object):
     for i in reversed(range(self.processed_frames)):
       R = FLAGS.reward_decay_multiplier * R + rewards_tensor[i]
       V = self.critic.forward(i)
+      if isinstance(V, list):
+        V = V[0]
 
       blf = min(FLAGS.bellman_lookahead_frames, self.processed_frames - i)
       if blf == 0:
@@ -221,6 +235,8 @@ class Trainer(object):
       As.append(A.cpu().numpy())
 
       softmax = self.actor.forward(i)
+      if isinstance(softmax, list):
+        softmax = softmax[1]
       assert np.array_equal(self.softmaxes[i], softmax.detach().cpu().numpy())
       action_probs = softmax.gather(1, sampled_idx_tensor[i].unsqueeze(-1))
       actor_loss = torch.mean(mask_tensor[i] * -torch.log(action_probs) * A)
@@ -309,7 +325,7 @@ class Trainer(object):
       self.frame_buffer.append(frame_np)
       inputs = self.env.get_inputs_for_frame(frame)
       self.actor.set_inputs(self.processed_frames, *inputs)
-      if hasattr(self, 'critic'):
+      if hasattr(self, 'critic') and not FLAGS.multitask:
         self.critic.set_inputs(self.processed_frames, *inputs)
 
       if not self.saved_states:
@@ -330,7 +346,10 @@ class Trainer(object):
         return self._finish_episode()
 
     with torch.no_grad():
-      softmax = self.actor.forward(self.processed_frames).detach().cpu()
+      softmax = self.actor.forward(self.processed_frames)
+      if isinstance(softmax,list):
+            softmax = softmax[1]
+      softmax = softmax.detach().cpu()
     self.softmaxes[self.processed_frames] = softmax
     idxs = utils.sample_softmax(softmax)
     self.sampled_idx[self.processed_frames] = idxs

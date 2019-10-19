@@ -131,6 +131,15 @@ class ResNetIm2Value(ConvModel):
 
   def __init__(self, frame_channels, extra_channels, out_dim, use_softmax=True):
     super(ResNetIm2Value, self).__init__()
+    
+    self.out_dim = out_dim
+    
+    if isinstance(out_dim, list):
+        final_out_dim = np.sum(out_dim).astype(np.int32)
+    else:
+        final_out_dim = out_dim
+        self.out_dim = [out_dim]
+        use_softmax = [use_softmax]
 
     self.use_softmax = use_softmax
 
@@ -167,21 +176,32 @@ class ResNetIm2Value(ConvModel):
     layer_defs_linear.append(nn.ReLU())
     layer_defs_linear.append(nn.Linear(512, 256))
     layer_defs_linear.append(nn.ReLU())
-    layer_defs_linear.append(nn.Linear(256, out_dim))
+    layer_defs_linear.append(nn.Linear(256, final_out_dim))
 
     self.operation_stack = nn.Sequential(*layer_defs)
     self.operation_stack_linear = nn.Sequential(*layer_defs_linear)
 
   def forward(self, i):
+    
+    def softmax_proc(out):
+        out = F.softmax(out, 1)
+        out = torch.clamp(out, min=0.00001)
+        return out/torch.sum(out, 1, keepdim=True)
+    
     inputs = self._get_inputs(i)
     out = self.operation_stack(inputs)
     out = out.view(inputs.shape[0], -1)
     out = self.operation_stack_linear(out)
-    if self.use_softmax:
-      out = F.softmax(out, 1)
-      out = torch.clamp(out, min=0.00001)
-      out /= torch.sum(out, 1, keepdim=True)
-    return out
+    current_idx = 0
+    outputs = []
+    for posidx, pos in enumerate(self.out_dim):
+      if self.use_softmax[posidx]:
+        outputs.append(softmax_proc(out[:,current_idx: current_idx+pos]))
+      else:
+        outputs.append(out[:,current_idx: current_idx+pos])
+    
+      current_idx += pos
+    return outputs
 
 
 def agg_node(in_planes, out_planes):

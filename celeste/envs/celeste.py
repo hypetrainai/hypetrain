@@ -311,7 +311,7 @@ class Env(env.Env):
     if y is None:
       # Assume death
       done = True
-      final_reward -= 10
+      final_reward -= 50.0*10
       y, x = self.trajectory[-2]
 
     curr_reward = 50.0*self.dist_reward(x, y)    
@@ -322,7 +322,7 @@ class Env(env.Env):
     #dist_to_goal = self._rectangular_distance(y,x)
     #reward += -15 + 10*(float(dist_to_goal<450)) + 10*(float(dist_to_goal<250)) + 10*(float(dist_to_goal<50)) + 10*(float(dist_to_goal<5))
 
-    if curr_reward >= 48 * 50.0:
+    if curr_reward >= 40 * 50.0:
       done = True
 
     return np.array([final_reward]), np.array([done])
