@@ -89,20 +89,24 @@ class Trainer(object):
     frame_channels = self.env.frame_channels()
     extra_channels = self.env.extra_channels()
     if FLAGS.multitask:
-        self.actor = utils.import_class(FLAGS.actor)(frame_channels, extra_channels, out_dim=[1,self.env.num_actions()],
-                                                    use_softmax=[False, True])
-        self.critic = self.actor
-        if FLAGS.use_cuda:
-            self.actor.cuda()
-        self.optimizer_actor = optim.Adam(list(self.actor.parameters()), lr=FLAGS.lr)
-        self.optimizer_critic = self.optimizer_actor
+      self.actor = utils.import_class(FLAGS.actor)(
+          frame_channels, extra_channels, out_dim=[1, self.env.num_actions()],
+          use_softmax=[False, True])
+      if FLAGS.use_cuda:
+        self.actor = self.actor.cuda()
+      self.optimizer_actor = optim.Adam(list(self.actor.parameters()), lr=FLAGS.lr)
     else:
-        self.actor = utils.import_class(FLAGS.actor)(frame_channels, extra_channels, out_dim=self.env.num_actions())
-        self.critic = utils.import_class(FLAGS.critic)(frame_channels, extra_channels, out_dim=1, use_softmax=False)
-        if FLAGS.use_cuda:
-          self.actor = self.actor.cuda()
+      self.actor = utils.import_class(FLAGS.actor)(
+          frame_channels, extra_channels, out_dim=self.env.num_actions())
+      if FLAGS.critic and not FLAGS.evaluate:
+        self.critic = utils.import_class(FLAGS.critic)(
+            frame_channels, extra_channels, out_dim=1, use_softmax=False)
+      if FLAGS.use_cuda:
+        self.actor = self.actor.cuda()
+        if hasattr(self, 'critic'):
           self.critic = self.critic.cuda()
-        self.optimizer_actor = optim.Adam(list(self.actor.parameters()), lr=FLAGS.lr)
+      self.optimizer_actor = optim.Adam(list(self.actor.parameters()), lr=FLAGS.lr)
+      if hasattr(self, 'critic'):
         self.optimizer_critic = optim.Adam(list(self.critic.parameters()), lr=FLAGS.lr)
 
     self.processed_frames = 0
@@ -113,8 +117,9 @@ class Trainer(object):
       GLOBAL.episode_number = state['episode_number']
       self.actor.load_state_dict(state['actor'])
       self.optimizer_actor.load_state_dict(state['optimizer_actor'])
-      self.critic.load_state_dict(state['critic'])
-      self.optimizer_critic.load_state_dict(state['optimizer_critic'])
+      if hasattr(self, 'critic'):
+        self.critic.load_state_dict(state['critic'])
+        self.optimizer_critic.load_state_dict(state['optimizer_critic'])
       logging.info('Done!')
 
   def quit(self):
@@ -122,26 +127,30 @@ class Trainer(object):
 
   def eval(self):
     self.actor.eval()
-    self.critic.eval()
+    if hasattr(self, 'critic'):
+      self.critic.eval()
     GLOBAL.eval_mode = True
 
   def train(self):
     self.actor.train()
-    self.critic.train()
+    if hasattr(self, 'critic'):
+      self.critic.train()
     GLOBAL.eval_mode = False
 
   def savestate(self, index):
     logging.info('Saving state %d!' % index)
     self.env.savestate(index)
     self.actor.savestate(index)
-    self.critic.savestate(index)
+    if hasattr(self, 'critic'):
+      self.critic.savestate(index)
     self.saved_states[index] = self.frame_buffer[-1:]
 
   def loadstate(self, index):
     logging.info('Loading state %d!' % index)
     self.env.loadstate(index)
     self.actor.loadstate(index)
-    self.critic.loadstate(index)
+    if hasattr(self, 'critic'):
+      self.critic.loadstate(index)
     self.frame_buffer = self.saved_states[index].copy()
 
   def _start_episode(self):
@@ -150,9 +159,10 @@ class Trainer(object):
           'episode_number': GLOBAL.episode_number,
           'actor': self.actor.state_dict(),
           'optimizer_actor': self.optimizer_actor.state_dict(),
-          'critic': self.critic.state_dict(),
-          'optimizer_critic': self.optimizer_critic.state_dict()
       }
+      if hasattr(self, 'critic'):
+        state['critic'] = self.critic.state_dict()
+        state['optimizer_critic'] = self.optimizer_critic.state_dict()
       savefile = os.path.join(FLAGS.logdir, 'train/model_%d.tar' % GLOBAL.episode_number)
       torch.save(state, savefile)
       torch.save(state, os.path.join(FLAGS.logdir, 'train/model_latest.tar'))
@@ -162,7 +172,8 @@ class Trainer(object):
         'Evaluating' if GLOBAL.eval_mode else 'Starting',
         GLOBAL.episode_number)
     self.actor.reset()
-    self.critic.reset()
+    if hasattr(self, 'critic'):
+      self.critic.reset()
     self.env.reset()
     self.frame_buffer = []
     self.rewards = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
@@ -199,22 +210,34 @@ class Trainer(object):
     #   final_reward *= 1 + gamma + gamma^2 + ...
     # R *= 1.0 / (1.0 - FLAGS.reward_decay_multiplier)
     Rs = [R]
-    final_V = self.critic.forward(self.processed_frames)
-    if isinstance(final_V,list):
-        final_V = final_V[0]
-    Vs = [final_V.detach()]
+    if FLAGS.multitask:
+      final_V = self.actor.forward(self.processed_frames)[0].detach()
+    elif hasattr(self, 'critic'):
+      final_V = self.critic.forward(self.processed_frames).detach()
+    else:
+      final_V = 0
+    Vs = [final_V]
     As = [np.zeros_like(self.rewards[0])]
     value_losses = []
     actor_losses = []
     entropy_losses = []
     self.optimizer_actor.zero_grad()
-    self.optimizer_critic.zero_grad()
+    if hasattr(self, 'critic'):
+      self.optimizer_critic.zero_grad()
     for i in reversed(range(self.processed_frames)):
-      R = FLAGS.reward_decay_multiplier * R + rewards_tensor[i]
-      V = self.critic.forward(i)
-      if isinstance(V, list):
-        V = V[0]
+      outputs = self.actor.forward(i)
+      if FLAGS.multitask:
+        V, softmax = outputs
+      else:
+        if hasattr(self, 'critic'):
+          V = self.critic.forward(i)
+        else:
+          V = torch.Tensor([0])
+          if FLAGS.use_cuda:
+            V = V.cuda()
+        softmax = outputs
 
+      R = FLAGS.reward_decay_multiplier * R + rewards_tensor[i]
       blf = min(FLAGS.bellman_lookahead_frames, self.processed_frames - i)
       if blf == 0:
         A = R - V
@@ -224,8 +247,8 @@ class Trainer(object):
 
       value_loss = FLAGS.value_loss_weight * torch.mean(mask_tensor[i] * A**2)
       value_losses.append(value_loss.detach().cpu().numpy())
-      if not GLOBAL.eval_mode:
-        value_loss.backward()
+      if hasattr(self, 'critic') and not GLOBAL.eval_mode:
+        value_loss.backward(retain_graph=FLAGS.multitask)
 
       V = V.detach()
       A = A.detach()
@@ -234,9 +257,6 @@ class Trainer(object):
       Vs.append(V)
       As.append(A.cpu().numpy())
 
-      softmax = self.actor.forward(i)
-      if isinstance(softmax, list):
-        softmax = softmax[1]
       assert np.array_equal(self.softmaxes[i], softmax.detach().cpu().numpy())
       action_probs = softmax.gather(1, sampled_idx_tensor[i].unsqueeze(-1))
       actor_loss = torch.mean(mask_tensor[i] * -torch.log(action_probs) * A)
@@ -253,17 +273,21 @@ class Trainer(object):
 
     if not GLOBAL.eval_mode:
       utils.add_summary('scalar', 'actor_grad_norm', utils.grad_norm(self.actor))
-      utils.add_summary('scalar', 'critic_grad_norm', utils.grad_norm(self.critic))
+      if hasattr(self, 'critic'):
+        utils.add_summary('scalar', 'critic_grad_norm', utils.grad_norm(self.critic))
       assert not (FLAGS.clip_grad_value and FLAGS.clip_grad_norm)
       if FLAGS.clip_grad_value:
         nn.utils.clip_grad_value_(self.actor.parameters(), FLAGS.clip_grad_value)
-        nn.utils.clip_grad_value_(self.critic.parameters(), FLAGS.clip_grad_value)
+        if hasattr(self, 'critic'):
+          nn.utils.clip_grad_value_(self.critic.parameters(), FLAGS.clip_grad_value)
       elif FLAGS.clip_grad_norm:
         nn.utils.clip_grad_norm_(self.actor.parameters(), FLAGS.clip_grad_norm)
-        nn.utils.clip_grad_norm_(self.critic.parameters(), FLAGS.clip_grad_norm)
+        if hasattr(self, 'critic'):
+          nn.utils.clip_grad_norm_(self.critic.parameters(), FLAGS.clip_grad_norm)
       if GLOBAL.episode_number >= FLAGS.actor_start_delay:
         self.optimizer_actor.step()
-      self.optimizer_critic.step()
+      if hasattr(self, 'critic'):
+        self.optimizer_critic.step()
 
     fig = plt.figure()
     plt.plot(self.rewards[:, 0])
@@ -325,7 +349,7 @@ class Trainer(object):
       self.frame_buffer.append(frame_np)
       inputs = self.env.get_inputs_for_frame(frame)
       self.actor.set_inputs(self.processed_frames, *inputs)
-      if hasattr(self, 'critic') and not FLAGS.multitask:
+      if hasattr(self, 'critic'):
         self.critic.set_inputs(self.processed_frames, *inputs)
 
       if not self.saved_states:
@@ -347,8 +371,8 @@ class Trainer(object):
 
     with torch.no_grad():
       softmax = self.actor.forward(self.processed_frames)
-      if isinstance(softmax,list):
-            softmax = softmax[1]
+      if FLAGS.multitask:
+        softmax = softmax[1]
       softmax = softmax.detach().cpu()
     self.softmaxes[self.processed_frames] = softmax
     idxs = utils.sample_softmax(softmax)

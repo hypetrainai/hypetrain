@@ -131,17 +131,13 @@ class ResNetIm2Value(ConvModel):
 
   def __init__(self, frame_channels, extra_channels, out_dim, use_softmax=True):
     super(ResNetIm2Value, self).__init__()
-    
-    self.out_dim = out_dim
-    
-    if isinstance(out_dim, list):
-        final_out_dim = np.sum(out_dim).astype(np.int32)
-    else:
-        final_out_dim = out_dim
-        self.out_dim = [out_dim]
-        use_softmax = [use_softmax]
 
+    if not isinstance(out_dim, list):
+      out_dim = [out_dim]
+      use_softmax = [use_softmax]
+    self.out_dim = out_dim
     self.use_softmax = use_softmax
+    final_out_dim = np.sum(out_dim).astype(np.int32)
 
     in_dim = frame_channels * FLAGS.context_frames + extra_channels
     feat_height, feat_width = FLAGS.input_height, FLAGS.input_width
@@ -182,12 +178,12 @@ class ResNetIm2Value(ConvModel):
     self.operation_stack_linear = nn.Sequential(*layer_defs_linear)
 
   def forward(self, i):
-    
+
     def softmax_proc(out):
-        out = F.softmax(out, 1)
-        out = torch.clamp(out, min=0.00001)
-        return out/torch.sum(out, 1, keepdim=True)
-    
+      out = F.softmax(out, 1)
+      out = torch.clamp(out, min=0.00001)
+      return out/torch.sum(out, 1, keepdim=True)
+
     inputs = self._get_inputs(i)
     out = self.operation_stack(inputs)
     out = out.view(inputs.shape[0], -1)
@@ -196,11 +192,12 @@ class ResNetIm2Value(ConvModel):
     outputs = []
     for posidx, pos in enumerate(self.out_dim):
       if self.use_softmax[posidx]:
-        outputs.append(softmax_proc(out[:,current_idx: current_idx+pos]))
+        outputs.append(softmax_proc(out[:, current_idx:current_idx+pos]))
       else:
-        outputs.append(out[:,current_idx: current_idx+pos])
-    
+        outputs.append(out[:, current_idx:current_idx+pos])
       current_idx += pos
+    if len(outputs) == 1:
+      outputs = outputs[0]
     return outputs
 
 
