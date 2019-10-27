@@ -98,7 +98,7 @@ class Trainer(object):
     else:
       self.actor = utils.import_class(FLAGS.actor)(
           frame_channels, extra_channels, out_dim=self.env.num_actions())
-      if FLAGS.critic and not FLAGS.evaluate:
+      if not FLAGS.evaluate:
         self.critic = utils.import_class(FLAGS.critic)(
             frame_channels, extra_channels, out_dim=1, use_softmax=False)
       if FLAGS.use_cuda:
