@@ -92,22 +92,19 @@ class Trainer(object):
       self.actor = utils.import_class(FLAGS.actor)(
           frame_channels, extra_channels, out_dim=[1, self.env.num_actions()],
           use_softmax=[False, True])
-      if FLAGS.use_cuda:
-        self.actor = self.actor.cuda()
-      self.optimizer_actor = optim.Adam(list(self.actor.parameters()), lr=FLAGS.lr)
     else:
       self.actor = utils.import_class(FLAGS.actor)(
           frame_channels, extra_channels, out_dim=self.env.num_actions())
       if not FLAGS.evaluate:
         self.critic = utils.import_class(FLAGS.critic)(
             frame_channels, extra_channels, out_dim=1, use_softmax=False)
-      if FLAGS.use_cuda:
-        self.actor = self.actor.cuda()
-        if hasattr(self, 'critic'):
-          self.critic = self.critic.cuda()
-      self.optimizer_actor = optim.Adam(list(self.actor.parameters()), lr=FLAGS.lr)
+    if FLAGS.use_cuda:
+      self.actor = self.actor.cuda()
       if hasattr(self, 'critic'):
-        self.optimizer_critic = optim.Adam(list(self.critic.parameters()), lr=FLAGS.lr)
+        self.critic = self.critic.cuda()
+    self.optimizer_actor = optim.RMSprop(list(self.actor.parameters()), lr=FLAGS.lr, alpha=0.99, eps=1e-5)
+    if hasattr(self, 'critic'):
+      self.optimizer_critic = optim.RMSprop(list(self.actor.parameters()), lr=FLAGS.lr, alpha=0.99, eps=1e-5)
 
     self.processed_frames = 0
 

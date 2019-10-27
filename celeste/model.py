@@ -143,27 +143,27 @@ class ResNetIm2Value(ConvModel):
     feat_height, feat_width = FLAGS.input_height, FLAGS.input_width
 
     layer_defs = []
-    layer_defs.append(submodules.convbn(in_dim, 64, kernel_size=3, pad=1, stride=2))
+    layer_defs.append(submodules.conv(in_dim, 64, kernel_size=3, pad=1, stride=2))
     feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
-    layer_defs.append(submodules.convbn(64, 64, kernel_size=3, pad=1, stride=2))
+    layer_defs.append(submodules.conv(64, 64, kernel_size=3, pad=1, stride=2))
     feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
-    layer_defs.append(submodules.convbn(64, 64, kernel_size=3, pad=1, stride=2))
+    layer_defs.append(submodules.conv(64, 64, kernel_size=3, pad=1, stride=2))
     feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
 
     for i in range(3):
       layer_defs.append(submodules.ResNetModule(64, 64, kernel_size=3, pad=1))
-    layer_defs.append(submodules.convbn(64, 128, kernel_size=3, pad=1, stride=2))
+    layer_defs.append(submodules.conv(64, 128, kernel_size=3, pad=1, stride=2))
     feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
 
     for i in range(3):
         layer_defs.append(submodules.ResNetModule(128, 128, kernel_size=3, pad=1))
-    layer_defs.append(submodules.convbn(128, 256, kernel_size=3, pad=1, stride=2))
+    layer_defs.append(submodules.conv(128, 256, kernel_size=3, pad=1, stride=2))
     feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
 
     for i in range(3):
       layer_defs.append(submodules.ResNetModule(256, 256, kernel_size=3, pad=1))
 
-    layer_defs.append(submodules.convbn(256, 256, kernel_size=3, pad=1, stride=2))
+    layer_defs.append(submodules.conv(256, 256, kernel_size=3, pad=1, stride=2))
     feat_height, feat_width = math.ceil(feat_height / 2), math.ceil(feat_width / 2)
 
     fc_input = feat_height * feat_width * 256
