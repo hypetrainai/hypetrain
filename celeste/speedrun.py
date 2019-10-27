@@ -259,7 +259,7 @@ class Trainer(object):
       actor_loss = torch.mean(mask_tensor[i] * -torch.log(action_probs) * A)
       actor_losses.append(actor_loss.detach().cpu().numpy())
       entropy = mask_tensor[i].unsqueeze(-1) * -softmax * torch.log(softmax) / FLAGS.batch_size
-      entropy_loss = FLAGS.entropy_loss_weight * torch.sum(entropy)
+      entropy_loss = -FLAGS.entropy_loss_weight * torch.sum(entropy)
       entropy_losses.append(entropy_loss.detach().cpu().numpy())
       if not GLOBAL.eval_mode:
         (actor_loss + entropy_loss).backward()
@@ -301,12 +301,17 @@ class Trainer(object):
     fig = plt.figure()
     plt.plot(list(reversed(value_losses)))
     utils.add_summary('figure', 'loss/value', fig)
+    utils.add_summary('scalar', 'loss/value', np.mean(value_losses))
     fig = plt.figure()
     plt.plot(list(reversed(actor_losses)))
     utils.add_summary('figure', 'loss/actor', fig)
+    utils.add_summary('scalar', 'loss/actor', np.mean(actor_losses))
     fig = plt.figure()
     plt.plot(list(reversed(entropy_losses)))
     utils.add_summary('figure', 'loss/entropy', fig)
+    utils.add_summary('scalar', 'loss/entropy', np.mean(entropy_losses))
+    logging.info('Value loss: %.3f Actor loss: %.3f Entropy loss: %.3f',
+        np.mean(value_losses), np.mean(actor_losses), np.mean(entropy_losses))
 
     # Start next episode.
     GLOBAL.episode_number += 1
