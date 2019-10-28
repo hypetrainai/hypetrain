@@ -245,7 +245,8 @@ class Trainer(object):
           V_blf = V_blf.cuda()
         A = R - R_blf + V_blf - V
 
-      value_loss = torch.mean(mask_tensor[ii] * A**2)
+      mask_sum = torch.sum(mask_tensor[ii])
+      value_loss = torch.sum(mask_tensor[ii] * A**2) / mask_sum
       self.value_losses[i] = value_loss.detach().cpu().numpy()
 
       V = V.detach()
@@ -257,10 +258,10 @@ class Trainer(object):
 
       assert np.array_equal(self.softmaxes[i], softmax.detach().cpu().numpy())
       action_probs = softmax.gather(1, sampled_idx_tensor[ii].unsqueeze(-1))
-      actor_loss = torch.mean(mask_tensor[ii] * -torch.log(action_probs) * A)
+      actor_loss = torch.sum(mask_tensor[ii] * -torch.log(action_probs) * A) / mask_sum
       self.actor_losses[i] = actor_loss.detach().cpu().numpy()
       entropy = torch.sum(-softmax * torch.log(softmax), dim=-1)
-      entropy_loss = -torch.mean(mask_tensor[ii] * entropy)
+      entropy_loss = -torch.sum(mask_tensor[ii] * entropy) / mask_sum
       self.entropy_losses[i] = entropy_loss.detach().cpu().numpy()
       if not GLOBAL.eval_mode:
         (actor_loss + FLAGS.value_loss_weight * value_loss +
