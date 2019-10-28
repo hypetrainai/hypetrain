@@ -59,7 +59,8 @@ flags.DEFINE_float('entropy_loss_weight', 0.0001, 'weight for entropy loss')
 flags.DEFINE_float('reward_scale', 1.0/10.0, 'multiplicative scale for the reward function')
 flags.DEFINE_boolean('differential_reward', True, 'Do we use differential rewards?')
 flags.DEFINE_float('reward_decay_multiplier', 0.95, 'reward time decay multiplier')
-flags.DEFINE_integer('episode_length', 150, 'episode length')
+flags.DEFINE_integer('episode_length', 400, 'episode length')
+flags.DEFINE_integer('n_steps', 5, 'number of steps before each bprop run')
 flags.DEFINE_integer('context_frames', 30, 'number of frames passed to the network')
 flags.DEFINE_integer('bellman_lookahead_frames', 10, 'number of frames to consider for bellman rollout')
 flags.DEFINE_float('clip_grad_norm', 1000.0, 'value to clip gradient norm to.')
@@ -178,50 +179,47 @@ class Trainer(object):
     self.softmaxes = np.empty((FLAGS.episode_length, FLAGS.batch_size, self.env.num_actions()),
                               dtype=np.float32)
     self.sampled_idx = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.int64)
+    self.Rs = np.empty((FLAGS.episode_length + 1, FLAGS.batch_size), dtype=np.float32)
+    self.Vs = np.empty((FLAGS.episode_length + 1, FLAGS.batch_size), dtype=np.float32)
+    self.As = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
+    self.value_losses = np.empty((FLAGS.episode_length), dtype=np.float32)
+    self.actor_losses = np.empty((FLAGS.episode_length), dtype=np.float32)
+    self.entropy_losses = np.empty((FLAGS.episode_length), dtype=np.float32)
     if FLAGS.use_cuda:
       torch.cuda.synchronize()
       torch.cuda.empty_cache()
 
-  def _finish_episode(self):
+  def _bprop(self, start_frame):
     assert self.processed_frames > 0
-    self.rewards.resize((self.processed_frames, FLAGS.batch_size))
-    self.mask.resize((self.processed_frames, FLAGS.batch_size))
-    self.softmaxes.resize((self.processed_frames, FLAGS.batch_size, self.env.num_actions()))
-    self.sampled_idx.resize((self.processed_frames, FLAGS.batch_size))
 
-    self.env.finish_episode(self.processed_frames, self.frame_buffer)
+    self.optimizer_actor.zero_grad()
+    if hasattr(self, 'critic'):
+      self.optimizer_critic.zero_grad()
 
-    utils.add_summary('scalar', 'avg_episode_length', np.sum(self.mask) / FLAGS.batch_size)
-    utils.add_summary('scalar', 'avg_reward', np.mean(self.rewards))
-
-    rewards_tensor = torch.from_numpy(self.rewards)
-    mask_tensor = torch.from_numpy(self.mask)
-    sampled_idx_tensor = torch.from_numpy(self.sampled_idx)
+    rewards_tensor = torch.from_numpy(self.rewards[start_frame:self.processed_frames])
+    mask_tensor = torch.from_numpy(self.mask[start_frame:self.processed_frames])
+    sampled_idx_tensor = torch.from_numpy(self.sampled_idx[start_frame:self.processed_frames])
     if FLAGS.use_cuda:
       rewards_tensor = rewards_tensor.cuda()
       mask_tensor = mask_tensor.cuda()
       sampled_idx_tensor = sampled_idx_tensor.cuda()
-    R = rewards_tensor[self.processed_frames - 1]
+
+    R = 0
     # Only enable for dense rewards.
     # "Fixes" truncation at end by adopting
-    #   final_reward *= 1 + gamma + gamma^2 + ...
-    # R *= 1.0 / (1.0 - FLAGS.reward_decay_multiplier)
-    Rs = [R]
+    #   final_reward * 1 + gamma + gamma^2 + ...
+    # R = rewards_tensor[-1] * 1.0 / (1.0 - FLAGS.reward_decay_multiplier)
+    self.Rs[self.processed_frames] = R
     if FLAGS.multitask:
-      final_V = self.actor.forward(self.processed_frames)[0].detach()
+      final_V = self.actor.forward(self.processed_frames)[0].detach().cpu().numpy()
     elif hasattr(self, 'critic'):
-      final_V = self.critic.forward(self.processed_frames).detach()
+      final_V = self.critic.forward(self.processed_frames).detach().cpu().numpy()
     else:
       final_V = 0
-    Vs = [final_V]
-    As = [np.zeros_like(self.rewards[0])]
-    value_losses = []
-    actor_losses = []
-    entropy_losses = []
-    self.optimizer_actor.zero_grad()
-    if hasattr(self, 'critic'):
-      self.optimizer_critic.zero_grad()
-    for i in reversed(range(self.processed_frames)):
+    self.Vs[self.processed_frames] = np.reshape(final_V, [FLAGS.batch_size])
+
+    for i in reversed(range(start_frame, self.processed_frames)):
+      ii = i - start_frame
       outputs = self.actor.forward(i)
       if FLAGS.multitask:
         V, softmax = outputs
@@ -233,34 +231,39 @@ class Trainer(object):
           if FLAGS.use_cuda:
             V = V.cuda()
         softmax = outputs
+      V = torch.reshape(V, [FLAGS.batch_size])
 
-      R = FLAGS.reward_decay_multiplier * R + rewards_tensor[i]
-      blf = min(FLAGS.bellman_lookahead_frames, self.processed_frames - i)
-      if blf == 0:
+      R = FLAGS.reward_decay_multiplier * R + rewards_tensor[ii]
+      if FLAGS.bellman_lookahead_frames == 0:
         A = R - V
       else:
-        A = (R - (FLAGS.reward_decay_multiplier**blf) * Rs[-blf]
-             + (FLAGS.reward_decay_multiplier**blf) * Vs[-blf] - V)
+        blf = min(i + FLAGS.bellman_lookahead_frames, self.processed_frames)
+        R_blf = (FLAGS.reward_decay_multiplier**blf) * torch.from_numpy(self.Rs[blf])
+        V_blf = (FLAGS.reward_decay_multiplier**blf) * torch.from_numpy(self.Vs[blf])
+        if FLAGS.use_cuda:
+          R_blf = R_blf.cuda()
+          V_blf = V_blf.cuda()
+        A = R - R_blf + V_blf - V
 
-      value_loss = FLAGS.value_loss_weight * torch.mean(mask_tensor[i] * A**2)
-      value_losses.append(value_loss.detach().cpu().numpy())
+      value_loss = FLAGS.value_loss_weight * torch.mean(mask_tensor[ii] * A**2)
+      self.value_losses[i] = value_loss.detach().cpu().numpy()
       if hasattr(self, 'critic') and not GLOBAL.eval_mode:
         value_loss.backward(retain_graph=FLAGS.multitask)
 
       V = V.detach()
       A = A.detach()
 
-      Rs.append(R)
-      Vs.append(V)
-      As.append(A.cpu().numpy())
+      self.Rs[i] = R.cpu().numpy()
+      self.Vs[i] = V.cpu().numpy()
+      self.As[i] = A.cpu().numpy()
 
       assert np.array_equal(self.softmaxes[i], softmax.detach().cpu().numpy())
-      action_probs = softmax.gather(1, sampled_idx_tensor[i].unsqueeze(-1))
-      actor_loss = torch.mean(mask_tensor[i] * -torch.log(action_probs) * A)
-      actor_losses.append(actor_loss.detach().cpu().numpy())
-      entropy = mask_tensor[i].unsqueeze(-1) * -softmax * torch.log(softmax) / FLAGS.batch_size
+      action_probs = softmax.gather(1, sampled_idx_tensor[ii].unsqueeze(-1))
+      actor_loss = torch.mean(mask_tensor[ii] * -torch.log(action_probs) * A)
+      self.actor_losses[i] = actor_loss.detach().cpu().numpy()
+      entropy = mask_tensor[ii].unsqueeze(-1) * -softmax * torch.log(softmax) / FLAGS.batch_size
       entropy_loss = -FLAGS.entropy_loss_weight * torch.sum(entropy)
-      entropy_losses.append(entropy_loss.detach().cpu().numpy())
+      self.entropy_losses[i] = entropy_loss.detach().cpu().numpy()
       if not GLOBAL.eval_mode:
         (actor_loss + entropy_loss).backward()
 
@@ -269,9 +272,6 @@ class Trainer(object):
             i, self.frame_buffer, softmax.detach().cpu().numpy(), self.sampled_idx[i])
 
     if not GLOBAL.eval_mode:
-      utils.add_summary('scalar', 'actor_grad_norm', utils.grad_norm(self.actor))
-      if hasattr(self, 'critic'):
-        utils.add_summary('scalar', 'critic_grad_norm', utils.grad_norm(self.critic))
       assert not (FLAGS.clip_grad_value and FLAGS.clip_grad_norm)
       if FLAGS.clip_grad_value:
         nn.utils.clip_grad_value_(self.actor.parameters(), FLAGS.clip_grad_value)
@@ -286,32 +286,48 @@ class Trainer(object):
       if hasattr(self, 'critic'):
         self.optimizer_critic.step()
 
+  def _finish_episode(self):
+    assert self.processed_frames > 0
+
+    self.env.finish_episode(self.processed_frames, self.frame_buffer)
+
+    utils.add_summary('scalar', 'avg_episode_length', np.sum(self.mask) / FLAGS.batch_size)
+    utils.add_summary('scalar', 'avg_reward', np.mean(self.rewards))
+
     fig = plt.figure()
-    plt.plot(self.rewards[:, 0])
+    plt.plot(self.rewards[:self.processed_frames, 0])
     utils.add_summary('figure', 'out/reward', fig)
     fig = plt.figure()
-    plt.plot([R.cpu().numpy()[0] for R in reversed(Rs[1:])])
+    plt.plot(self.Rs[:self.processed_frames - 1])
     utils.add_summary('figure', 'out/reward_cumul', fig)
     fig = plt.figure()
-    plt.plot([V.cpu().numpy()[0] for V in reversed(Vs[1:])])
+    plt.plot(self.Rs[:self.processed_frames - 1])
     utils.add_summary('figure', 'out/value', fig)
     fig = plt.figure()
-    plt.plot([A[0] for A in reversed(As[1:])])
+    plt.plot(self.As[:self.processed_frames])
     utils.add_summary('figure', 'out/advantage', fig)
     fig = plt.figure()
-    plt.plot(list(reversed(value_losses)))
+    value_losses = self.value_losses[:self.processed_frames]
+    plt.plot(value_losses)
     utils.add_summary('figure', 'loss/value', fig)
     utils.add_summary('scalar', 'loss/value', np.mean(value_losses))
     fig = plt.figure()
-    plt.plot(list(reversed(actor_losses)))
+    actor_losses = self.actor_losses[:self.processed_frames]
+    plt.plot(actor_losses)
     utils.add_summary('figure', 'loss/actor', fig)
     utils.add_summary('scalar', 'loss/actor', np.mean(actor_losses))
     fig = plt.figure()
-    plt.plot(list(reversed(entropy_losses)))
+    entropy_losses = self.entropy_losses[:self.processed_frames]
+    plt.plot(entropy_losses)
     utils.add_summary('figure', 'loss/entropy', fig)
     utils.add_summary('scalar', 'loss/entropy', np.mean(entropy_losses))
     logging.info('Value loss: %.3f Actor loss: %.3f Entropy loss: %.3f',
         np.mean(value_losses), np.mean(actor_losses), np.mean(entropy_losses))
+
+    if not GLOBAL.eval_mode:
+      utils.add_summary('scalar', 'actor_grad_norm', utils.grad_norm(self.actor))
+      if hasattr(self, 'critic'):
+        utils.add_summary('scalar', 'critic_grad_norm', utils.grad_norm(self.critic))
 
     # Start next episode.
     GLOBAL.episode_number += 1
@@ -368,6 +384,8 @@ class Trainer(object):
       assert isinstance(reward, np.ndarray), type(reward)
       self.rewards[self.processed_frames - 1] = FLAGS.reward_scale * reward
       self.mask[self.processed_frames - 1] = 1.0 - done
+      if done.all() or self.processed_frames % FLAGS.n_steps == 0:
+        self._bprop(self.processed_frames - FLAGS.n_steps)
       if done.all() or self.processed_frames >= FLAGS.episode_length:
         return self._finish_episode()
 
