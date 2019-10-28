@@ -56,7 +56,6 @@ flags.DEFINE_float('lr', 0.0005, 'learning rate')
 flags.DEFINE_float('actor_start_delay', 10, 'delay training of the actor for this many episodes')
 flags.DEFINE_float('value_loss_weight', 1.0, 'weight for value loss')
 flags.DEFINE_float('entropy_loss_weight', 0.0001, 'weight for entropy loss')
-flags.DEFINE_float('reward_scale', 1.0/10.0, 'multiplicative scale for the reward function')
 flags.DEFINE_boolean('differential_reward', True, 'Do we use differential rewards?')
 flags.DEFINE_float('reward_decay_multiplier', 0.95, 'reward time decay multiplier')
 flags.DEFINE_integer('episode_length', 400, 'episode length')
@@ -382,7 +381,7 @@ class Trainer(object):
     if self.processed_frames > 0:
       reward, done = self.env.get_reward()
       assert isinstance(reward, np.ndarray), type(reward)
-      self.rewards[self.processed_frames - 1] = FLAGS.reward_scale * reward
+      self.rewards[self.processed_frames - 1] = reward
       self.mask[self.processed_frames - 1] = 1.0 - done
       if done.all() or self.processed_frames % FLAGS.n_steps == 0:
         self._bprop(self.processed_frames - FLAGS.n_steps)
