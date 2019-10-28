@@ -245,10 +245,8 @@ class Trainer(object):
           V_blf = V_blf.cuda()
         A = R - R_blf + V_blf - V
 
-      value_loss = FLAGS.value_loss_weight * torch.mean(mask_tensor[ii] * A**2)
+      value_loss = torch.mean(mask_tensor[ii] * A**2)
       self.value_losses[i] = value_loss.detach().cpu().numpy()
-      if hasattr(self, 'critic') and not GLOBAL.eval_mode:
-        value_loss.backward(retain_graph=FLAGS.multitask)
 
       V = V.detach()
       A = A.detach()
@@ -261,11 +259,12 @@ class Trainer(object):
       action_probs = softmax.gather(1, sampled_idx_tensor[ii].unsqueeze(-1))
       actor_loss = torch.mean(mask_tensor[ii] * -torch.log(action_probs) * A)
       self.actor_losses[i] = actor_loss.detach().cpu().numpy()
-      entropy = mask_tensor[ii].unsqueeze(-1) * -softmax * torch.log(softmax) / FLAGS.batch_size
-      entropy_loss = -FLAGS.entropy_loss_weight * torch.sum(entropy)
+      entropy = torch.sum(-softmax * torch.log(softmax), dim=-1)
+      entropy_loss = -torch.mean(mask_tensor[ii] * entropy)
       self.entropy_losses[i] = entropy_loss.detach().cpu().numpy()
       if not GLOBAL.eval_mode:
-        (actor_loss + entropy_loss).backward()
+        (actor_loss + FLAGS.value_loss_weight * value_loss +
+         FLAGS.entropy_loss_weight * entropy_loss).backward()
 
       if (i + 1) % FLAGS.action_summary_frames == 0:
         self.env.add_action_summaries(
