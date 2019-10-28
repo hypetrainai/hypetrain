@@ -172,7 +172,11 @@ class Trainer(object):
     if hasattr(self, 'critic'):
       self.critic.reset()
     self.env.reset()
+
+    assert FLAGS.episode_length >= FLAGS.n_steps
+
     self.frame_buffer = []
+    self.next_frame_to_process = 0
     self.rewards = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
     self.mask = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
     self.softmaxes = np.empty((FLAGS.episode_length, FLAGS.batch_size, self.env.num_actions()),
@@ -188,16 +192,16 @@ class Trainer(object):
       torch.cuda.synchronize()
       torch.cuda.empty_cache()
 
-  def _bprop(self, start_frame):
+  def _bprop(self):
     assert self.processed_frames > 0
 
     self.optimizer_actor.zero_grad()
     if hasattr(self, 'critic'):
       self.optimizer_critic.zero_grad()
 
-    rewards_tensor = torch.from_numpy(self.rewards[start_frame:self.processed_frames])
-    mask_tensor = torch.from_numpy(self.mask[start_frame:self.processed_frames])
-    sampled_idx_tensor = torch.from_numpy(self.sampled_idx[start_frame:self.processed_frames])
+    rewards_tensor = torch.from_numpy(self.rewards[self.next_frame_to_process:self.processed_frames])
+    mask_tensor = torch.from_numpy(self.mask[self.next_frame_to_process:self.processed_frames])
+    sampled_idx_tensor = torch.from_numpy(self.sampled_idx[self.next_frame_to_process:self.processed_frames])
     if FLAGS.use_cuda:
       rewards_tensor = rewards_tensor.cuda()
       mask_tensor = mask_tensor.cuda()
@@ -217,8 +221,8 @@ class Trainer(object):
       final_V = 0
     self.Vs[self.processed_frames] = np.reshape(final_V, [FLAGS.batch_size])
 
-    for i in reversed(range(start_frame, self.processed_frames)):
-      ii = i - start_frame
+    for i in reversed(range(self.next_frame_to_process, self.processed_frames)):
+      ii = i - self.next_frame_to_process
       outputs = self.actor.forward(i)
       if FLAGS.multitask:
         V, softmax = outputs
@@ -284,6 +288,8 @@ class Trainer(object):
         self.optimizer_actor.step()
       if hasattr(self, 'critic'):
         self.optimizer_critic.step()
+
+    self.next_frame_to_process = self.processed_frames
 
   def _finish_episode(self):
     assert self.processed_frames > 0
@@ -384,7 +390,7 @@ class Trainer(object):
       self.rewards[self.processed_frames - 1] = reward
       self.mask[self.processed_frames - 1] = 1.0 - done
       if done.all() or self.processed_frames % FLAGS.n_steps == 0:
-        self._bprop(self.processed_frames - FLAGS.n_steps)
+        self._bprop()
       if done.all() or self.processed_frames >= FLAGS.episode_length:
         return self._finish_episode()
 
