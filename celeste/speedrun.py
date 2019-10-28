@@ -177,17 +177,17 @@ class Trainer(object):
 
     self.frame_buffer = []
     self.next_frame_to_process = 0
-    self.rewards = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
     self.mask = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
+    self.rewards = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
     self.softmaxes = np.empty((FLAGS.episode_length, FLAGS.batch_size, self.env.num_actions()),
                               dtype=np.float32)
     self.sampled_idx = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.int64)
     self.Rs = np.empty((FLAGS.episode_length + 1, FLAGS.batch_size), dtype=np.float32)
     self.Vs = np.empty((FLAGS.episode_length + 1, FLAGS.batch_size), dtype=np.float32)
     self.As = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
-    self.value_losses = np.empty((FLAGS.episode_length), dtype=np.float32)
-    self.actor_losses = np.empty((FLAGS.episode_length), dtype=np.float32)
-    self.entropy_losses = np.empty((FLAGS.episode_length), dtype=np.float32)
+    self.value_losses = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
+    self.actor_losses = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
+    self.entropy_losses = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
     if FLAGS.use_cuda:
       torch.cuda.synchronize()
       torch.cuda.empty_cache()
@@ -248,8 +248,7 @@ class Trainer(object):
           V_blf = V_blf.cuda()
         A = R - R_blf + V_blf - V
 
-      mask_sum = torch.sum(mask_tensor[ii])
-      value_loss = torch.sum(mask_tensor[ii] * A**2) / mask_sum
+      value_loss = A**2
       self.value_losses[i] = value_loss.detach().cpu().numpy()
 
       V = V.detach()
@@ -260,15 +259,17 @@ class Trainer(object):
       self.As[i] = A.cpu().numpy()
 
       assert np.array_equal(self.softmaxes[i], softmax.detach().cpu().numpy())
-      action_probs = softmax.gather(1, sampled_idx_tensor[ii].unsqueeze(-1))
-      actor_loss = torch.sum(mask_tensor[ii] * -torch.log(action_probs) * A) / mask_sum
+      action_probs = torch.squeeze(softmax.gather(1, sampled_idx_tensor[ii].unsqueeze(-1)), -1)
+      actor_loss = -torch.log(action_probs) * A
       self.actor_losses[i] = actor_loss.detach().cpu().numpy()
       entropy = torch.sum(-softmax * torch.log(softmax), dim=-1)
-      entropy_loss = -torch.sum(mask_tensor[ii] * entropy) / mask_sum
+      entropy_loss = -entropy
       self.entropy_losses[i] = entropy_loss.detach().cpu().numpy()
       if not GLOBAL.eval_mode:
-        (actor_loss + FLAGS.value_loss_weight * value_loss +
-         FLAGS.entropy_loss_weight * entropy_loss).backward()
+        loss = (actor_loss + FLAGS.value_loss_weight * value_loss +
+                FLAGS.entropy_loss_weight * entropy_loss)
+        loss = torch.sum(mask_tensor[ii] * loss) / torch.sum(mask_tensor[ii])
+        loss.backward()
 
       if (i + 1) % FLAGS.action_summary_frames == 0:
         self.env.add_action_summaries(
@@ -296,8 +297,10 @@ class Trainer(object):
 
     self.env.finish_episode(self.processed_frames, self.frame_buffer)
 
-    utils.add_summary('scalar', 'avg_episode_length', np.sum(self.mask) / FLAGS.batch_size)
-    utils.add_summary('scalar', 'avg_reward', np.mean(self.rewards))
+    mask_sum = np.sum(self.mask)
+    utils.add_summary('scalar', 'avg_episode_length', mask_sum / FLAGS.batch_size)
+    avg_reward = np.sum(self.rewards[:self.processed_frames]) / mask_sum
+    utils.add_summary('scalar', 'avg_reward', avg_reward)
 
     fig = plt.figure()
     plt.plot(self.rewards[:self.processed_frames, 0])
@@ -313,21 +316,22 @@ class Trainer(object):
     utils.add_summary('figure', 'out/advantage', fig)
     fig = plt.figure()
     value_losses = self.value_losses[:self.processed_frames]
-    plt.plot(value_losses)
+    plt.plot(value_losses[0])
     utils.add_summary('figure', 'loss/value', fig)
-    utils.add_summary('scalar', 'loss/value_avg', np.mean(value_losses))
+    utils.add_summary('scalar', 'loss/value_avg', np.sum(value_losses) / mask_sum)
     fig = plt.figure()
     actor_losses = self.actor_losses[:self.processed_frames]
-    plt.plot(actor_losses)
+    plt.plot(actor_losses[0])
     utils.add_summary('figure', 'loss/actor', fig)
-    utils.add_summary('scalar', 'loss/actor_avg', np.mean(actor_losses))
+    utils.add_summary('scalar', 'loss/actor_avg', np.sum(actor_losses) / mask_sum)
     fig = plt.figure()
     entropy_losses = self.entropy_losses[:self.processed_frames]
-    plt.plot(entropy_losses)
+    plt.plot(entropy_losses[0])
     utils.add_summary('figure', 'loss/entropy', fig)
-    utils.add_summary('scalar', 'loss/entropy_avg', np.mean(entropy_losses))
-    logging.info('Value loss: %.3f Actor loss: %.3f Entropy loss: %.3f',
-        np.mean(value_losses), np.mean(actor_losses), np.mean(entropy_losses))
+    utils.add_summary('scalar', 'loss/entropy_avg', np.sum(entropy_losses) / mask_sum)
+    logging.info('Reward: %.3f Value loss: %.3f Actor loss: %.3f Entropy loss: %.3f',
+        avg_reward, np.sum(value_losses) / mask_sum,
+        np.sum(actor_losses) / mask_sum, np.sum(entropy_losses) / mask_sum)
 
     if not GLOBAL.eval_mode:
       utils.add_summary('scalar', 'actor_grad_norm', utils.grad_norm(self.actor))
@@ -387,8 +391,9 @@ class Trainer(object):
     if self.processed_frames > 0:
       reward, done = self.env.get_reward()
       assert isinstance(reward, np.ndarray), type(reward)
-      self.rewards[self.processed_frames - 1] = reward
+      assert isinstance(done, np.ndarray), type(done)
       self.mask[self.processed_frames - 1] = 1.0 - done
+      self.rewards[self.processed_frames - 1] = reward * (1.0 - done)
       if done.all() or self.processed_frames % FLAGS.n_steps == 0:
         self._bprop()
       if done.all() or self.processed_frames >= FLAGS.episode_length:
