@@ -20,6 +20,7 @@ from torch import optim
 from GLOBALS import GLOBAL
 import env
 import model
+import submodules
 import utils
 
 flags.DEFINE_string('save_config', '', 'File to save the config for the current run into. Can be loaded using --flagfile.')
