@@ -219,7 +219,7 @@ class Trainer(object):
     elif hasattr(self, 'critic'):
       final_V = self.critic.forward(self.processed_frames).detach().cpu().numpy()
     else:
-      final_V = 0
+      final_V = [0] * FLAGS.batch_size
     self.Vs[self.processed_frames] = np.reshape(final_V, [FLAGS.batch_size])
 
     for i in reversed(range(self.next_frame_to_process, self.processed_frames)):
