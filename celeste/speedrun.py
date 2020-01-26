@@ -264,6 +264,7 @@ class Trainer(object):
       actor_loss = -torch.log(action_probs) * A
       self.actor_losses[i] = actor_loss.detach().cpu().numpy()
       entropy = torch.sum(-softmax * torch.log(softmax), dim=-1)
+      # Maximize entropy -> trend toward uniform distribution.
       entropy_loss = -entropy
       self.entropy_losses[i] = entropy_loss.detach().cpu().numpy()
       if not GLOBAL.eval_mode:
@@ -287,6 +288,13 @@ class Trainer(object):
         if hasattr(self, 'critic'):
           nn.utils.clip_grad_norm_(self.critic.parameters(), FLAGS.clip_grad_norm)
       if GLOBAL.episode_number >= FLAGS.actor_start_delay:
+        grad_sum_sq = 0
+        grad_count = 0
+        for v in self.actor.parameters():
+          grad_sum_sq += torch.sum(v.grad**2).cpu().numpy()
+          grad_count += v.grad.numel()
+        if grad_sum_sq / grad_count < 1e-8:
+          logging.warning('Small gradient detected! Model may not updating.')
         self.optimizer_actor.step()
       if hasattr(self, 'critic'):
         self.optimizer_critic.step()
