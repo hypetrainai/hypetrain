@@ -289,13 +289,6 @@ class Trainer(object):
         if hasattr(self, 'critic'):
           nn.utils.clip_grad_norm_(self.critic.parameters(), FLAGS.clip_grad_norm)
       if GLOBAL.episode_number >= FLAGS.actor_start_delay:
-        grad_sum_sq = 0
-        grad_count = 0
-        for v in self.actor.parameters():
-          grad_sum_sq += torch.sum(v.grad**2).cpu().numpy()
-          grad_count += v.grad.numel()
-        # if grad_sum_sq / grad_count < 1e-8:
-        #   logging.warning('Small gradient detected! Model may not updating.')
         self.optimizer_actor.step()
       if hasattr(self, 'critic'):
         self.optimizer_critic.step()
@@ -344,7 +337,10 @@ class Trainer(object):
         np.sum(actor_losses) / mask_sum, np.sum(entropy_losses) / mask_sum)
 
     if not GLOBAL.eval_mode:
-      utils.add_summary('scalar', 'actor_grad_norm', utils.grad_norm(self.actor))
+      actor_grad_norm = utils.grad_norm(self.actor)
+      utils.add_summary('scalar', 'actor_grad_norm', actor_grad_norm)
+      # if actor_grad_norm < 1e-8:
+      #   logging.warning('Small gradient detected! Model may not updating.')
       if hasattr(self, 'critic'):
         utils.add_summary('scalar', 'critic_grad_norm', utils.grad_norm(self.critic))
 
