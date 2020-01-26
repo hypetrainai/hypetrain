@@ -127,6 +127,53 @@ class RecurrentModel(Model):
     self.contexts = [[x.clone() for x in context]]
 
 
+class NatureCnn(ConvModel):
+
+  def __init__(self, frame_channels, extra_channels, out_dim, use_softmax=True):
+    super(NatureCnn, self).__init__()
+
+    if not isinstance(out_dim, list):
+      out_dim = [out_dim]
+      use_softmax = [use_softmax]
+    self.out_dim = out_dim
+    self.use_softmax = use_softmax
+
+    in_dim = frame_channels * FLAGS.context_frames + extra_channels
+
+    layer_defs = []
+    layer_defs.append(submodules.conv(in_dim, 32, kernel_size=8, pad=0, stride=4))
+    layer_defs.append(submodules.conv(32, 64, kernel_size=4, pad=0, stride=2))
+    layer_defs.append(submodules.conv(64, 64, kernel_size=3, pad=0, stride=1))
+    self.operation_stack = nn.Sequential(*layer_defs)
+
+    fc_input = 3136
+    linear = nn.Linear(fc_input, 512)
+    submodules.init(linear, fc_input, 512, nonlinearity_after='relu')
+    self.proj = nn.Sequential(linear, nn.ReLU())
+
+    out_proj = []
+    for dim in self.out_dim:
+      linear = nn.Linear(512, dim)
+      submodules.init(linear, 512, dim)
+      out_proj.append(linear)
+    self.out_proj = nn.ModuleList(out_proj)
+
+  def forward(self, i):
+    inputs = self._get_inputs(i)
+    out = self.operation_stack(inputs)
+    out = out.view(inputs.shape[0], -1)
+    out = self.proj(out)
+    outputs = []
+    for out_proj, use_softmax in zip(self.out_proj, self.use_softmax):
+      res = out_proj(out)
+      if use_softmax:
+        res = utils.log_softmax(res)
+      outputs.append(res)
+    if len(outputs) == 1:
+      outputs = outputs[0]
+    return outputs
+
+
 class ResNetIm2Value(ConvModel):
 
   def __init__(self, frame_channels, extra_channels, out_dim, use_softmax=True):
@@ -137,7 +184,6 @@ class ResNetIm2Value(ConvModel):
       use_softmax = [use_softmax]
     self.out_dim = out_dim
     self.use_softmax = use_softmax
-    final_out_dim = np.sum(out_dim).astype(np.int32)
 
     in_dim = frame_channels * FLAGS.context_frames + extra_channels
     feat_height, feat_width = FLAGS.input_height, FLAGS.input_width
@@ -179,26 +225,27 @@ class ResNetIm2Value(ConvModel):
     layer_defs_linear.append(linear)
     layer_defs_linear.append(nn.ReLU())
 
-    linear = nn.Linear(256, final_out_dim)
-    submodules.init(linear, 256, final_out_dim)
-    layer_defs_linear.append(linear)
-
     self.operation_stack = nn.Sequential(*layer_defs)
     self.operation_stack_linear = nn.Sequential(*layer_defs_linear)
+
+    out_proj = []
+    for dim in self.out_dim:
+      linear = nn.Linear(256, dim)
+      submodules.init(linear, 256, dim)
+      out_proj.append(linear)
+    self.out_proj = nn.ModuleList(out_proj)
 
   def forward(self, i):
     inputs = self._get_inputs(i)
     out = self.operation_stack(inputs)
     out = out.view(inputs.shape[0], -1)
     out = self.operation_stack_linear(out)
-    current_idx = 0
     outputs = []
-    for posidx, pos in enumerate(self.out_dim):
-      if self.use_softmax[posidx]:
-        outputs.append(utils.log_softmax(out[:, current_idx:current_idx+pos]))
-      else:
-        outputs.append(out[:, current_idx:current_idx+pos])
-      current_idx += pos
+    for proj, use_softmax in zip(self.out_proj, self.use_softmax):
+      res = proj(out)
+      if use_softmax:
+        res = utils.log_softmax(res)
+      outputs.append(res)
     if len(outputs) == 1:
       outputs = outputs[0]
     return outputs
