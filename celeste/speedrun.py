@@ -180,8 +180,8 @@ class Trainer(object):
     self.next_frame_to_process = 0
     self.mask = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
     self.rewards = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
-    self.softmaxes = np.empty((FLAGS.episode_length, FLAGS.batch_size, self.env.num_actions()),
-                              dtype=np.float32)
+    self.log_softmaxes = np.empty((FLAGS.episode_length, FLAGS.batch_size, self.env.num_actions()),
+                                  dtype=np.float32)
     self.sampled_idx = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.int64)
     self.Rs = np.empty((FLAGS.episode_length + 1, FLAGS.batch_size), dtype=np.float32)
     self.Vs = np.empty((FLAGS.episode_length + 1, FLAGS.batch_size), dtype=np.float32)
@@ -226,7 +226,7 @@ class Trainer(object):
       ii = i - self.next_frame_to_process
       outputs = self.actor.forward(i)
       if FLAGS.multitask:
-        V, softmax = outputs
+        V, log_softmax = outputs
       else:
         if hasattr(self, 'critic'):
           V = self.critic.forward(i)
@@ -234,7 +234,7 @@ class Trainer(object):
           V = torch.Tensor([0])
           if FLAGS.use_cuda:
             V = V.cuda()
-        softmax = outputs
+        log_softmax = outputs
       V = torch.reshape(V, [FLAGS.batch_size])
 
       R = FLAGS.reward_decay_multiplier * R + rewards_tensor[ii]
@@ -259,11 +259,12 @@ class Trainer(object):
       self.Vs[i] = V.cpu().numpy()
       self.As[i] = A.cpu().numpy()
 
-      assert np.array_equal(self.softmaxes[i], softmax.detach().cpu().numpy())
-      action_probs = torch.squeeze(softmax.gather(1, sampled_idx_tensor[ii].unsqueeze(-1)), -1)
-      actor_loss = -torch.log(action_probs) * A
+      assert np.array_equal(self.log_softmaxes[i], log_softmax.detach().cpu().numpy())
+      log_action_probs = log_softmax.gather(1, sampled_idx_tensor[ii].unsqueeze(-1))
+      log_action_probs = torch.squeeze(log_action_probs, -1)
+      actor_loss = -log_action_probs * A
       self.actor_losses[i] = actor_loss.detach().cpu().numpy()
-      entropy = torch.sum(-softmax * torch.log(softmax), dim=-1)
+      entropy = torch.sum(-torch.exp(log_softmax) * log_softmax, dim=-1)
       # Maximize entropy -> trend toward uniform distribution.
       entropy_loss = -entropy
       self.entropy_losses[i] = entropy_loss.detach().cpu().numpy()
@@ -275,7 +276,7 @@ class Trainer(object):
 
       if (i + 1) % FLAGS.action_summary_frames == 0:
         self.env.add_action_summaries(
-            i, self.frame_buffer, softmax.detach().cpu().numpy(), self.sampled_idx[i])
+            i, self.frame_buffer, log_softmax.detach().cpu().numpy(), self.sampled_idx[i])
 
     if not GLOBAL.eval_mode:
       assert not (FLAGS.clip_grad_value and FLAGS.clip_grad_norm)
@@ -293,8 +294,8 @@ class Trainer(object):
         for v in self.actor.parameters():
           grad_sum_sq += torch.sum(v.grad**2).cpu().numpy()
           grad_count += v.grad.numel()
-        if grad_sum_sq / grad_count < 1e-8:
-          logging.warning('Small gradient detected! Model may not updating.')
+        # if grad_sum_sq / grad_count < 1e-8:
+        #   logging.warning('Small gradient detected! Model may not updating.')
         self.optimizer_actor.step()
       if hasattr(self, 'critic'):
         self.optimizer_critic.step()
@@ -409,12 +410,12 @@ class Trainer(object):
         return self._finish_episode()
 
     with torch.no_grad():
-      softmax = self.actor.forward(self.processed_frames)
+      log_softmax = self.actor.forward(self.processed_frames)
       if FLAGS.multitask:
-        softmax = softmax[1]
-      softmax = softmax.detach().cpu()
-    self.softmaxes[self.processed_frames] = softmax
-    idxs = utils.sample_softmax(softmax)
+        log_softmax = log_softmax[1]
+      log_softmax = log_softmax.detach().cpu()
+    self.log_softmaxes[self.processed_frames] = log_softmax
+    idxs = utils.sample_log_softmax(log_softmax)
     self.sampled_idx[self.processed_frames] = idxs
     self.processed_frames += 1
 

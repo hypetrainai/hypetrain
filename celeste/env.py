@@ -75,26 +75,26 @@ class Env(object):
     utils.imshow(frame, ax)
     ax.axis('off')
 
-  def _add_action_summaries_actions(self, ax, softmax, sampled_idx):
-    assert softmax.ndim == 1
+  def _add_action_summaries_actions(self, ax, log_softmax, sampled_idx):
+    assert log_softmax.ndim == 1
     num_topk = 5
-    topk_idxs = np.argsort(softmax)[::-1][:num_topk]
-    ax.bar(np.arange(num_topk), softmax[topk_idxs], width=0.3)
+    topk_idxs = np.argsort(log_softmax)[::-1][:num_topk]
+    ax.bar(np.arange(num_topk), np.exp(log_softmax[topk_idxs]), width=0.3)
     ax.set_xticks(np.arange(num_topk))
     ax.set_xticklabels(self.indices_to_labels(topk_idxs))
     ax.set_ylim(0.0, 1.0)
     ax.set_title('Sampled: %s (%0.2f%%)' % (
         self.indices_to_labels([sampled_idx])[0],
-        softmax[sampled_idx] * 100.0))
+        np.exp(log_softmax[sampled_idx]) * 100.0))
 
-  def add_action_summaries(self, frame_number, frame_buffer, softmax, sampled_idx):
+  def add_action_summaries(self, frame_number, frame_buffer, log_softmax, sampled_idx):
     """Called with the intermediate frame softmaxes and sampled idxs."""
     ax1_height_ratio = 3
     fig, (ax1, ax2) = plt.subplots(2, gridspec_kw={
         'height_ratios' : [ax1_height_ratio, 1],
     })
     self._add_action_summaries_image(ax1, frame_number, frame_buffer[frame_number][0])
-    self._add_action_summaries_actions(ax2, softmax[0], sampled_idx[0])
+    self._add_action_summaries_actions(ax2, log_softmax[0], sampled_idx[0])
 
     asp = np.diff(ax2.get_xlim())[0] / np.diff(ax2.get_ylim())[0]
     asp /= np.abs(np.diff(ax1.get_xlim())[0] / np.diff(ax1.get_ylim())[0])

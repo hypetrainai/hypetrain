@@ -187,12 +187,6 @@ class ResNetIm2Value(ConvModel):
     self.operation_stack_linear = nn.Sequential(*layer_defs_linear)
 
   def forward(self, i):
-
-    def softmax_proc(out):
-      out = F.softmax(out, 1)
-      out = torch.clamp(out, min=0.00001)
-      return out/torch.sum(out, 1, keepdim=True)
-
     inputs = self._get_inputs(i)
     out = self.operation_stack(inputs)
     out = out.view(inputs.shape[0], -1)
@@ -201,7 +195,7 @@ class ResNetIm2Value(ConvModel):
     outputs = []
     for posidx, pos in enumerate(self.out_dim):
       if self.use_softmax[posidx]:
-        outputs.append(softmax_proc(out[:, current_idx:current_idx+pos]))
+        outputs.append(utils.log_softmax(out[:, current_idx:current_idx+pos]))
       else:
         outputs.append(out[:, current_idx:current_idx+pos])
       current_idx += pos
@@ -353,7 +347,7 @@ class FPNNet(ConvModel):
     out = self.linops(vol)
 
     if self.use_softmax:
-      out = F.softmax(out, 1)
+      out = utils.log_softmax(out)
 
     return out
 
@@ -423,5 +417,5 @@ class SimpleLSTMModel(RecurrentModel):
       self.contexts.append(new_context)
     out = self.out_proj(out.squeeze(0))
     if self.use_softmax:
-      out = F.softmax(out, 1)
+      out = utils.log_softmax(out)
     return out

@@ -27,15 +27,20 @@ def add_summary(summary_type, name, value, **kwargs):
   summary_fn(summary_prefix + name, value, GLOBAL.episode_number, **kwargs)
 
 
-def sample_softmax(softmax):
+def log_softmax(logits):
+  return logits - torch.logsumexp(logits, 1, keepdim=True)
+
+
+def sample_log_softmax(log_softmax):
   if GLOBAL.eval_mode:
-    return np.argmax(softmax.numpy(), axis=1)
+    return np.argmax(log_softmax.numpy(), axis=1)
   elif (FLAGS.random_action_prob > 0 and
         np.random.random() <= FLAGS.random_action_prob):
-    N, n_classes = softmax.shape
+    N, n_classes = log_softmax.shape
     return np.random.randint(n_classes, size=N)
   else:
-    return torch.distributions.categorical.Categorical(probs=softmax).sample().numpy()
+    dist = torch.distributions.categorical.Categorical(probs=torch.exp(log_softmax))
+    return dist.sample().numpy()
 
 
 def generate_gaussian_heat_map(image_shape, y, x, sigma=10, amplitude=1.0):
