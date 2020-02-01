@@ -35,6 +35,7 @@ flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
 flags.DEFINE_boolean('use_cuda', True, 'Use cuda')
 flags.DEFINE_boolean('profile', False, 'Profile code')
+flags.DEFINE_boolean('debug', False, 'Debug mode')
 
 flags.DEFINE_integer('batch_size', 1, 'batch size')
 flags.DEFINE_integer('image_height', 540, 'image height')
@@ -105,9 +106,12 @@ class Trainer(object):
       if hasattr(self, 'critic'):
         self.critic = self.critic.cuda()
 
+    self.all_parameters = list(self.actor.parameters())
     optimizer_fn = functools.partial(optim.Adam, lr=FLAGS.lr, amsgrad=True)
     self.optimizer_actor = optimizer_fn(list(self.actor.parameters()))
     if hasattr(self, 'critic'):
+      self.all_parameters += list(self.critic.parameters())
+      self.all_parameters = list(set(self.all_parameters))
       self.optimizer_critic = optimizer_fn(list(self.critic.parameters()))
 
     self.processed_frames = 0
@@ -272,10 +276,20 @@ class Trainer(object):
       entropy_loss = -entropy
       self.entropy_losses[i] = entropy_loss.detach().cpu().numpy()
       if not GLOBAL.eval_mode:
-        loss = (actor_loss + FLAGS.value_loss_weight * value_loss +
-                FLAGS.entropy_loss_weight * entropy_loss)
-        loss = torch.sum(mask_tensor[ii] * loss) / torch.sum(mask_tensor[ii])
-        loss.backward()
+        if FLAGS.debug:
+          grads = utils.get_grads(self.all_parameters)
+        for name, loss in [
+            ('actor_loss', actor_loss),
+            ('value_loss', FLAGS.value_loss_weight * value_loss),
+            ('entropy_loss', FLAGS.entropy_loss_weight * entropy_loss),
+        ]:
+          loss = torch.sum(mask_tensor[ii] * loss) / torch.sum(mask_tensor[ii])
+          loss.backward(retain_graph=True)
+          if FLAGS.debug:
+            new_grads = utils.get_grads(self.all_parameters)
+            grad_norm = utils.grad_norm(new_grads, grads)
+            utils.add_summary('scalar', name + '_grad_norm', grad_norm)
+            grads = new_grads
 
       if (i + 1) % FLAGS.action_summary_frames == 0:
         self.env.add_action_summaries(
@@ -340,12 +354,13 @@ class Trainer(object):
         np.sum(actor_losses) / mask_sum, np.sum(entropy_losses) / mask_sum)
 
     if not GLOBAL.eval_mode:
-      actor_grad_norm = utils.grad_norm(self.actor)
+      actor_grad_norm = utils.grad_norm(utils.get_grads(self.actor.parameters()))
       utils.add_summary('scalar', 'actor_grad_norm', actor_grad_norm)
       if actor_grad_norm < 1e-8:
         logging.warning('Small gradient detected! Model may not updating.')
       if hasattr(self, 'critic'):
-        utils.add_summary('scalar', 'critic_grad_norm', utils.grad_norm(self.critic))
+        utils.add_summary('scalar', 'critic_grad_norm',
+                          utils.grad_norm(utils.get_grads(self.critic.parameters())))
 
     # Start next episode.
     GLOBAL.episode_number += 1

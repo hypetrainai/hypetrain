@@ -112,11 +112,17 @@ def plot_trajectory(trajectory, bg=None, ax=None):
   colorline(x, y, ax=ax, cmap='autumn')
 
 
-def grad_norm(network):
-  total_norm = 0
-  for p in network.parameters():
-    if p.grad is not None:
-      param_norm = p.grad.data.norm(2)
-      total_norm += param_norm.item()**2
-  return total_norm**0.5
+def get_grads(parameters):
+  return [None if p.grad is None else p.grad.detach().cpu().numpy().flatten()
+          for p in parameters]
 
+
+def grad_norm(grads, old_grads=None):
+  if old_grads is None:
+    old_grads = [None] * len(grads)
+  diffs = []
+  for p, old_p in zip(grads, old_grads):
+    if p is None:
+      continue
+    diffs.append(p - (0 if old_p is None else old_p))
+  return np.linalg.norm(np.concatenate(diffs), 2)
