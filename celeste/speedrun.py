@@ -3,6 +3,7 @@ from absl import flags
 from absl import logging
 logging.set_verbosity(logging.INFO)
 import cProfile
+import functools
 import inspect
 import matplotlib
 matplotlib.rcParams['axes.formatter.useoffset'] = False
@@ -103,9 +104,11 @@ class Trainer(object):
       self.actor = self.actor.cuda()
       if hasattr(self, 'critic'):
         self.critic = self.critic.cuda()
-    self.optimizer_actor = optim.RMSprop(list(self.actor.parameters()), lr=FLAGS.lr, alpha=0.99, eps=1e-5)
+
+    optimizer_fn = functools.partial(optim.Adam, lr=FLAGS.lr, amsgrad=True)
+    self.optimizer_actor = optimizer_fn(list(self.actor.parameters()))
     if hasattr(self, 'critic'):
-      self.optimizer_critic = optim.RMSprop(list(self.actor.parameters()), lr=FLAGS.lr, alpha=0.99, eps=1e-5)
+      self.optimizer_critic = optimizer_fn(list(self.critic.parameters()))
 
     self.processed_frames = 0
 
@@ -339,8 +342,8 @@ class Trainer(object):
     if not GLOBAL.eval_mode:
       actor_grad_norm = utils.grad_norm(self.actor)
       utils.add_summary('scalar', 'actor_grad_norm', actor_grad_norm)
-      # if actor_grad_norm < 1e-8:
-      #   logging.warning('Small gradient detected! Model may not updating.')
+      if actor_grad_norm < 1e-8:
+        logging.warning('Small gradient detected! Model may not updating.')
       if hasattr(self, 'critic'):
         utils.add_summary('scalar', 'critic_grad_norm', utils.grad_norm(self.critic))
 
