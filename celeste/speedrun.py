@@ -459,19 +459,22 @@ class Trainer(object):
 def main(argv):
   del argv  # unused
 
+  os.makedirs(FLAGS.logdir, exist_ok=True)
+  summary_dir = os.path.join(FLAGS.logdir, 'eval' if FLAGS.evaluate else 'train')
+  os.makedirs(summary_dir, exist_ok=True)
+  GLOBAL.summary_writer = SummaryWriter(summary_dir)
+
   key_flags = FLAGS.get_key_flags_for_module(os.path.basename(__file__))
-  logging.info('\n%s', pprint.pformat({flag.name: flag.value for flag in key_flags}))
+  flags_dict = {flag.name: flag.value for flag in key_flags}
+  logging.info('\n%s', pprint.pformat(flags_dict))
+  for k, v in flags_dict.items():
+    GLOBAL.summary_writer.add_text(k, str(v))
 
   if FLAGS.save_config:
     with open(FLAGS.save_config, 'w') as f:
       for flag in sorted(key_flags, key=lambda x: x.name):
         if flag.name != 'save_config':
           f.write(flag.serialize() + '\n')
-
-  os.makedirs(FLAGS.logdir, exist_ok=True)
-  summary_dir = os.path.join(FLAGS.logdir, 'eval' if FLAGS.evaluate else 'train')
-  os.makedirs(summary_dir, exist_ok=True)
-  GLOBAL.summary_writer = SummaryWriter(summary_dir)
 
   tensorboard = subprocess.Popen(['tensorboard', '--logdir', os.path.abspath(FLAGS.logdir)],
                                  stderr=subprocess.DEVNULL)
