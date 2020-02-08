@@ -57,6 +57,7 @@ flags.DEFINE_integer('goal_x', 0, 'override goal x coordinate')
 
 flags.DEFINE_float('lr', 0.0005, 'learning rate')
 flags.DEFINE_float('actor_start_delay', 10, 'delay training of the actor for this many episodes')
+flags.DEFINE_float('actor_loss_weight', 1.0, 'weight for actor loss')
 flags.DEFINE_float('value_loss_weight', 1.0, 'weight for value loss')
 flags.DEFINE_float('entropy_loss_weight', 0.0001, 'weight for entropy loss')
 flags.DEFINE_boolean('differential_reward', True, 'Do we use differential rewards?')
@@ -69,6 +70,7 @@ flags.DEFINE_float('clip_grad_norm', 1000.0, 'value to clip gradient norm to.')
 flags.DEFINE_float('clip_grad_value', 0.0, 'value to clip gradients to.')
 flags.DEFINE_integer('hold_buttons_for', 4, 'hold all buttons for at least this number of frames')
 flags.DEFINE_boolean('multitask', True, 'do we use the same network for both A and C?')
+flags.DEFINE_string('probs_fn', 'softmax', 'function to convert outputs to probs. softmax or square')
 
 flags.DEFINE_float('random_goal_prob', 0.0, 'probability that we choose a random goal')
 flags.DEFINE_float('random_action_prob', 0.1, 'probability that we choose a random action')
@@ -94,13 +96,13 @@ class Trainer(object):
     if FLAGS.multitask:
       self.actor = utils.import_class(FLAGS.actor)(
           frame_channels, extra_channels, out_dim=[1, self.env.num_actions()],
-          use_softmax=[False, True])
+          output_probs=[False, True])
     else:
       self.actor = utils.import_class(FLAGS.actor)(
           frame_channels, extra_channels, out_dim=self.env.num_actions())
       if not FLAGS.evaluate:
         self.critic = utils.import_class(FLAGS.critic)(
-            frame_channels, extra_channels, out_dim=1, use_softmax=False)
+            frame_channels, extra_channels, out_dim=1, output_probs=False)
     if FLAGS.use_cuda:
       self.actor = self.actor.cuda()
       if hasattr(self, 'critic'):
@@ -279,7 +281,7 @@ class Trainer(object):
         if FLAGS.debug:
           grads = utils.get_grads(self.all_parameters)
         for name, loss in [
-            ('actor_loss', actor_loss),
+            ('actor_loss', FLAGS.actor_loss_weight * actor_loss),
             ('value_loss', FLAGS.value_loss_weight * value_loss),
             ('entropy_loss', FLAGS.entropy_loss_weight * entropy_loss),
         ]:
@@ -288,7 +290,7 @@ class Trainer(object):
           if FLAGS.debug:
             new_grads = utils.get_grads(self.all_parameters)
             grad_norm = utils.grad_norm(new_grads, grads)
-            utils.add_summary('scalar', name + '_grad_norm', grad_norm)
+            utils.add_summary('scalar', name + '_grad_norm/%d' % i, grad_norm)
             grads = new_grads
 
       if (i + 1) % FLAGS.action_summary_frames == 0:

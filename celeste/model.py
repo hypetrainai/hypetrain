@@ -129,14 +129,14 @@ class RecurrentModel(Model):
 
 class NatureCnn(ConvModel):
 
-  def __init__(self, frame_channels, extra_channels, out_dim, use_softmax=True):
+  def __init__(self, frame_channels, extra_channels, out_dim, output_probs=True):
     super(NatureCnn, self).__init__()
 
     if not isinstance(out_dim, list):
       out_dim = [out_dim]
-      use_softmax = [use_softmax]
+      output_probs = [output_probs]
     self.out_dim = out_dim
-    self.use_softmax = use_softmax
+    self.output_probs = output_probs
 
     in_dim = frame_channels * FLAGS.context_frames + extra_channels
 
@@ -164,10 +164,10 @@ class NatureCnn(ConvModel):
     out = out.view(inputs.shape[0], -1)
     out = self.proj(out)
     outputs = []
-    for out_proj, use_softmax in zip(self.out_proj, self.use_softmax):
+    for out_proj, output_probs in zip(self.out_proj, self.output_probs):
       res = out_proj(out)
-      if use_softmax:
-        res = utils.log_softmax(res)
+      if output_probs:
+        res = utils.outputs_to_log_probs(res)
       outputs.append(res)
     if len(outputs) == 1:
       outputs = outputs[0]
@@ -176,14 +176,14 @@ class NatureCnn(ConvModel):
 
 class ResNetIm2Value(ConvModel):
 
-  def __init__(self, frame_channels, extra_channels, out_dim, use_softmax=True):
+  def __init__(self, frame_channels, extra_channels, out_dim, output_probs=True):
     super(ResNetIm2Value, self).__init__()
 
     if not isinstance(out_dim, list):
       out_dim = [out_dim]
-      use_softmax = [use_softmax]
+      output_probs = [output_probs]
     self.out_dim = out_dim
-    self.use_softmax = use_softmax
+    self.output_probs = output_probs
 
     in_dim = frame_channels * FLAGS.context_frames + extra_channels
     feat_height, feat_width = FLAGS.input_height, FLAGS.input_width
@@ -241,10 +241,10 @@ class ResNetIm2Value(ConvModel):
     out = out.view(inputs.shape[0], -1)
     out = self.operation_stack_linear(out)
     outputs = []
-    for proj, use_softmax in zip(self.out_proj, self.use_softmax):
+    for proj, output_probs in zip(self.out_proj, self.output_probs):
       res = proj(out)
-      if use_softmax:
-        res = utils.log_softmax(res)
+      if output_probs:
+        res = utils.outputs_to_log_probs(res)
       outputs.append(res)
     if len(outputs) == 1:
       outputs = outputs[0]
@@ -268,7 +268,7 @@ def upshuffle(in_planes, out_planes, upscale_factor):
 
 class FPNNet(ConvModel):
 
-  def __init__(self, frame_channels, extra_channels, out_dim, pretrained=True, fixed_feature_weights=False, use_softmax=True):
+  def __init__(self, frame_channels, extra_channels, out_dim, pretrained=True, fixed_feature_weights=False, output_probs=True):
     super(FPNNet, self).__init__()
 
     in_dim = frame_channels * FLAGS.context_frames + extra_channels
@@ -280,7 +280,7 @@ class FPNNet(ConvModel):
     if fixed_feature_weights:
       for p in resnet.parameters():
         p.requires_grad = False
-    self.use_softmax = use_softmax
+    self.output_probs = output_probs
     separate_dims = in_dim - 3
     self.layer0_sep = nn.Sequential(submodules.conv(separate_dims, 64, kernel_size=7, stride=2, pad=4),
                                     nn.MaxPool2d(2, 2))
@@ -393,8 +393,8 @@ class FPNNet(ConvModel):
     vol = self.predict5(self.predict4(self.predict3(self.predict2(self.predict1(vol))))).view(vol.shape[0],-1)
     out = self.linops(vol)
 
-    if self.use_softmax:
-      out = utils.log_softmax(out)
+    if self.output_probs:
+      out = utils.outputs_to_log_probs(out)
 
     return out
 
@@ -409,12 +409,12 @@ class FPNNet(ConvModel):
 
 class SimpleLSTMModel(RecurrentModel):
 
-  def __init__(self, frame_channels, extra_channels, out_dim, use_softmax=True):
+  def __init__(self, frame_channels, extra_channels, out_dim, output_probs=True):
     super(SimpleLSTMModel, self).__init__()
 
     self.hidden_dim = 512
     self.lstm_layers = 2
-    self.use_softmax = use_softmax
+    self.output_probs = output_probs
 
     in_dim = frame_channels + extra_channels
     feat_height, feat_width = FLAGS.input_height, FLAGS.input_width
@@ -463,6 +463,6 @@ class SimpleLSTMModel(RecurrentModel):
     if i == len(self.contexts) - 1:
       self.contexts.append(new_context)
     out = self.out_proj(out.squeeze(0))
-    if self.use_softmax:
-      out = utils.log_softmax(out)
+    if self.output_probs:
+      out = utils.outputs_to_log_probs(out)
     return out

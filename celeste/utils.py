@@ -27,8 +27,13 @@ def add_summary(summary_type, name, value, **kwargs):
   summary_fn(summary_prefix + name, value, GLOBAL.episode_number, **kwargs)
 
 
-def log_softmax(logits):
-  return logits - torch.logsumexp(logits, 1, keepdim=True)
+def outputs_to_log_probs(outputs):
+  if FLAGS.probs_fn == 'softmax':
+    return outputs - torch.logsumexp(outputs, 1, keepdim=True)
+  elif FLAGS.probs_fn == 'square':
+    return torch.log(outputs**2 / torch.sum(outputs**2, 1, keepdim=True))
+  else:
+    raise ValueError('Invalid probs_fn %s' % FLAGS.probs_fn)
 
 
 def sample_log_softmax(log_softmax):
