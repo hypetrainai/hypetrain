@@ -30,8 +30,8 @@ def add_summary(summary_type, name, value, **kwargs):
 def outputs_to_log_probs(outputs):
   if FLAGS.probs_fn == 'softmax':
     return outputs - torch.logsumexp(outputs, 1, keepdim=True)
-  elif FLAGS.probs_fn == 'square':
-    return torch.log(outputs**2 / torch.sum(outputs**2, 1, keepdim=True))
+  elif FLAGS.probs_fn == 'softplus':
+    return torch.log(F.softplus(outputs) / torch.sum(F.softplus(outputs), 1, keepdim=True))
   else:
     raise ValueError('Invalid probs_fn %s' % FLAGS.probs_fn)
 

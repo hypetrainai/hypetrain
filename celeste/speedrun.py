@@ -70,7 +70,7 @@ flags.DEFINE_float('clip_grad_norm', 1000.0, 'value to clip gradient norm to.')
 flags.DEFINE_float('clip_grad_value', 0.0, 'value to clip gradients to.')
 flags.DEFINE_integer('hold_buttons_for', 4, 'hold all buttons for at least this number of frames')
 flags.DEFINE_boolean('multitask', True, 'do we use the same network for both A and C?')
-flags.DEFINE_string('probs_fn', 'softmax', 'function to convert outputs to probs. softmax or square')
+flags.DEFINE_string('probs_fn', 'softmax', 'function to convert outputs to probs. softmax or softplus')
 
 flags.DEFINE_float('random_goal_prob', 0.0, 'probability that we choose a random goal')
 flags.DEFINE_float('random_action_prob', 0.1, 'probability that we choose a random action')
