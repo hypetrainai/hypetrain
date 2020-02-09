@@ -10,3 +10,6 @@
 [submodule "celeste/third_party/rl-baselines-zoo"]
 	path = celeste/third_party/rl-baselines-zoo
 	url = https://github.com/araffin/rl-baselines-zoo.git
+[submodule "celeste/third_party/baselines"]
+	path = celeste/third_party/baselines
+	url = https://github.com/openai/baselines.git
