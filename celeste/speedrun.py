@@ -281,12 +281,16 @@ class Trainer(object):
       if not GLOBAL.eval_mode:
         if FLAGS.debug:
           grads = utils.get_grads(self.all_parameters)
+        one = torch.Tensor([1.0])
+        if FLAGS.use_cuda:
+          one = one.cuda()
+        num_masked = torch.max(torch.sum(mask_tensor[ii]), one)
         for name, loss in [
             ('actor_loss', FLAGS.actor_loss_weight * actor_loss),
             ('value_loss', FLAGS.value_loss_weight * value_loss),
             ('entropy_loss', FLAGS.entropy_loss_weight * entropy_loss),
         ]:
-          loss = torch.sum(mask_tensor[ii] * loss) / torch.sum(mask_tensor[ii])
+          loss = torch.sum(mask_tensor[ii] * loss) / num_masked
           loss.backward(retain_graph=True)
           if FLAGS.debug:
             new_grads = utils.get_grads(self.all_parameters)
@@ -320,11 +324,11 @@ class Trainer(object):
 
     self.env.finish_episode(self.processed_frames, self.frame_buffer)
 
-    mask_sum = np.sum(self.mask)
-    avg_episode_length = mask_sum / FLAGS.batch_size
+    avg_episode_length = np.sum(self.mask) / FLAGS.batch_size
     utils.add_summary('scalar', 'avg_episode_length', avg_episode_length)
     avg_total_reward = np.mean(np.sum(self.rewards[:self.processed_frames], axis=0))
     utils.add_summary('scalar', 'avg_total_reward', avg_total_reward)
+    mask_sum = np.maximum(np.sum(self.mask), 1.0)
     avg_reward = np.sum(self.rewards[:self.processed_frames]) / mask_sum
     utils.add_summary('scalar', 'avg_reward', avg_reward)
 
