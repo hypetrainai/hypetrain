@@ -12,7 +12,7 @@ def init(m, fan_in, fan_out, nonlinearity_after='linear', last_conv_of_resnet_bl
     gamma = math.sqrt(1.0 / last_conv_of_resnet_block_with_size)
   else:
     gamma = nn.init.calculate_gain(nonlinearity_after)
-  nn.init.orthogonal_(m.weight, gain = gamma * math.sqrt(fan_in / fan_out))
+  nn.init.orthogonal_(m.weight, gain=gamma * math.sqrt(fan_in / fan_out))
   nn.init.constant_(m.bias, 0)
 
 

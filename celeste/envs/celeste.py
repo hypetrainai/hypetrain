@@ -314,7 +314,7 @@ class Env(env.Env):
       final_reward -= 50.0*10
       y, x = self.trajectory[-2]
 
-    curr_reward = 50.0*self.dist_reward(x, y)    
+    curr_reward = 50.0*self.dist_reward(x, y)
     if self.differential_reward:
         final_reward += self.get_differential_reward(curr_reward)
     else:

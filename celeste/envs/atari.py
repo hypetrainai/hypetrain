@@ -105,5 +105,5 @@ class Env(env.Env):
     else:
       observation, reward, done, _ = self.train_env.step(actions)
     self.next_frame = observation.squeeze(-1).unsqueeze(1)
-    self.next_reward = torch.sum(reward).cpu().numpy()
+    self.next_reward = reward.cpu().numpy()
     self.done = done.cpu().numpy()

@@ -48,6 +48,13 @@ def sample_log_softmax(log_softmax):
     return dist.sample().numpy()
 
 
+def explained_variance(ypred, y):
+  """https://github.com/openai/baselines/blob/ea25b9e8b234e6ee1bca43083f8f3cf974143998/baselines/common/math_util.py#L25"""
+  assert y.ndim == 1 and ypred.ndim == 1
+  vary = np.var(y)
+  return np.nan if vary==0 else 1 - np.var(y - ypred) / vary
+
+
 def generate_gaussian_heat_map(image_shape, y, x, sigma=10, amplitude=1.0):
   H, W = image_shape
   y_range = np.arange(0, H)

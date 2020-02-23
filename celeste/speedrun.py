@@ -109,7 +109,7 @@ class Trainer(object):
         self.critic = self.critic.cuda()
 
     self.all_parameters = list(self.actor.parameters())
-    optimizer_fn = functools.partial(optim.Adam, lr=FLAGS.lr, amsgrad=True)
+    optimizer_fn = functools.partial(optim.RMSprop, lr=FLAGS.lr, alpha=0.99, eps=1e-5)
     self.optimizer_actor = optimizer_fn(list(self.actor.parameters()))
     if hasattr(self, 'critic'):
       self.all_parameters += list(self.critic.parameters())
@@ -217,12 +217,6 @@ class Trainer(object):
       mask_tensor = mask_tensor.cuda()
       sampled_idx_tensor = sampled_idx_tensor.cuda()
 
-    R = 0
-    # Only enable for dense rewards.
-    # "Fixes" truncation at end by adopting
-    #   final_reward * 1 + gamma + gamma^2 + ...
-    # R = rewards_tensor[-1] * 1.0 / (1.0 - FLAGS.reward_decay_multiplier)
-    self.Rs[self.processed_frames] = R
     if FLAGS.multitask:
       final_V = self.actor.forward(self.processed_frames)[0].detach().cpu().numpy()
     elif hasattr(self, 'critic'):
@@ -230,6 +224,13 @@ class Trainer(object):
     else:
       final_V = [0] * FLAGS.batch_size
     self.Vs[self.processed_frames] = np.reshape(final_V, [FLAGS.batch_size])
+    # Bootstrap off V for sequences that haven't terminated.
+    R = self.Vs[self.processed_frames]
+    R[abs(self.mask[self.processed_frames - 1] - 1.0) < 1e-6] = 0
+    self.Rs[self.processed_frames] = R
+    R = torch.from_numpy(R)
+    if FLAGS.use_cuda:
+      R = R.cuda()
 
     for i in reversed(range(self.next_frame_to_process, self.processed_frames)):
       ii = i - self.next_frame_to_process
@@ -320,7 +321,10 @@ class Trainer(object):
     self.env.finish_episode(self.processed_frames, self.frame_buffer)
 
     mask_sum = np.sum(self.mask)
-    utils.add_summary('scalar', 'avg_episode_length', mask_sum / FLAGS.batch_size)
+    avg_episode_length = mask_sum / FLAGS.batch_size
+    utils.add_summary('scalar', 'avg_episode_length', avg_episode_length)
+    avg_total_reward = np.mean(np.sum(self.rewards[:self.processed_frames], axis=0))
+    utils.add_summary('scalar', 'avg_total_reward', avg_total_reward)
     avg_reward = np.sum(self.rewards[:self.processed_frames]) / mask_sum
     utils.add_summary('scalar', 'avg_reward', avg_reward)
 
@@ -328,10 +332,10 @@ class Trainer(object):
     plt.plot(self.rewards[:self.processed_frames, 0])
     utils.add_summary('figure', 'out/reward', fig)
     fig = plt.figure()
-    plt.plot(self.Rs[:self.processed_frames - 1, 0])
+    plt.plot(self.Rs[:self.processed_frames, 0])
     utils.add_summary('figure', 'out/reward_cumul', fig)
     fig = plt.figure()
-    plt.plot(self.Vs[:self.processed_frames - 1, 0])
+    plt.plot(self.Vs[:self.processed_frames, 0])
     utils.add_summary('figure', 'out/value', fig)
     fig = plt.figure()
     plt.plot(self.As[:self.processed_frames, 0])
@@ -351,9 +355,14 @@ class Trainer(object):
     plt.plot(entropy_losses[0])
     utils.add_summary('figure', 'loss/entropy', fig)
     utils.add_summary('scalar', 'loss/entropy_avg', np.sum(entropy_losses) / mask_sum)
-    logging.info('Reward: %.3f Value loss: %.3f Actor loss: %.3f Entropy loss: %.3f',
-        avg_reward, np.sum(value_losses) / mask_sum,
-        np.sum(actor_losses) / mask_sum, np.sum(entropy_losses) / mask_sum)
+    logging.info(('=======================\n'
+                  'Total Reward: %.3f Reward: %.3f Average length: %.1f Explained variance: %.3f\n'
+                  'Value loss: %.3f Actor loss: %.3f Entropy loss: %.3f'),
+        avg_total_reward, avg_reward, avg_episode_length,
+        utils.explained_variance(self.Vs[:, :self.processed_frames].flatten(),
+                                 self.Rs[:, :self.processed_frames].flatten()),
+        np.sum(value_losses) / mask_sum, np.sum(actor_losses) / mask_sum,
+        np.sum(entropy_losses) / mask_sum)
 
     if not GLOBAL.eval_mode:
       actor_grad_norm = utils.grad_norm(utils.get_grads(self.actor.parameters()))
@@ -416,8 +425,10 @@ class Trainer(object):
 
     if self.processed_frames > 0:
       reward, done = self.env.get_reward()
-      assert isinstance(reward, np.ndarray), type(reward)
-      assert isinstance(done, np.ndarray), type(done)
+      assert reward.shape == (FLAGS.batch_size,), reward.shape
+      assert done.shape == (FLAGS.batch_size,), done.shape
+      if self.processed_frames > 1:
+        done = np.maximum(done, 1.0 - self.mask[self.processed_frames - 2])
       self.mask[self.processed_frames - 1] = 1.0 - done
       self.rewards[self.processed_frames - 1] = reward * (1.0 - done)
       if done.all() or self.processed_frames % FLAGS.n_steps == 0:
