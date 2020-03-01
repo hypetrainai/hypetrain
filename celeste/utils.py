@@ -38,14 +38,14 @@ def outputs_to_log_probs(outputs):
 
 def sample_log_softmax(log_softmax):
   if GLOBAL.eval_mode:
-    return np.argmax(log_softmax.numpy(), axis=1)
+    return torch.argmax(log_softmax, dim=1).cpu().numpy()
   elif (FLAGS.random_action_prob > 0 and
         np.random.random() <= FLAGS.random_action_prob):
     N, n_classes = log_softmax.shape
     return np.random.randint(n_classes, size=N)
   else:
     dist = torch.distributions.categorical.Categorical(probs=torch.exp(log_softmax))
-    return dist.sample().numpy()
+    return dist.sample().cpu().numpy()
 
 
 def explained_variance(ypred, y):

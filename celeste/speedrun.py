@@ -189,8 +189,7 @@ class Trainer(object):
     self.next_frame_to_process = 0
     self.weights = np.zeros((FLAGS.episode_length, FLAGS.batch_size), dtype=np.bool)
     self.rewards = np.zeros((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
-    self.log_softmaxes = np.zeros((FLAGS.episode_length, FLAGS.batch_size, self.env.num_actions()),
-                                  dtype=np.float32)
+    self.log_softmaxes = [None] * FLAGS.episode_length
     self.sampled_idx = np.zeros((FLAGS.episode_length, FLAGS.batch_size), dtype=np.int64)
     self.Rs = np.zeros((FLAGS.episode_length + 1, FLAGS.batch_size), dtype=np.float32)
     self.Vs = np.zeros((FLAGS.episode_length + 1, FLAGS.batch_size), dtype=np.float32)
@@ -263,6 +262,7 @@ class Trainer(object):
       value_loss = A**2
       self.value_losses[i] = value_loss.detach().cpu().numpy()
 
+      R = R.detach()
       V = V.detach()
       A = A.detach()
 
@@ -270,7 +270,7 @@ class Trainer(object):
       self.Vs[i] = V.cpu().numpy()
       self.As[i] = A.cpu().numpy()
 
-      assert np.array_equal(self.log_softmaxes[i], log_softmax.detach().cpu().numpy())
+      assert torch.equal(self.log_softmaxes[i], log_softmax)
       log_action_probs = log_softmax.gather(1, sampled_idx_tensor[ii].unsqueeze(-1))
       log_action_probs = torch.squeeze(log_action_probs, -1)
       actor_loss = -log_action_probs * A
@@ -451,7 +451,6 @@ class Trainer(object):
       log_softmax = self.actor.forward(self.processed_frames)
       if FLAGS.multitask:
         log_softmax = log_softmax[1]
-      log_softmax = log_softmax.detach().cpu()
     self.log_softmaxes[self.processed_frames] = log_softmax
     idxs = utils.sample_log_softmax(log_softmax)
     self.sampled_idx[self.processed_frames] = idxs

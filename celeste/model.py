@@ -61,7 +61,7 @@ class ConvModel(Model):
     if extra_channels is not None:
       assert extra_channels.dim() == 4
     if i == 0:
-      self.frame_buffer = torch.stack([input_frame] * (FLAGS.context_frames - 1), 0)
+      self.frame_buffer = torch.stack([torch.zeros_like(input_frame)] * (FLAGS.context_frames - 1), 0)
     self.frame_buffer = torch.cat([self.frame_buffer, input_frame.unsqueeze(0)], 0)
     self.extra_channels.append(extra_channels)
     utils.assert_equal(i + FLAGS.context_frames, self.frame_buffer.shape[0])
