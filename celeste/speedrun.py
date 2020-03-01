@@ -13,6 +13,7 @@ import os
 import pprint
 import queue
 import subprocess
+import time
 from tensorboardX import SummaryWriter
 import torch
 from torch import nn
@@ -200,6 +201,7 @@ class Trainer(object):
     if FLAGS.use_cuda:
       torch.cuda.synchronize()
       torch.cuda.empty_cache()
+    self.episode_start_time = time.time()
 
   def _bprop(self):
     assert self.processed_frames > 0
@@ -322,6 +324,7 @@ class Trainer(object):
 
   def _finish_episode(self):
     assert self.processed_frames > 0
+    episode_time = time.time() - self.episode_start_time
 
     self.env.finish_episode(self.processed_frames, self.frame_buffer)
 
@@ -370,14 +373,14 @@ class Trainer(object):
     utils.add_summary('scalar', 'loss/entropy_avg', avg_entropy_loss)
     logging.info(('=======================\n'
                   'Total Reward: %.3f Reward: %.3f Average length: %.1f Explained variance: %.3f\n'
-                  'Value loss: %.3f Actor loss: %.3f Entropy loss: %.3f'),
+                  'Value loss: %.3f Actor loss: %.3f Entropy loss: %.3f FPS: %.1f'),
         avg_total_reward, avg_reward, avg_episode_length, explained_variance,
-        avg_value_loss, avg_actor_loss, avg_entropy_loss)
+        avg_value_loss, avg_actor_loss, avg_entropy_loss, total_frames / episode_time)
 
     if not GLOBAL.eval_mode:
       actor_grad_norm = utils.grad_norm(utils.get_grads(self.actor.parameters()))
       utils.add_summary('scalar', 'actor_grad_norm', actor_grad_norm)
-      if actor_grad_norm < 1e-8:
+      if actor_grad_norm < 1e-5:
         logging.warning('Small gradient detected! Model may not updating.')
       if hasattr(self, 'critic'):
         utils.add_summary('scalar', 'critic_grad_norm',
