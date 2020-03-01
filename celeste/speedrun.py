@@ -187,17 +187,17 @@ class Trainer(object):
 
     self.frame_buffer = []
     self.next_frame_to_process = 0
-    self.mask = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
-    self.rewards = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
-    self.log_softmaxes = np.empty((FLAGS.episode_length, FLAGS.batch_size, self.env.num_actions()),
+    self.weights = np.zeros((FLAGS.episode_length, FLAGS.batch_size), dtype=np.bool)
+    self.rewards = np.zeros((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
+    self.log_softmaxes = np.zeros((FLAGS.episode_length, FLAGS.batch_size, self.env.num_actions()),
                                   dtype=np.float32)
-    self.sampled_idx = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.int64)
-    self.Rs = np.empty((FLAGS.episode_length + 1, FLAGS.batch_size), dtype=np.float32)
-    self.Vs = np.empty((FLAGS.episode_length + 1, FLAGS.batch_size), dtype=np.float32)
-    self.As = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
-    self.value_losses = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
-    self.actor_losses = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
-    self.entropy_losses = np.empty((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
+    self.sampled_idx = np.zeros((FLAGS.episode_length, FLAGS.batch_size), dtype=np.int64)
+    self.Rs = np.zeros((FLAGS.episode_length + 1, FLAGS.batch_size), dtype=np.float32)
+    self.Vs = np.zeros((FLAGS.episode_length + 1, FLAGS.batch_size), dtype=np.float32)
+    self.As = np.zeros((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
+    self.value_losses = np.zeros((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
+    self.actor_losses = np.zeros((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
+    self.entropy_losses = np.zeros((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
     if FLAGS.use_cuda:
       torch.cuda.synchronize()
       torch.cuda.empty_cache()
@@ -209,12 +209,12 @@ class Trainer(object):
     if hasattr(self, 'critic'):
       self.optimizer_critic.zero_grad()
 
+    weight_tensor = torch.from_numpy(self.weights[self.next_frame_to_process:self.processed_frames]).float()
     rewards_tensor = torch.from_numpy(self.rewards[self.next_frame_to_process:self.processed_frames])
-    mask_tensor = torch.from_numpy(self.mask[self.next_frame_to_process:self.processed_frames])
     sampled_idx_tensor = torch.from_numpy(self.sampled_idx[self.next_frame_to_process:self.processed_frames])
     if FLAGS.use_cuda:
+      weight_tensor = weight_tensor.cuda()
       rewards_tensor = rewards_tensor.cuda()
-      mask_tensor = mask_tensor.cuda()
       sampled_idx_tensor = sampled_idx_tensor.cuda()
 
     if FLAGS.multitask:
@@ -226,8 +226,8 @@ class Trainer(object):
     self.Vs[self.processed_frames] = np.reshape(final_V, [FLAGS.batch_size])
     # Bootstrap off V for sequences that haven't terminated.
     R = self.Vs[self.processed_frames]
-    # Mask == 0 means the sequence terminated so set extra reward to 0.
-    R[self.mask[self.processed_frames - 1] < 1e-6] = 0
+    # Weight == 0 means the sequence terminated so set extra reward to 0.
+    R[self.weights[self.processed_frames - 1] == 0] = 0
     self.Rs[self.processed_frames] = R
     R = torch.from_numpy(R)
     if FLAGS.use_cuda:
@@ -285,13 +285,13 @@ class Trainer(object):
         one = torch.Tensor([1.0])
         if FLAGS.use_cuda:
           one = one.cuda()
-        num_masked = torch.max(torch.sum(mask_tensor[ii]), one)
+        batch_weight = torch.max(torch.sum(weight_tensor[ii]), one)
         for name, loss in [
             ('actor_loss', FLAGS.actor_loss_weight * actor_loss),
             ('value_loss', FLAGS.value_loss_weight * value_loss),
             ('entropy_loss', FLAGS.entropy_loss_weight * entropy_loss),
         ]:
-          loss = torch.sum(mask_tensor[ii] * loss) / num_masked
+          loss = torch.sum(weight_tensor[ii] * loss) / batch_weight
           loss.backward(retain_graph=True)
           if FLAGS.debug:
             new_grads = utils.get_grads(self.all_parameters)
@@ -325,50 +325,54 @@ class Trainer(object):
 
     self.env.finish_episode(self.processed_frames, self.frame_buffer)
 
-    avg_episode_length = np.sum(self.mask[:self.processed_frames]) / FLAGS.batch_size
+    ep_len = np.sum(self.weights, axis=0)
+    avg_episode_length = np.mean(ep_len)
     utils.add_summary('scalar', 'avg_episode_length', avg_episode_length)
-    avg_total_reward = np.mean(np.sum(self.rewards[:self.processed_frames], axis=0))
+    avg_total_reward = np.mean(np.sum(self.weights * self.rewards, axis=0))
     utils.add_summary('scalar', 'avg_total_reward', avg_total_reward)
-    mask_sum = np.maximum(np.sum(self.mask[:self.processed_frames]), 1.0)
-    avg_reward = np.sum(self.rewards[:self.processed_frames]) / mask_sum
+    avg_reward = avg_total_reward / np.maximum(avg_episode_length, 1.0)
     utils.add_summary('scalar', 'avg_reward', avg_reward)
 
     fig = plt.figure()
-    plt.plot(self.rewards[:self.processed_frames, 0])
+    plt.plot(self.rewards[:ep_len[0], 0])
     utils.add_summary('figure', 'out/reward', fig)
     fig = plt.figure()
-    plt.plot(self.Rs[:self.processed_frames, 0])
+    plt.plot(self.Rs[:ep_len[0], 0])
     utils.add_summary('figure', 'out/reward_cumul', fig)
     fig = plt.figure()
-    plt.plot(self.Vs[:self.processed_frames, 0])
+    plt.plot(self.Vs[:ep_len[0], 0])
     utils.add_summary('figure', 'out/value', fig)
     fig = plt.figure()
-    plt.plot(self.As[:self.processed_frames, 0])
+    plt.plot(self.As[:ep_len[0], 0])
     utils.add_summary('figure', 'out/advantage', fig)
     fig = plt.figure()
-    explained_variance = utils.explained_variance(
-        self.Vs[:self.processed_frames].flatten(),
-        self.Rs[:self.processed_frames].flatten())
+    all_Vs = []
+    all_Rs = []
+    for i in range(FLAGS.batch_size):
+      all_Vs.extend(self.Vs[:ep_len[i], i].tolist())
+      all_Rs.extend(self.Rs[:ep_len[i], i].tolist())
+    explained_variance = utils.explained_variance(np.array(all_Vs), np.array(all_Rs))
     utils.add_summary('scalar', 'loss/explained_variance', explained_variance)
-    value_losses = self.value_losses[:self.processed_frames]
-    plt.plot(value_losses[:, 0])
+    total_frames = np.maximum(np.sum(ep_len), 1.0)
+    plt.plot(self.value_losses[:ep_len[0], 0])
     utils.add_summary('figure', 'loss/value', fig)
-    utils.add_summary('scalar', 'loss/value_avg', np.sum(value_losses) / mask_sum)
+    avg_value_loss = np.sum(self.weights * self.value_losses) / total_frames
+    utils.add_summary('scalar', 'loss/value_avg', avg_value_loss)
     fig = plt.figure()
-    actor_losses = self.actor_losses[:self.processed_frames]
-    plt.plot(actor_losses[:, 0])
+    plt.plot(self.actor_losses[:ep_len[0], 0])
     utils.add_summary('figure', 'loss/actor', fig)
-    utils.add_summary('scalar', 'loss/actor_avg', np.sum(actor_losses) / mask_sum)
+    avg_actor_loss = np.sum(self.weights * self.actor_losses) / total_frames
+    utils.add_summary('scalar', 'loss/actor_avg', avg_actor_loss)
     fig = plt.figure()
-    entropy_losses = self.entropy_losses[:self.processed_frames]
-    plt.plot(entropy_losses[:, 0])
+    plt.plot(self.entropy_losses[:ep_len[0], 0])
     utils.add_summary('figure', 'loss/entropy', fig)
-    utils.add_summary('scalar', 'loss/entropy_avg', np.sum(entropy_losses) / mask_sum)
+    avg_entropy_loss = np.sum(self.weights * self.entropy_losses) / total_frames
+    utils.add_summary('scalar', 'loss/entropy_avg', avg_entropy_loss)
     logging.info(('=======================\n'
                   'Total Reward: %.3f Reward: %.3f Average length: %.1f Explained variance: %.3f\n'
                   'Value loss: %.3f Actor loss: %.3f Entropy loss: %.3f'),
         avg_total_reward, avg_reward, avg_episode_length, explained_variance,
-        np.sum(value_losses) / mask_sum, np.sum(actor_losses) / mask_sum, np.sum(entropy_losses) / mask_sum)
+        avg_value_loss, avg_actor_loss, avg_entropy_loss)
 
     if not GLOBAL.eval_mode:
       actor_grad_norm = utils.grad_norm(utils.get_grads(self.actor.parameters()))
@@ -434,8 +438,9 @@ class Trainer(object):
       assert reward.shape == (FLAGS.batch_size,), reward.shape
       assert done.shape == (FLAGS.batch_size,), done.shape
       if self.processed_frames > 1:
-        done = np.maximum(done, 1.0 - self.mask[self.processed_frames - 2])
-      self.mask[self.processed_frames - 1] = 1.0 - done
+        # If the previous frame was done, we propagate it to this frame.
+        done = np.maximum(done, 1 - self.weights[self.processed_frames - 2])
+      self.weights[self.processed_frames - 1] = done == 0
       self.rewards[self.processed_frames - 1] = reward * (1.0 - done)
       if done.all() or self.processed_frames % FLAGS.n_steps == 0:
         self._bprop()
