@@ -6,13 +6,16 @@ import math
 import numpy as np
 
 
-def init(m, fan_in, fan_out, nonlinearity_after='linear', last_conv_of_resnet_block_with_size=0):
+def init(m, fan_in=1, fan_out=1, nonlinearity_after='linear',
+         last_conv_of_resnet_block_with_size=0, scale=None):
   """https://arxiv.org/pdf/1906.02341.pdf"""
-  if last_conv_of_resnet_block_with_size:
-    gamma = math.sqrt(1.0 / last_conv_of_resnet_block_with_size)
-  else:
-    gamma = nn.init.calculate_gain(nonlinearity_after)
-  nn.init.orthogonal_(m.weight, gain=gamma * math.sqrt(fan_in / fan_out))
+  if not scale:
+    if last_conv_of_resnet_block_with_size:
+      gamma = math.sqrt(1.0 / last_conv_of_resnet_block_with_size)
+    else:
+      gamma = nn.init.calculate_gain(nonlinearity_after)
+    scale = gamma * math.sqrt(fan_in / fan_out)
+  nn.init.orthogonal_(m.weight, gain=scale)
   nn.init.constant_(m.bias, 0)
 
 

@@ -30,7 +30,7 @@ flags.DEFINE_string('env', 'envs.celeste.Env', 'class for environment')
 flags.DEFINE_string('env_name', 'PongNoFrameskip-v4', 'environment name (for envs.atari.Env)')
 flags.DEFINE_string('actor', 'model.ResNetIm2Value', 'class for actor network')
 flags.DEFINE_string('critic', 'model.ResNetIm2Value', 'class for critic network')
-flags.DEFINE_string('logdir', 'trained_models/diffreward_50xreward_mtl', 'logdir')
+flags.DEFINE_string('logdir', None, 'logdir')
 flags.DEFINE_string('pretrained_model_path', '', 'pretrained model path')
 flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most recent save in dir')
 flags.DEFINE_boolean('use_cuda', True, 'Use cuda')
@@ -51,7 +51,7 @@ flags.DEFINE_boolean('evaluate', False, 'if true, run a single step of eval and 
 
 flags.DEFINE_string('movie_file', 'movie.ltm', 'if not empty string, load libTAS input movie file')
 flags.DEFINE_string('save_file', 'level1_screen0', 'if not empty string, use save file.')
-flags.DEFINE_string('savestate_path', '/home/joe/projects/hypetrain/celeste/savestates/', 'where to put savestates')
+flags.DEFINE_string('savestate_path', '', 'where to put savestates')
 flags.DEFINE_integer('goal_y', 0, 'override goal y coordinate')
 flags.DEFINE_integer('goal_x', 0, 'override goal x coordinate')
 
@@ -109,7 +109,7 @@ class Trainer(object):
         self.critic = self.critic.cuda()
 
     self.all_parameters = list(self.actor.parameters())
-    optimizer_fn = functools.partial(optim.RMSprop, lr=FLAGS.lr, alpha=0.99, eps=1e-5)
+    optimizer_fn = functools.partial(optim.Adam, lr=FLAGS.lr, amsgrad=True)
     self.optimizer_actor = optimizer_fn(list(self.actor.parameters()))
     if hasattr(self, 'critic'):
       self.all_parameters += list(self.critic.parameters())
@@ -226,7 +226,8 @@ class Trainer(object):
     self.Vs[self.processed_frames] = np.reshape(final_V, [FLAGS.batch_size])
     # Bootstrap off V for sequences that haven't terminated.
     R = self.Vs[self.processed_frames]
-    R[abs(self.mask[self.processed_frames - 1] - 1.0) < 1e-6] = 0
+    # Mask == 0 means the sequence terminated so set extra reward to 0.
+    R[self.mask[self.processed_frames - 1] < 1e-6] = 0
     self.Rs[self.processed_frames] = R
     R = torch.from_numpy(R)
     if FLAGS.use_cuda:
@@ -324,11 +325,11 @@ class Trainer(object):
 
     self.env.finish_episode(self.processed_frames, self.frame_buffer)
 
-    avg_episode_length = np.sum(self.mask) / FLAGS.batch_size
+    avg_episode_length = np.sum(self.mask[:self.processed_frames]) / FLAGS.batch_size
     utils.add_summary('scalar', 'avg_episode_length', avg_episode_length)
     avg_total_reward = np.mean(np.sum(self.rewards[:self.processed_frames], axis=0))
     utils.add_summary('scalar', 'avg_total_reward', avg_total_reward)
-    mask_sum = np.maximum(np.sum(self.mask), 1.0)
+    mask_sum = np.maximum(np.sum(self.mask[:self.processed_frames]), 1.0)
     avg_reward = np.sum(self.rewards[:self.processed_frames]) / mask_sum
     utils.add_summary('scalar', 'avg_reward', avg_reward)
 
@@ -345,28 +346,29 @@ class Trainer(object):
     plt.plot(self.As[:self.processed_frames, 0])
     utils.add_summary('figure', 'out/advantage', fig)
     fig = plt.figure()
+    explained_variance = utils.explained_variance(
+        self.Vs[:self.processed_frames].flatten(),
+        self.Rs[:self.processed_frames].flatten())
+    utils.add_summary('scalar', 'loss/explained_variance', explained_variance)
     value_losses = self.value_losses[:self.processed_frames]
-    plt.plot(value_losses[0])
+    plt.plot(value_losses[:, 0])
     utils.add_summary('figure', 'loss/value', fig)
     utils.add_summary('scalar', 'loss/value_avg', np.sum(value_losses) / mask_sum)
     fig = plt.figure()
     actor_losses = self.actor_losses[:self.processed_frames]
-    plt.plot(actor_losses[0])
+    plt.plot(actor_losses[:, 0])
     utils.add_summary('figure', 'loss/actor', fig)
     utils.add_summary('scalar', 'loss/actor_avg', np.sum(actor_losses) / mask_sum)
     fig = plt.figure()
     entropy_losses = self.entropy_losses[:self.processed_frames]
-    plt.plot(entropy_losses[0])
+    plt.plot(entropy_losses[:, 0])
     utils.add_summary('figure', 'loss/entropy', fig)
     utils.add_summary('scalar', 'loss/entropy_avg', np.sum(entropy_losses) / mask_sum)
     logging.info(('=======================\n'
                   'Total Reward: %.3f Reward: %.3f Average length: %.1f Explained variance: %.3f\n'
                   'Value loss: %.3f Actor loss: %.3f Entropy loss: %.3f'),
-        avg_total_reward, avg_reward, avg_episode_length,
-        utils.explained_variance(self.Vs[:, :self.processed_frames].flatten(),
-                                 self.Rs[:, :self.processed_frames].flatten()),
-        np.sum(value_losses) / mask_sum, np.sum(actor_losses) / mask_sum,
-        np.sum(entropy_losses) / mask_sum)
+        avg_total_reward, avg_reward, avg_episode_length, explained_variance,
+        np.sum(value_losses) / mask_sum, np.sum(actor_losses) / mask_sum, np.sum(entropy_losses) / mask_sum)
 
     if not GLOBAL.eval_mode:
       actor_grad_norm = utils.grad_norm(utils.get_grads(self.actor.parameters()))
@@ -518,4 +520,5 @@ def main(argv):
 
 
 if __name__ == '__main__':
+  flags.mark_flag_as_required('logdir')
   app.run(main)
