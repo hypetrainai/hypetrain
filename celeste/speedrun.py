@@ -37,6 +37,7 @@ flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most re
 flags.DEFINE_boolean('use_cuda', True, 'Use cuda')
 flags.DEFINE_boolean('profile', False, 'Profile code')
 flags.DEFINE_boolean('debug', False, 'Debug mode')
+flags.DEFINE_boolean('visualization', False, 'Enable visualizations')
 
 flags.DEFINE_integer('batch_size', 1, 'batch size')
 flags.DEFINE_integer('image_height', 540, 'image height')
@@ -57,14 +58,14 @@ flags.DEFINE_integer('goal_y', 0, 'override goal y coordinate')
 flags.DEFINE_integer('goal_x', 0, 'override goal x coordinate')
 
 flags.DEFINE_float('lr', 0.0005, 'learning rate')
-flags.DEFINE_float('actor_start_delay', 10, 'delay training of the actor for this many episodes')
+flags.DEFINE_float('actor_start_delay', 0, 'delay training of the actor for this many episodes')
 flags.DEFINE_float('actor_loss_weight', 1.0, 'weight for actor loss')
 flags.DEFINE_float('value_loss_weight', 1.0, 'weight for value loss')
 flags.DEFINE_float('entropy_loss_weight', 0.0001, 'weight for entropy loss')
 flags.DEFINE_boolean('differential_reward', True, 'Do we use differential rewards?')
 flags.DEFINE_float('reward_decay_multiplier', 0.95, 'reward time decay multiplier')
 flags.DEFINE_integer('episode_length', 400, 'episode length')
-flags.DEFINE_integer('n_steps', 5, 'number of steps before each bprop run')
+flags.DEFINE_integer('unroll_steps', 1, 'number of steps before each bprop run')
 flags.DEFINE_integer('context_frames', 30, 'number of frames passed to the network')
 flags.DEFINE_integer('bellman_lookahead_frames', 10, 'number of frames to consider for bellman rollout')
 flags.DEFINE_float('clip_grad_norm', 1000.0, 'value to clip gradient norm to.')
@@ -184,7 +185,7 @@ class Trainer(object):
       self.critic.reset()
     self.env.reset()
 
-    assert FLAGS.episode_length >= FLAGS.n_steps
+    assert FLAGS.episode_length >= FLAGS.unroll_steps
 
     self.frame_buffer = []
     self.next_frame_to_process = 0
@@ -445,7 +446,7 @@ class Trainer(object):
         done = np.maximum(done, 1 - self.weights[self.processed_frames - 2])
       self.weights[self.processed_frames - 1] = done == 0
       self.rewards[self.processed_frames - 1] = reward * (1.0 - done)
-      if done.all() or self.processed_frames % FLAGS.n_steps == 0:
+      if done.all() or self.processed_frames % FLAGS.unroll_steps == 0:
         self._bprop()
       if done.all() or self.processed_frames >= FLAGS.episode_length:
         return self._finish_episode()

@@ -41,13 +41,15 @@ class Env(env.Env):
     utils.assert_equal(height, FLAGS.image_height)
     utils.assert_equal(width, FLAGS.image_width)
 
-    pygame.init()
-    tile_height = int(math.sqrt(FLAGS.batch_size))
-    tile_width = int(math.ceil(FLAGS.batch_size / tile_height))
-    self.screen = pygame.display.set_mode([width * tile_width, height * tile_height], pygame.SCALED, depth=8)
+    if FLAGS.visualization:
+      pygame.init()
+      tile_height = int(math.sqrt(FLAGS.batch_size))
+      tile_width = int(math.ceil(FLAGS.batch_size / tile_height))
+      self.screen = pygame.display.set_mode([width * tile_width, height * tile_height], pygame.SCALED, depth=8)
 
   def quit(self):
-    pygame.quit()
+    if FLAGS.visualization:
+      pygame.quit()
 
   def reset(self):
     if GLOBAL.eval_mode:
@@ -67,19 +69,20 @@ class Env(env.Env):
     return self.train_env.minimal_actions().size(0)
 
   def start_frame(self):
-    for event in pygame.event.get():
-      if event.type == pygame.QUIT:
-        return None, None
-    frame = self.next_frame.cpu().numpy()
-    # [batch, channel, height, width] -> [batch, width, height, channel].
-    frame = np.tile(np.transpose(frame, [0, 3, 2, 1]), [1, 1, 1, 3])
-    for i in range(len(frame)):
-      tile_height = int(math.sqrt(FLAGS.batch_size))
-      tile_width = int(math.ceil(FLAGS.batch_size / tile_height))
-      start_x = (i % tile_width) * FLAGS.image_width
-      start_y = (i // tile_width) * FLAGS.image_height
-      self.screen.blit(pygame.surfarray.make_surface(frame[i]), (start_x, start_y))
-    pygame.display.flip()
+    if FLAGS.visualization:
+      for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+          return None, None
+      frame = self.next_frame.cpu().numpy()
+      # [batch, channel, height, width] -> [batch, width, height, channel].
+      frame = np.tile(np.transpose(frame, [0, 3, 2, 1]), [1, 1, 1, 3])
+      for i in range(len(frame)):
+        tile_height = int(math.sqrt(FLAGS.batch_size))
+        tile_width = int(math.ceil(FLAGS.batch_size / tile_height))
+        start_x = (i % tile_width) * FLAGS.image_width
+        start_y = (i // tile_width) * FLAGS.image_height
+        self.screen.blit(pygame.surfarray.make_surface(frame[i]), (start_x, start_y))
+      pygame.display.flip()
     return self.next_frame, None
 
   def get_inputs_for_frame(self, frame):
