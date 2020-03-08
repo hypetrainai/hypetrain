@@ -184,6 +184,7 @@ class Trainer(object):
     if hasattr(self, 'critic'):
       self.critic.reset()
     self.env.reset()
+    self.initial_parameters = [p.data.detach().cpu().numpy().flatten() for p in self.all_parameters]
 
     assert FLAGS.episode_length >= FLAGS.unroll_steps
 
@@ -382,13 +383,13 @@ class Trainer(object):
         avg_value_loss, avg_actor_loss, avg_entropy_loss, total_frames / episode_time)
 
     if not GLOBAL.eval_mode:
-      actor_grad_norm = utils.grad_norm(utils.get_grads(self.actor.parameters()))
-      utils.add_summary('scalar', 'actor_grad_norm', actor_grad_norm)
-      if actor_grad_norm < 1e-5:
-        logging.warning('Small gradient detected! Model may not updating.')
-      if hasattr(self, 'critic'):
-        utils.add_summary('scalar', 'critic_grad_norm',
-                          utils.grad_norm(utils.get_grads(self.critic.parameters())))
+      updated_parameters = [p.data.detach().cpu().numpy().flatten() for p in self.all_parameters]
+      update_norm = np.linalg.norm([np.linalg.norm(updated - initial)
+                                    for updated, initial
+                                    in zip(updated_parameters, self.initial_parameters)])
+      utils.add_summary('scalar', 'update_norm', update_norm)
+      if update_norm < 1e-5:
+        logging.warn('Small update norm detected (%.2e). Model may not be training.')
 
     # Start next episode.
     GLOBAL.episode_number += 1
