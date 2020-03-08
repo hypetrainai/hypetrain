@@ -308,6 +308,9 @@ class Trainer(object):
 
     if not GLOBAL.eval_mode:
       assert not (FLAGS.clip_grad_value and FLAGS.clip_grad_norm)
+      if FLAGS.unroll_steps > 1 and (FLAGS.clip_grad_value or FLAGS.clip_grad_norm):
+        raise ValueError('There is a bug with unroll_steps > 1 and grad clipping, '
+                         'since grad clipping occurs on the accumulated gradients.')
       if FLAGS.clip_grad_value:
         nn.utils.clip_grad_value_(self.actor.parameters(), FLAGS.clip_grad_value)
         if hasattr(self, 'critic'):
