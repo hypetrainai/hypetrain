@@ -265,17 +265,13 @@ class Env(env.Env):
       gaussian_current_position = utils.generate_gaussian_heat_map(window_shape, y, x)
 
     frame = frame.astype(np.float32) / 255.0
-    input_frame = torch.cat([torch.tensor(frame), torch.tensor(gaussian_current_position).unsqueeze(0)], 0)
+    input_frame = torch.cat([utils.to_tensor(frame), utils.to_tensor(gaussian_current_position).unsqueeze(0)], 0)
 
     gaussian_goal_position = utils.generate_gaussian_heat_map(window_shape, self.goal_y, self.goal_x)
-    extra_channels = torch.tensor(gaussian_goal_position).unsqueeze(0)
+    extra_channels = utils.to_tensor(gaussian_goal_position).unsqueeze(0)
 
     input_frame = utils.downsample_image_to_input(input_frame.unsqueeze(0))
     extra_channels = utils.downsample_image_to_input(extra_channels.unsqueeze(0))
-
-    if FLAGS.use_cuda:
-      input_frame = input_frame.cuda()
-      extra_channels = extra_channels.cuda()
 
     return input_frame, extra_channels
 

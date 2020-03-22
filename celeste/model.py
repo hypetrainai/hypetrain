@@ -448,11 +448,8 @@ class SimpleLSTMModel(RecurrentModel):
     submodules.init(self.out_proj, self.hidden_dim, out_dim)
 
   def zero_state(self):
-    h0 = torch.zeros(self.lstm_layers, 1, self.hidden_dim)
-    c0 = torch.zeros(self.lstm_layers, 1, self.hidden_dim)
-    if FLAGS.use_cuda:
-      h0 = h0.cuda()
-      c0 = c0.cuda()
+    h0 = utils.to_tensor(np.zeros(self.lstm_layers, 1, self.hidden_dim))
+    c0 = utils.to_tensor(np.zeros(self.lstm_layers, 1, self.hidden_dim))
     return h0, c0
 
   def forward(self, i):

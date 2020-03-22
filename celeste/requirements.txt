@@ -1,4 +1,4 @@
-absl
+absl-py
 imageio
 matplotlib
 moviepy
@@ -6,4 +6,5 @@ pillow
 pygame==2.0.0.dev3
 scipy
 tensorboardX
-tensorflow
+tensorflow-gpu==1.14
+-e ./third_party/baselines

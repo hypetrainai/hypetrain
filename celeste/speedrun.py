@@ -37,7 +37,7 @@ flags.DEFINE_string('pretrained_suffix', 'latest', 'if latest, will load most re
 flags.DEFINE_boolean('use_cuda', True, 'Use cuda')
 flags.DEFINE_boolean('profile', False, 'Profile code')
 flags.DEFINE_boolean('debug', False, 'Debug mode')
-flags.DEFINE_boolean('visualization', False, 'Enable visualizations')
+flags.DEFINE_boolean('visualize', False, 'Enable visualizations')
 
 flags.DEFINE_integer('batch_size', 1, 'batch size')
 flags.DEFINE_integer('image_height', 540, 'image height')
@@ -212,13 +212,9 @@ class Trainer(object):
     if hasattr(self, 'critic'):
       self.optimizer_critic.zero_grad()
 
-    weight_tensor = torch.from_numpy(self.weights[self.next_frame_to_process:self.processed_frames]).float()
-    rewards_tensor = torch.from_numpy(self.rewards[self.next_frame_to_process:self.processed_frames])
-    sampled_idx_tensor = torch.from_numpy(self.sampled_idx[self.next_frame_to_process:self.processed_frames])
-    if FLAGS.use_cuda:
-      weight_tensor = weight_tensor.cuda()
-      rewards_tensor = rewards_tensor.cuda()
-      sampled_idx_tensor = sampled_idx_tensor.cuda()
+    weight_tensor = utils.to_tensor(self.weights[self.next_frame_to_process:self.processed_frames].astype(np.float32))
+    rewards_tensor = utils.to_tensor(self.rewards[self.next_frame_to_process:self.processed_frames])
+    sampled_idx_tensor = utils.to_tensor(self.sampled_idx[self.next_frame_to_process:self.processed_frames])
 
     if FLAGS.multitask:
       final_V = self.actor.forward(self.processed_frames)[0].detach().cpu().numpy()
@@ -232,9 +228,7 @@ class Trainer(object):
     # Weight == 0 means the sequence terminated so set extra reward to 0.
     R[self.weights[self.processed_frames - 1] == 0] = 0
     self.Rs[self.processed_frames] = R
-    R = torch.from_numpy(R)
-    if FLAGS.use_cuda:
-      R = R.cuda()
+    R = utils.to_tensor(R)
 
     for i in reversed(range(self.next_frame_to_process, self.processed_frames)):
       ii = i - self.next_frame_to_process
@@ -245,9 +239,7 @@ class Trainer(object):
         if hasattr(self, 'critic'):
           V = self.critic.forward(i)
         else:
-          V = torch.Tensor([0])
-          if FLAGS.use_cuda:
-            V = V.cuda()
+          V = utils.to_tensor([0])
         log_softmax = outputs
       V = torch.reshape(V, [FLAGS.batch_size])
 
@@ -256,11 +248,8 @@ class Trainer(object):
         A = R - V
       else:
         blf = min(i + FLAGS.bellman_lookahead_frames, self.processed_frames)
-        R_blf = (FLAGS.reward_decay_multiplier**blf) * torch.from_numpy(self.Rs[blf])
-        V_blf = (FLAGS.reward_decay_multiplier**blf) * torch.from_numpy(self.Vs[blf])
-        if FLAGS.use_cuda:
-          R_blf = R_blf.cuda()
-          V_blf = V_blf.cuda()
+        R_blf = (FLAGS.reward_decay_multiplier**blf) * utils.to_tensor(self.Rs[blf])
+        V_blf = (FLAGS.reward_decay_multiplier**blf) * utils.to_tensor(self.Vs[blf])
         A = R - R_blf + V_blf - V
 
       value_loss = A**2
@@ -286,10 +275,7 @@ class Trainer(object):
       if not GLOBAL.eval_mode:
         if FLAGS.debug:
           grads = utils.get_grads(self.all_parameters)
-        one = torch.Tensor([1.0])
-        if FLAGS.use_cuda:
-          one = one.cuda()
-        batch_weight = torch.max(torch.sum(weight_tensor[ii]), one)
+        batch_weight = torch.max(torch.sum(weight_tensor[ii]), utils.to_tensor([1.0]))
         for name, loss in [
             ('actor_loss', FLAGS.actor_loss_weight * actor_loss),
             ('value_loss', FLAGS.value_loss_weight * value_loss),

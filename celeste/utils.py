@@ -16,6 +16,16 @@ def assert_equal(a, b):
   assert a == b, (a, b)
 
 
+def to_tensor(x):
+  if isinstance(x, np.ndarray):
+    x = torch.from_numpy(x)
+  else:
+    x = torch.Tensor(x)
+  if FLAGS.use_cuda:
+    x = x.cuda()
+  return x
+
+
 def import_class(path):
   module, class_name = path.rsplit('.', 1)
   return getattr(importlib.import_module(module), class_name)
