@@ -192,7 +192,8 @@ class Trainer(object):
 
     self.frame_buffer = []
     self.next_frame_to_process = 0
-    self.weights = np.zeros((FLAGS.episode_length, FLAGS.batch_size), dtype=np.bool)
+    self.dones = np.zeros((FLAGS.episode_length, FLAGS.batch_size), dtype=np.bool)
+    self.weights = np.zeros((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
     self.rewards = np.zeros((FLAGS.episode_length, FLAGS.batch_size), dtype=np.float32)
     self.log_softmaxes = [None] * FLAGS.episode_length
     self.sampled_idx = np.zeros((FLAGS.episode_length, FLAGS.batch_size), dtype=np.int64)
@@ -208,16 +209,20 @@ class Trainer(object):
     self.episode_start_time = time.time()
 
   def _bprop(self):
-    assert self.processed_frames > 0
+    assert self.processed_frames > self.next_frame_to_process
 
     self.optimizer_actor.zero_grad()
     if hasattr(self, 'critic'):
       self.optimizer_critic.zero_grad()
 
-    weight_tensor = utils.to_tensor(self.weights[self.next_frame_to_process:self.processed_frames].astype(np.float32))
+    # Cache tensors on GPU for efficiency.
+    done_tensor = utils.to_tensor(self.dones[self.next_frame_to_process:self.processed_frames])
+    weight_tensor = utils.to_tensor(self.weights[self.next_frame_to_process:self.processed_frames])
     rewards_tensor = utils.to_tensor(self.rewards[self.next_frame_to_process:self.processed_frames])
     sampled_idx_tensor = utils.to_tensor(self.sampled_idx[self.next_frame_to_process:self.processed_frames])
 
+    self.Vs[self.next_frame_to_process] = 0.0
+    self.Rs[self.next_frame_to_process] = 0.0
     if FLAGS.multitask:
       final_V = self.actor.forward(self.processed_frames)[0].detach().cpu().numpy()
     elif hasattr(self, 'critic'):
@@ -227,8 +232,6 @@ class Trainer(object):
     self.Vs[self.processed_frames] = np.reshape(final_V, [FLAGS.batch_size])
     # Bootstrap off V for sequences that haven't terminated.
     R = self.Vs[self.processed_frames]
-    # Weight == 0 means the sequence terminated so set extra reward to 0.
-    R[self.weights[self.processed_frames - 1] == 0] = 0
     self.Rs[self.processed_frames] = R
     R = utils.to_tensor(R)
 
@@ -245,14 +248,28 @@ class Trainer(object):
         log_softmax = outputs
       V = torch.reshape(V, [FLAGS.batch_size])
 
+      # Done means the sequence terminated so don't incorporate rewards from future.
+      R[done_tensor[ii]] = 0
       R = FLAGS.reward_decay_multiplier * R + rewards_tensor[ii]
-      if FLAGS.bellman_lookahead_frames == 0:
-        A = R - V
+
+      if FLAGS.bellman_lookahead_frames:
+        assert FLAGS.bellman_lookahead_frames <= FLAGS.unroll_steps
+        # The last frame we can lookahead to is until self.processed_frames or the next done.
+        last_frame = min(i + FLAGS.bellman_lookahead_frames, self.processed_frames)
+        last_frame = np.where(
+            np.any(self.dones[i:last_frame], axis=1),
+            i + 1 + np.argmax(self.dones[i:last_frame], axis=1),
+            last_frame)
+        lookahead = last_frame - i
       else:
-        blf = min(i + FLAGS.bellman_lookahead_frames, self.processed_frames)
-        R_blf = (FLAGS.reward_decay_multiplier**blf) * utils.to_tensor(self.Rs[blf])
-        V_blf = (FLAGS.reward_decay_multiplier**blf) * utils.to_tensor(self.Vs[blf])
-        A = R - R_blf + V_blf - V
+        lookahead = 0
+      assert np.all(lookahead >= 0)
+      assert np.all(self.Rs[i] == 0.0)
+      assert np.all(self.Vs[i] == 0.0)
+      decay = np.array(FLAGS.reward_decay_multiplier**lookahead).astype(np.float32)
+      R_blf = utils.to_tensor(decay * self.Rs[i + lookahead])
+      V_blf = utils.to_tensor(decay * self.Vs[i + lookahead])
+      A = R - R_blf + V_blf - V
 
       value_loss = A**2
       self.value_losses[i] = value_loss.detach().cpu().numpy()
@@ -321,7 +338,7 @@ class Trainer(object):
 
     self.env.finish_episode(self.processed_frames, self.frame_buffer)
 
-    ep_len = np.sum(self.weights, axis=0)
+    ep_len = np.round(np.sum(self.weights, axis=0)).astype(np.int32)
     avg_episode_length = np.mean(ep_len)
     utils.add_summary('scalar', 'avg_episode_length', avg_episode_length)
     avg_total_reward = np.mean(np.sum(self.weights * self.rewards, axis=0))
@@ -329,6 +346,9 @@ class Trainer(object):
     avg_reward = avg_total_reward / np.maximum(avg_episode_length, 1.0)
     utils.add_summary('scalar', 'avg_reward', avg_reward)
 
+    fig = plt.figure()
+    plt.plot(self.dones[:ep_len[0], 0])
+    utils.add_summary('figure', 'out/done', fig)
     fig = plt.figure()
     plt.plot(self.rewards[:ep_len[0], 0])
     utils.add_summary('figure', 'out/reward', fig)
@@ -430,11 +450,21 @@ class Trainer(object):
         self.savestate(1 + np.random.randint(FLAGS.num_custom_savestates))
 
     if self.processed_frames > 0:
+      # Get the rewards for the action executed on the previous frame.
+      frame_id = self.processed_frames - 1
       reward, done = self.env.get_reward()
       assert reward.shape == (FLAGS.batch_size,), reward.shape
       assert done.shape == (FLAGS.batch_size,), done.shape
-      self.weights[self.processed_frames - 1] = done == 0
-      self.rewards[self.processed_frames - 1] = reward * (1.0 - done)
+      self.dones[frame_id] = done > 0
+      # Weight is 0 if more than 1 consecutive done (end of sequence).
+      prev_done = self.processed_frames == 1 or self.dones[self.processed_frames - 2]
+      self.weights[frame_id] = 1.0
+      self.weights[frame_id][done & prev_done] = 0.0
+      # Check that we don't get done == 0 after end of sequence.
+      if self.processed_frames > 1:
+        if np.any(self.weights[frame_id] > self.weights[self.processed_frames - 2]):
+          raise ValueError('Error: once weights become 0 (eos) it should not turn positive again.')
+      self.rewards[frame_id] = reward * self.weights[frame_id]
       if done.all() or self.processed_frames % FLAGS.unroll_steps == 0:
         self._bprop()
       if done.all() or self.processed_frames >= FLAGS.episode_length:
