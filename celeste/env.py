@@ -77,7 +77,7 @@ class Env(object):
 
   def _add_action_summaries_actions(self, ax, log_softmax, sampled_idx):
     assert log_softmax.ndim == 1
-    num_topk = 5
+    num_topk = min(5, len(log_softmax))
     topk_idxs = np.argsort(log_softmax)[::-1][:num_topk]
     ax.bar(np.arange(num_topk), np.exp(log_softmax[topk_idxs]), width=0.3)
     ax.set_xticks(np.arange(num_topk))

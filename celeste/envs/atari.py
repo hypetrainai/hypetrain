@@ -21,14 +21,14 @@ class Env(env.Env):
   def __init__(self):
     super(Env, self).__init__()
 
-    self._train_envs = cmd_util.make_vec_env(FLAGS.env_name, 'atari', FLAGS.batch_size, seed=None)
-    self._test_envs = cmd_util.make_vec_env(FLAGS.env_name, 'atari', FLAGS.batch_size, seed=None)
+    wrapper_kwargs = dict(episode_life=False)
+    self._envs = [cmd_util.make_env(FLAGS.env_name, 'atari', wrapper_kwargs=wrapper_kwargs)
+                  for _ in range(FLAGS.batch_size)]
 
-    height, width, _ = self._train_envs.observation_space.shape
+    self._action_meanings = self._envs[0].get_action_meanings()
+    height, width, _ = self._envs[0].observation_space.shape
     utils.assert_equal(height, FLAGS.image_height)
     utils.assert_equal(width, FLAGS.image_width)
-
-    self._action_meanings = cmd_util.make_env(FLAGS.env_name, 'atari').get_action_meanings()
 
     if FLAGS.visualize:
       pygame.init()
@@ -41,8 +41,7 @@ class Env(env.Env):
       pygame.quit()
 
   def reset(self):
-    env_to_use = self._test_envs if GLOBAL.eval_mode else self._train_envs
-    self._next_frame = env_to_use.reset().reshape(
+    self._next_frame = np.stack([e.reset() for e in self._envs]).reshape(
         FLAGS.batch_size, 1, FLAGS.image_height, FLAGS.image_width)
     self._next_reward = None
     self._done = None
@@ -54,13 +53,17 @@ class Env(env.Env):
     return 0
 
   def num_actions(self):
-    return self._train_envs.action_space.n
+    return self._envs[0].action_space.n
 
   def start_frame(self):
     if FLAGS.visualize:
-      for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-          return None, None
+      wait = False
+      while wait:
+        for event in pygame.event.get():
+          if event.type == pygame.QUIT:
+            return None, None
+          if event.type == pygame.KEYDOWN:
+            wait=False
       frame = self._next_frame
       # [batch, channel, height, width] -> [batch, width, height, channel].
       frame = np.tile(np.transpose(frame, [0, 3, 2, 1]), [1, 1, 1, 3])
@@ -90,9 +93,8 @@ class Env(env.Env):
     return [self._action_meanings[idxs[i]] for i in range(len(idxs))]
 
   def end_frame(self, actions):
-    env_to_use = self._test_envs if GLOBAL.eval_mode else self._train_envs
-    observation, reward, done, _ = env_to_use.step(actions)
-    self._next_frame = observation.reshape(
+    observation, reward, done, _ = zip(*[e.step(a) for e, a in zip(self._envs, actions)])
+    self._next_frame = np.stack(observation).reshape(
         FLAGS.batch_size, 1, FLAGS.image_height, FLAGS.image_width)
-    self._next_reward = reward
-    self._done = done
+    self._next_reward = np.stack(reward)
+    self._done = np.stack(done)

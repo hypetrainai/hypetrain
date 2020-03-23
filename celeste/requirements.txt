@@ -7,4 +7,5 @@ pygame==2.0.0.dev3
 scipy
 tensorboardX
 tensorflow-gpu==1.14
+-e ./third_party/atari-py
 -e ./third_party/baselines
