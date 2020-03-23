@@ -72,9 +72,6 @@ class Env(env.Env):
 
     self.frame_counter = 0
     self.det = celeste_detector.CelesteDetector()
-    self.differential_reward = FLAGS.differential_reward
-    self.prev_reward = None
-    self.min_reward = None
 
     self.class2button = {}
     for action_id, action_list in enumerate(_ACTION_BUTTONS):
@@ -189,6 +186,9 @@ class Env(env.Env):
   def reset(self):
     self.trajectory = []
     self._generate_goal_state()
+    self.prev_done = False
+    self.prev_reward = None
+    self.min_reward = None
 
   def frame_channels(self):
     return 4
@@ -301,7 +301,7 @@ class Env(env.Env):
   def get_reward(self):
     reward = 0
     final_reward = 0
-    done = False
+    done = self.prev_done
 
     y, x = self.trajectory[-1]
     if y is None:
@@ -311,7 +311,7 @@ class Env(env.Env):
       y, x = self.trajectory[-2]
 
     curr_reward = 50.0*self.dist_reward(x, y)
-    if self.differential_reward:
+    if FLAGS.differential_reward:
         final_reward += self.get_differential_reward(curr_reward)
     else:
         final_reward += curr_reward
@@ -321,6 +321,7 @@ class Env(env.Env):
     if curr_reward >= 40 * 50.0:
       done = True
 
+    self.prev_done = done
     return np.array([final_reward]), np.array([done])
 
   def indices_to_actions(self, idxs):

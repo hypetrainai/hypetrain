@@ -1,10 +1,9 @@
 from absl import flags
 from absl import logging
 from baselines.common import cmd_util
-import math
 import numpy as np
 import os
-import pygame
+import renderer
 import signal
 import torch
 from torch.nn import functional as F
@@ -30,15 +29,7 @@ class Env(env.Env):
     utils.assert_equal(height, FLAGS.image_height)
     utils.assert_equal(width, FLAGS.image_width)
 
-    if FLAGS.visualize:
-      pygame.init()
-      tile_height = int(math.sqrt(FLAGS.batch_size))
-      tile_width = int(math.ceil(FLAGS.batch_size / tile_height))
-      self._screen = pygame.display.set_mode([width * tile_width, height * tile_height], pygame.SCALED, depth=8)
-
-  def quit(self):
-    if FLAGS.visualize:
-      pygame.quit()
+    self._renderer = renderer.Renderer()
 
   def reset(self):
     self._next_frame = np.stack([e.reset() for e in self._envs]).reshape(
@@ -57,23 +48,7 @@ class Env(env.Env):
 
   def start_frame(self):
     if FLAGS.visualize:
-      wait = False
-      while wait:
-        for event in pygame.event.get():
-          if event.type == pygame.QUIT:
-            return None, None
-          if event.type == pygame.KEYDOWN:
-            wait=False
-      frame = self._next_frame
-      # [batch, channel, height, width] -> [batch, width, height, channel].
-      frame = np.tile(np.transpose(frame, [0, 3, 2, 1]), [1, 1, 1, 3])
-      for i in range(len(frame)):
-        tile_height = int(math.sqrt(FLAGS.batch_size))
-        tile_width = int(math.ceil(FLAGS.batch_size / tile_height))
-        start_x = (i % tile_width) * FLAGS.image_width
-        start_y = (i // tile_width) * FLAGS.image_height
-        self._screen.blit(pygame.surfarray.make_surface(frame[i]), (start_x, start_y))
-      pygame.display.flip()
+      self._renderer.render(self._next_frame)
 
     input_frame = utils.to_tensor(self._next_frame.astype(np.float32) / 255.0)
     scripted_actions = None
@@ -94,6 +69,7 @@ class Env(env.Env):
 
   def end_frame(self, actions):
     observation, reward, done, _ = zip(*[e.step(a) for e, a in zip(self._envs, actions)])
+    observation = [e.reset() if d else o for e, o, d in zip(self._envs, observation, done)]
     self._next_frame = np.stack(observation).reshape(
         FLAGS.batch_size, 1, FLAGS.image_height, FLAGS.image_width)
     self._next_reward = np.stack(reward)

@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pprint
+import pygame
 import queue
 import subprocess
 import time
@@ -111,7 +112,7 @@ class Trainer(object):
         self.critic = self.critic.cuda()
 
     self.all_parameters = list(self.actor.parameters())
-    optimizer_fn = functools.partial(optim.Adam, lr=FLAGS.lr, amsgrad=True)
+    optimizer_fn = functools.partial(optim.Adam, lr=FLAGS.lr, eps=1e-3)
     self.optimizer_actor = optimizer_fn(list(self.actor.parameters()))
     if hasattr(self, 'critic'):
       self.all_parameters += list(self.critic.parameters())
@@ -133,6 +134,7 @@ class Trainer(object):
 
   def quit(self):
     self.env.quit()
+    pygame.quit()
 
   def eval(self):
     self.actor.eval()
@@ -431,9 +433,6 @@ class Trainer(object):
       reward, done = self.env.get_reward()
       assert reward.shape == (FLAGS.batch_size,), reward.shape
       assert done.shape == (FLAGS.batch_size,), done.shape
-      if self.processed_frames > 1:
-        # If the previous frame was done, we propagate it to this frame.
-        done = np.maximum(done, 1 - self.weights[self.processed_frames - 2])
       self.weights[self.processed_frames - 1] = done == 0
       self.rewards[self.processed_frames - 1] = reward * (1.0 - done)
       if done.all() or self.processed_frames % FLAGS.unroll_steps == 0:
