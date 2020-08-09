@@ -6,7 +6,7 @@ import pygame
 FLAGS = flags.FLAGS
 
 
-class Renderer(object):
+class Renderer:
 
   def __init__(self, ndisplay=np.inf, nrows=0):
     self._ndisplay = min(FLAGS.batch_size, ndisplay)

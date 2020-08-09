@@ -5,7 +5,7 @@ import renderer
 import utils
 
 
-class Env(object):
+class Env:
 
   def __init__(self):
     self.saved_states = {}

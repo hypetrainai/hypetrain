@@ -16,7 +16,7 @@ FLAGS = flags.FLAGS
 class Model(nn.Module):
 
   def __init__(self):
-    super(Model, self).__init__()
+    super().__init__()
     self.saved_states = {}
 
   def reset(self):
@@ -130,7 +130,7 @@ class RecurrentModel(Model):
 class NatureCnn(ConvModel):
 
   def __init__(self, frame_channels, extra_channels, out_dim, output_probs=True):
-    super(NatureCnn, self).__init__()
+    super().__init__()
 
     if not isinstance(out_dim, list):
       out_dim = [out_dim]
@@ -177,7 +177,7 @@ class NatureCnn(ConvModel):
 class ResNetIm2Value(ConvModel):
 
   def __init__(self, frame_channels, extra_channels, out_dim, output_probs=True):
-    super(ResNetIm2Value, self).__init__()
+    super().__init__()
 
     if not isinstance(out_dim, list):
       out_dim = [out_dim]
@@ -269,7 +269,7 @@ def upshuffle(in_planes, out_planes, upscale_factor):
 class FPNNet(ConvModel):
 
   def __init__(self, frame_channels, extra_channels, out_dim, pretrained=True, fixed_feature_weights=False, output_probs=True):
-    super(FPNNet, self).__init__()
+    super().__init__()
 
     in_dim = frame_channels * FLAGS.context_frames + extra_channels
     feat_height, feat_width = FLAGS.input_height, FLAGS.input_width
@@ -410,7 +410,7 @@ class FPNNet(ConvModel):
 class SimpleLSTMModel(RecurrentModel):
 
   def __init__(self, frame_channels, extra_channels, out_dim, output_probs=True):
-    super(SimpleLSTMModel, self).__init__()
+    super().__init__()
 
     self.hidden_dim = 512
     self.lstm_layers = 2

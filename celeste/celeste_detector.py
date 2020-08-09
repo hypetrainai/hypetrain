@@ -16,7 +16,7 @@ color_dict = {
 }
 
 
-class CelesteDetector():
+class CelesteDetector:
 
   def __init__(self, threshold=10, search_delta_with_prior=100):
     self.thres = threshold

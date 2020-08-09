@@ -85,7 +85,7 @@ flags.DEFINE_integer('action_summary_frames', 50, 'number of frames between acti
 FLAGS = flags.FLAGS
 
 
-class Trainer(object):
+class Trainer:
 
   def __init__(self):
     self.env = utils.import_class(FLAGS.env)()

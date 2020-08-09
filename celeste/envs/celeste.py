@@ -67,7 +67,7 @@ _GOAL_MAP = {
 class Env(env.Env):
 
   def __init__(self):
-    super(Env, self).__init__()
+    super().__init__()
     assert FLAGS.batch_size == 1
 
     self.frame_counter = 0
@@ -360,7 +360,7 @@ class Env(env.Env):
     utils.add_summary('figure', 'trajectory', fig)
 
   def _add_action_summaries_image(self, ax, frame_number, frame):
-    super(Env, self)._add_action_summaries_image(ax, frame_number, frame)
+    super()._add_action_summaries_image(ax, frame_number, frame)
     trajectory_i = self.trajectory[max(0, frame_number - FLAGS.action_summary_frames):frame_number + 1]
     utils.plot_trajectory(trajectory_i, ax=ax)
     ax.scatter(self.goal_x, self.goal_y, facecolors='none', edgecolors='r')

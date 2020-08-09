@@ -16,7 +16,7 @@ FLAGS = flags.FLAGS
 class Env(env.Env):
 
   def __init__(self):
-    super(Env, self).__init__()
+    super().__init__()
 
     wrapper_kwargs = dict(episode_life=False)
     self._envs = [cmd_util.make_env(FLAGS.env_name, 'atari', wrapper_kwargs=wrapper_kwargs)

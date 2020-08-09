@@ -66,7 +66,7 @@ class ResNetModule(nn.Module):
                dilation=1,
                transpose=False,
                causal=False):
-    super(ResNetModule, self).__init__()
+    super().__init__()
     self.causal = kernel_size - 1 if causal else 0
     self.dimension = dimension
     bottleneck = (out_planes + 3) // 4
