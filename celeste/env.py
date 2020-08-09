@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+import renderer
 import utils
 
 
@@ -8,6 +9,7 @@ class Env(object):
 
   def __init__(self):
     self.saved_states = {}
+    self._renderer = renderer.Renderer()
 
   def quit(self):
     """Perform cleanup before quitting program."""
@@ -66,6 +68,11 @@ class Env(object):
   def end_frame(self, actions):
     """Performs processing at the end of a frame given a batch of actions."""
     raise NotImplementedError()
+
+  def render(self, frame):
+    """Renders frames of shape [batch, channel, height, width]."""
+    if FLAGS.visualize:
+      self._renderer.render(frame)
 
   def finish_episode(self, processed_frames, frame_buffer):
     """Called at the end of an episode with the number of frames processed."""

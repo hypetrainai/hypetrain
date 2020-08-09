@@ -3,8 +3,6 @@ from absl import logging
 from baselines.common import cmd_util
 import numpy as np
 import os
-import renderer
-import signal
 import torch
 from torch.nn import functional as F
 
@@ -29,8 +27,6 @@ class Env(env.Env):
     utils.assert_equal(height, FLAGS.image_height)
     utils.assert_equal(width, FLAGS.image_width)
 
-    self._renderer = renderer.Renderer()
-
   def reset(self):
     self._next_frame = np.stack([e.reset() for e in self._envs]).reshape(
         FLAGS.batch_size, 1, FLAGS.image_height, FLAGS.image_width)
@@ -47,8 +43,7 @@ class Env(env.Env):
     return self._envs[0].action_space.n
 
   def start_frame(self):
-    if FLAGS.visualize:
-      self._renderer.render(self._next_frame)
+    self.render(self._next_frame)
 
     input_frame = utils.to_tensor(self._next_frame.astype(np.float32) / 255.0)
     scripted_actions = None

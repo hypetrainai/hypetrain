@@ -9,7 +9,6 @@ FLAGS = flags.FLAGS
 class Renderer(object):
 
   def __init__(self, ndisplay=np.inf, nrows=0):
-    pygame.init()
     self._ndisplay = min(FLAGS.batch_size, ndisplay)
     self._nrows = nrows or int(math.sqrt(self._ndisplay))
     self._ncols = int(math.ceil(self._ndisplay / self._nrows))
@@ -25,12 +24,15 @@ class Renderer(object):
           wait = False
 
     if not self._screen:
+      pygame.init()
       height, width = frame.shape[-2:]
       self._screen = pygame.display.set_mode(
           [width * self._ncols, height * self._nrows], pygame.SCALED, depth=8)
 
     # [batch, channel, height, width] -> [batch, width, height, channel].
-    frame = np.tile(np.transpose(frame, [0, 3, 2, 1]), [1, 1, 1, 3])
+    frame = np.transpose(frame, [0, 3, 2, 1])
+    if frame.shape[-1] == 1:
+      frame = np.tile(frame, [1, 1, 1, 3])
     for i in range(self._ndisplay):
       start_x = (i % self._ncols) * FLAGS.image_width
       start_y = (i // self._ncols) * FLAGS.image_height
