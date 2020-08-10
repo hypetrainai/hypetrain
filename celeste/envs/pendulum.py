@@ -48,7 +48,7 @@ class Env(env.Env):
     return 0
 
   def num_actions(self):
-    return 256
+    return 32
 
   def start_frame(self):
     if FLAGS.visualize:
