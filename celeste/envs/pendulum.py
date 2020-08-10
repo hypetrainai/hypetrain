@@ -1,5 +1,6 @@
 from absl import flags
 from absl import logging
+from gym.envs.classic_control import rendering
 import numpy as np
 import os
 from pyglet.gl import *
@@ -50,10 +51,24 @@ class Env(env.Env):
     return 256
 
   def start_frame(self):
-    # self.render(frames)
+    if FLAGS.visualize:
+      if self.viewer is None:
+        self.viewer = rendering.Viewer(500, 500)
+        self.viewer.set_bounds(-2.2, 2.2, -2.2, 2.2)
+        rod = rendering.make_capsule(1, .2)
+        self.pole_transform = rendering.Transform()
+        rod.add_attr(self.pole_transform)
+        self.viewer.add_geom(rod)
+        axle = rendering.make_circle(.05)
+        axle.set_color(0, 0, 0)
+        self.viewer.add_geom(axle)
 
+      self.pole_transform.set_rotation(self.theta[0] + np.pi / 2)
+      self.viewer.render()
+
+    frames = np.zeros([FLAGS.batch_size, 3, 1, 1])
     scripted_actions = None
-    return np.zeros([FLAGS.batch_size, 3, 84, 84]), scripted_actions
+    return frames, scripted_actions
 
   def get_inputs_for_frame(self, unused_frame):
     input_frame = np.array(list(zip(np.cos(self.theta), np.sin(self.theta), self.thetadot)))

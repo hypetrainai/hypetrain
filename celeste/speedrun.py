@@ -261,7 +261,7 @@ class Trainer:
             i + np.argmax(self.dones[i:last_frame], axis=0),
             last_frame)
       else:
-        last_frame = i
+        last_frame = np.array([i] * FLAGS.batch_size)
       assert np.all(last_frame >= i)
       assert np.all(self.Rs[i] == 0.0)
       assert np.all(self.Vs[i] == 0.0)
