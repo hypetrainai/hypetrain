@@ -51,7 +51,8 @@ class Env:
 
     The returned tensors are passed as-is to network.set_inputs().
     """
-    raise NotImplementedError()
+    extra_channels = None
+    return utils.downsample_image_to_input(frame), extra_channels
 
   def get_reward(self):
     """Returns (rewards, done) for the current state."""
@@ -59,7 +60,7 @@ class Env:
 
   def indices_to_actions(self, idxs):
     """Given softmax indices, return a batch of actions to be provided to end_frame."""
-    raise NotImplementedError()
+    return idxs
 
   def indices_to_labels(self, idxs):
     """Given softmax indices, return a batch of string action names."""

@@ -141,6 +141,7 @@ class Env(env.Env):
     if self.game_pid != -1:
       logging.info('killing game %d' % self.game_pid)
       os.kill(self.game_pid, signal.SIGKILL)
+    super().quit()
 
   def can_savestate(self):
     return self.det.death_clock == 0

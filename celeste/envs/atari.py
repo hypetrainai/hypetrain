@@ -49,15 +49,8 @@ class Env(env.Env):
     scripted_actions = None
     return input_frame, scripted_actions
 
-  def get_inputs_for_frame(self, frame):
-    extra_channels = None
-    return utils.downsample_image_to_input(frame), extra_channels
-
   def get_reward(self):
     return self._next_reward, self._done
-
-  def indices_to_actions(self, idxs):
-    return idxs
 
   def indices_to_labels(self, idxs):
     return [self._action_meanings[idxs[i]] for i in range(len(idxs))]
