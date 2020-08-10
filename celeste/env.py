@@ -1,8 +1,11 @@
+from absl import flags
 import matplotlib.pyplot as plt
 import numpy as np
 
 import renderer
 import utils
+
+FLAGS = flags.FLAGS
 
 
 class Env:

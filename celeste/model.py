@@ -49,6 +49,35 @@ class Model(nn.Module):
     pass
 
 
+class StatelessModel(Model):
+
+  def reset(self):
+    self.frame_buffer = None
+
+  def set_inputs(self, i, input_frame, extra_channels=None):
+    assert input_frame.dim() == 4
+    if extra_channels is not None:
+      assert extra_channels.dim() == 4
+      input_frame = torch.cat([input_frame, extra_channels], 1)
+    if i == 0:
+      self.frame_buffer = input_frame.unsqueeze(0)
+    else:
+      self.frame_buffer = torch.cat([self.frame_buffer, input_frame.unsqueeze(0)], 0)
+
+  def _get_inputs(self, i):
+    return self.frame_buffer[i]
+
+  def savestate(self, index):
+    state = {
+        'frame_buffer': self.frame_buffer.clone().detach()
+    }
+    self.saved_states[index] = state
+
+  def loadstate(self, index):
+    state = self.saved_states[index]
+    self.frame_buffer = state['frame_buffer'].clone()
+
+
 class ConvModel(Model):
 
   def reset(self):
@@ -125,6 +154,46 @@ class RecurrentModel(Model):
     inputs, context = self.saved_states[index]
     self.inputs = [inputs.clone()]
     self.contexts = [[x.clone() for x in context]]
+
+
+class FCModel(StatelessModel):
+
+  def __init__(self, frame_channels, extra_channels, out_dim, output_probs=True):
+    super().__init__()
+
+    if not isinstance(out_dim, list):
+      out_dim = [out_dim]
+      output_probs = [output_probs]
+    self.out_dim = out_dim
+    self.output_probs = output_probs
+
+    in_dim = frame_channels + extra_channels
+
+    fc_input = in_dim
+    linear = nn.Linear(fc_input, 128)
+    submodules.init(linear, fc_input, 128, nonlinearity_after='relu')
+    self.proj = nn.Sequential(linear, nn.ReLU())
+
+    out_proj = []
+    for dim in self.out_dim:
+      linear = nn.Linear(128, dim)
+      submodules.init(linear, 128, dim)
+      out_proj.append(linear)
+    self.out_proj = nn.ModuleList(out_proj)
+
+  def forward(self, i):
+    inputs = self._get_inputs(i)
+    inputs = inputs.view(inputs.shape[0], -1)
+    out = self.proj(inputs)
+    outputs = []
+    for out_proj, output_probs in zip(self.out_proj, self.output_probs):
+      res = out_proj(out)
+      if output_probs:
+        res = utils.outputs_to_log_probs(res)
+      outputs.append(res)
+    if len(outputs) == 1:
+      outputs = outputs[0]
+    return outputs
 
 
 class NatureCnn(ConvModel):

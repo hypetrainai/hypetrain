@@ -257,18 +257,17 @@ class Trainer:
         # The last frame we can lookahead to is until self.processed_frames or the next done.
         last_frame = min(i + FLAGS.bellman_lookahead_frames, self.processed_frames)
         last_frame = np.where(
-            np.any(self.dones[i:last_frame], axis=1),
-            i + 1 + np.argmax(self.dones[i:last_frame], axis=1),
+            np.any(self.dones[i:last_frame], axis=0),
+            i + np.argmax(self.dones[i:last_frame], axis=0),
             last_frame)
-        lookahead = last_frame - i
       else:
-        lookahead = 0
-      assert np.all(lookahead >= 0)
+        last_frame = i
+      assert np.all(last_frame >= i)
       assert np.all(self.Rs[i] == 0.0)
       assert np.all(self.Vs[i] == 0.0)
-      decay = np.array(FLAGS.reward_decay_multiplier**lookahead).astype(np.float32)
-      R_blf = utils.to_tensor(decay * self.Rs[i + lookahead])
-      V_blf = utils.to_tensor(decay * self.Vs[i + lookahead])
+      decay = np.array(FLAGS.reward_decay_multiplier**(last_frame - i)).astype(np.float32)
+      R_blf = utils.to_tensor([decay[b] * self.Rs[last_frame[b], b] for b in range(FLAGS.batch_size)])
+      V_blf = utils.to_tensor([decay[b] * self.Vs[last_frame[b], b] for b in range(FLAGS.batch_size)])
       A = R - R_blf + V_blf - V
 
       value_loss = A**2
